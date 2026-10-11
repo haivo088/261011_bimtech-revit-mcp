@@ -1,0 +1,7 @@
+server/node_modules/
+server/build/
+**/bin/
+**/obj/
+.vs/
+*.user
+*.log

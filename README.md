@@ -1,0 +1,112 @@
+# BIMTECH Revit MCP — bắt đầu từ đầu
+
+Đây là dự án mới để học và tự phát triển kết nối **Claude Desktop ↔ Revit 2025**. Mã ứng dụng được viết mới trong thư mục này. Repository GitHub ở thư mục cha chỉ dùng tham khảo; dự án này không import mã hoặc DLL của repository đó.
+
+Bản đầu tiên có hai công cụ đọc dữ liệu:
+
+- `ping_revit`: kiểm tra cầu nối và phiên bản Revit.
+- `get_document_info`: đọc tên, đường dẫn, loại mô hình và view đang mở.
+
+## Bắt đầu đọc từ đâu?
+
+1. Đọc [bản đồ thư mục và file](docs/01-folder-map.md).
+2. Đọc [luồng một lệnh đi từ Claude đến Revit](docs/02-request-flow.md).
+3. Mở `server/src/index.ts`, sau đó `tools.ts` và `revit-client.ts`.
+4. Mở `addin/App.cs`, sau đó `Bridge/TcpBridge.cs` và `Commands/RevitRequestHandler.cs`.
+5. Build và chạy thử theo phần bên dưới.
+
+## Cấu trúc
+
+```text
+bimtech-revit-mcp/
+├── README.md
+├── Bimtech.RevitMcp.sln             # Mở phần C# bằng Visual Studio
+├── server/                         # Chương trình Node.js giao tiếp với Claude
+│   ├── package.json
+│   ├── package-lock.json
+│   ├── tsconfig.json
+│   ├── src/
+│   │   ├── index.ts                # Khởi động MCP
+│   │   ├── config.ts               # Host, port, timeout
+│   │   ├── tools.ts                # Hai công cụ Claude có thể gọi
+│   │   └── revit-client.ts         # Gửi/nhận JSON qua TCP
+│   └── tests/connection.test.mjs   # Kiểm thử với cầu nối giả lập
+├── addin/                          # Thư viện C# được Revit nạp
+│   ├── Bimtech.RevitMcp.Addin.csproj
+│   ├── Bimtech.RevitMcp.addin       # Manifest đăng ký với Revit
+│   ├── App.cs                      # Ribbon, mở/đóng cầu nối
+│   ├── Bridge/TcpBridge.cs         # Nhận kết nối TCP
+│   ├── Protocol/RpcRequest.cs      # Cấu trúc lệnh và lỗi
+│   └── Commands/RevitRequestHandler.cs # Chạy Revit API qua ExternalEvent
+├── config/claude-desktop.example.json
+└── docs/
+    ├── 01-folder-map.md
+    └── 02-request-flow.md
+```
+
+## Build
+
+Cần Node.js 20+, .NET SDK hỗ trợ .NET 8, và Revit 2025. Máy hiện tại đã có Node.js 24 và .NET SDK 10.
+
+Từ thư mục **bimtech-revit-mcp**, chạy PowerShell:
+
+```powershell
+Push-Location server
+npm.cmd ci --no-audit --no-fund
+npm.cmd run build
+npm.cmd test
+Pop-Location
+
+dotnet build Bimtech.RevitMcp.sln -c Release
+```
+
+TypeScript được biên dịch thành JavaScript trong `server/build/`. C# tạo DLL trong `addin/bin/Release/net8.0-windows/`. Những thư mục này được sinh tự động; hãy chỉnh mã trong `src` và các file `.cs`.
+
+File `.csproj` tham chiếu `RevitAPI.dll` và `RevitAPIUI.dll` của Revit trên máy. Nếu cài ở đường dẫn khác:
+
+```powershell
+dotnet build Bimtech.RevitMcp.sln -c Release '-p:RevitInstallDir=D:\Autodesk\Revit 2025'
+```
+
+Build không tự cài hoặc thay add-in trên máy.
+
+## Cài vào Revit để thử
+
+Đóng Revit trước khi chép DLL. Trong `%APPDATA%\Autodesk\Revit\Addins\2025\`, tạo cấu trúc:
+
+```text
+2025/
+├── Bimtech.RevitMcp.addin          # Chép từ addin/
+└── Bimtech.RevitMcp/
+    └── Bimtech.RevitMcp.Addin.dll  # Chép từ addin/bin/Release/net8.0-windows/
+```
+
+Revit cung cấp các DLL API của chính nó khi chạy, nên không chép `RevitAPI.dll` hoặc `RevitAPIUI.dll` vào thư mục add-in.
+
+Mở Revit, mở một mô hình thử nghiệm, vào **Add-Ins → BIMTECH MCP → Start / Stop MCP Bridge**. Khi thông báo cổng `8081` xuất hiện, đóng hộp thoại đó để Revit tiếp tục xử lý các lệnh.
+
+## Kết nối Claude Desktop
+
+Trong `%APPDATA%\Claude\claude_desktop_config.json`, thêm entry `bimtech-revit-mcp` từ [file cấu hình mẫu](config/claude-desktop.example.json). Giữ các cấu hình khác nếu có. Đường dẫn trong mẫu dành cho máy hiện tại; sửa lại khi di chuyển dự án hoặc dùng máy khác.
+
+Khởi động lại Claude Desktop rồi thử:
+
+> Dùng ping_revit để kiểm tra cầu nối BIMTECH với Revit.
+
+> Dùng get_document_info để đọc thông tin mô hình đang mở.
+
+Cổng mặc định của dự án mới là `8081`. Cổng này được khai báo ở `addin/App.cs` và `server/src/config.ts`. Nếu đổi cổng, cập nhật cả hai phía. Biến môi trường `REVIT_MCP_HOST`, `REVIT_MCP_PORT`, `REVIT_MCP_TIMEOUT_MS` điều khiển phía server.
+
+## Đã kiểm chứng và giới hạn
+
+- Build TypeScript thành công.
+- Build add-in Revit 2025 thành công. Có hai cảnh báo `MSB3277` về phiên bản dependency Microsoft.VisualBasic và WindowsBase do tham chiếu DLL cài trên máy; chưa xác minh ảnh hưởng trong Revit thật.
+- Sáu kiểm thử thành công: dữ liệu lớn/Unicode chia gói, lỗi JSON-RPC, sai ID, ngắt kết nối, timeout và giao tiếp MCP → TCP giả lập.
+- Chưa cài add-in mới, chưa đổi cấu hình Claude, chưa kiểm thử trên Revit thật.
+- Bộ giao tiếp nội bộ chỉ hỗ trợ một request/response mỗi kết nối, ID dạng chuỗi và hai lệnh đã định nghĩa. Đây là nền tảng học tập, chưa phải bản triển khai đầy đủ MCP/Revit cho sản xuất.
+
+## Mở rộng từng bước
+
+Sau khi hiểu và kiểm thử hai công cụ đầu tiên, thêm `get_selected_elements`, rồi đọc parameter. Khi đã vững luồng đọc dữ liệu, mới thêm sửa parameter kèm Transaction và kiểm thử bằng mô hình mẫu.
+
+Nền tảng API được đối chiếu với tài liệu Autodesk: [Revit 2025 dùng .NET 8](https://help.autodesk.com/cloudhelp/2025/ENU/Revit-WhatsNew/files/GUID-50024FD2-16BE-40BE-96E6-550294D9537D.htm), [ExternalEvent.Raise](https://help.autodesk.com/cloudhelp/2026/ENU/Revit-API-MainReference/files/html/13bf4411-c400-dcd2-458c-7f09357d9ecb.htm).

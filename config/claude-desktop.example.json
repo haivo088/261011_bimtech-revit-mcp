@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "bimtech-revit-mcp": {
+      "command": "C:\\Program Files\\nodejs\\node.exe",
+      "args": [
+        "D:\\001. BIMTECH PROJECT\\261011_RevitMCPsever\\bimtech-revit-mcp\\server\\build\\index.js"
+      ],
+      "env": {
+        "REVIT_MCP_HOST": "127.0.0.1",
+        "REVIT_MCP_PORT": "8081",
+        "REVIT_MCP_TIMEOUT_MS": "15000"
+      }
+    }
+  }
+}

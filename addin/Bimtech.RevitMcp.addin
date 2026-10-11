@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RevitAddIns>
+  <AddIn Type="Application">
+    <Name>BIMTECH Revit MCP</Name>
+    <Assembly>Bimtech.RevitMcp\Bimtech.RevitMcp.Addin.dll</Assembly>
+    <AddInId>270F8085-A62F-4B5D-9FA1-1C3F8D018749</AddInId>
+    <FullClassName>Bimtech.RevitMcp.App</FullClassName>
+    <VendorId>BIMTECH</VendorId>
+    <VendorDescription>BIMTECH Revit MCP learning project</VendorDescription>
+  </AddIn>
+</RevitAddIns>
