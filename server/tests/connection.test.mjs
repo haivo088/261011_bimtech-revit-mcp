@@ -7,6 +7,7 @@ import test from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { callRevit } from "../build/revit-client.js";
+import { allTools } from "../build/tools/index.js";
 
 // A small TCP stand-in verifies transport behavior without opening Revit.
 async function bridge(t, respond) {
@@ -132,10 +133,10 @@ test("MCP lists tools with annotations and an input schema", async (t) => {
   const options = await bridge(t, () => {});
   const client = await mcpClient(t, options.port);
   const { tools } = await client.listTools();
-  assert.deepEqual(tools.map((tool) => tool.name).sort(), ["get_document_info", "ping_revit"]);
+  assert.deepEqual(tools.map((tool) => tool.name).sort(), allTools.map((tool) => tool.name).sort());
   for (const tool of tools) {
-    assert.equal(tool.annotations.readOnlyHint, true, tool.name);
-    assert.equal(tool.annotations.destructiveHint, false, tool.name);
+    assert.equal(typeof tool.annotations.readOnlyHint, "boolean", tool.name);
+    assert.equal(typeof tool.annotations.destructiveHint, "boolean", tool.name);
     assert.equal(tool.inputSchema.type, "object", tool.name);
   }
   const ping = tools.find((tool) => tool.name === "ping_revit");
@@ -170,5 +171,41 @@ test("MCP rejects invalid arguments before contacting Revit", async (t) => {
   const client = await mcpClient(t, options.port);
   const result = await client.callTool({ name: "ping_revit", arguments: { message: "x".repeat(201) } });
   assert.equal(result.isError, true);
+  assert.equal(contacted, false);
+});
+
+test("get_elements forwards filters and paging unchanged", async (t) => {
+  let received;
+  const page = { total: 120, offset: 50, limit: 50, returned: 50, hasMore: true, nextOffset: 100, items: [] };
+  const options = await bridge(t, (socket, request) => {
+    received = request;
+    socket.end(JSON.stringify({ jsonrpc: "2.0", id: request.id, result: page }) + "\n");
+  });
+  const client = await mcpClient(t, options.port);
+  const args = { categories: ["OST_Walls", "Doors"], levelId: "311", nameContains: "Tường", limit: 50, offset: 50 };
+  const result = await client.callTool({ name: "get_elements", arguments: args });
+  assert.equal(result.isError, false);
+  assert.deepEqual(JSON.parse(result.content[0].text), page);
+  assert.equal(received.method, "get_elements");
+  assert.deepEqual(received.params, args);
+  assert.equal(received.timeoutMs, 60000);
+});
+
+test("read tools reject out-of-range paging and malformed element IDs", async (t) => {
+  let contacted = false;
+  const options = await bridge(t, (socket) => { contacted = true; socket.destroy(); });
+  const client = await mcpClient(t, options.port);
+  const invalidCalls = [
+    { name: "get_elements", arguments: { limit: 501 } },
+    { name: "get_elements", arguments: { offset: -1 } },
+    { name: "get_elements", arguments: { levelId: "Level 1" } },
+    { name: "get_element_parameters", arguments: { elementIds: [] } },
+    { name: "get_element_parameters", arguments: { elementIds: Array.from({ length: 51 }, (_, i) => String(i)) } },
+    { name: "get_element_parameters", arguments: { elementIds: [12345] } },
+  ];
+  for (const call of invalidCalls) {
+    const result = await client.callTool(call);
+    assert.equal(result.isError, true, JSON.stringify(call));
+  }
   assert.equal(contacted, false);
 });

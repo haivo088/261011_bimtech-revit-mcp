@@ -1,5 +1,6 @@
 using Bimtech.RevitMcp.Commands.Diagnostics;
 using Bimtech.RevitMcp.Commands.Documents;
+using Bimtech.RevitMcp.Commands.Elements;
 
 namespace Bimtech.RevitMcp.Commands;
 
@@ -26,6 +27,11 @@ public sealed class CommandRegistry
     [
         new PingCommand(),
         new GetDocumentInfoCommand(),
+        new GetLevelsCommand(),
+        new ListCategoriesCommand(),
+        new GetElementsCommand(),
+        new GetSelectedElementsCommand(),
+        new GetElementParametersCommand(),
     ]);
 
     public IReadOnlyCollection<string> Methods => _commands.Keys;

@@ -13,6 +13,7 @@ public static class RpcErrorCodes
     public const int EventDenied = -32002;
     public const int Timeout = -32003;
     public const int BridgeStopped = -32004;
+    public const int ResponseTooLarge = -32005;
     public const int RevitApiError = -32010;
 }
 

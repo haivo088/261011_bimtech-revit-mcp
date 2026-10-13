@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { defineTool } from "./define.js";
+import { defineTool, readOnly } from "./define.js";
 
 export const pingRevit = defineTool({
   name: "ping_revit",
@@ -11,6 +11,6 @@ export const pingRevit = defineTool({
   inputSchema: {
     message: z.string().max(200).optional().describe("Text the add-in returns unchanged."),
   },
-  annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+  annotations: readOnly,
   timeoutMs: 5000,
 });

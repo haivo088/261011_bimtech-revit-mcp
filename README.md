@@ -2,10 +2,17 @@
 
 Đây là dự án mới để học và tự phát triển kết nối **Claude Desktop ↔ Revit 2025**. Mã ứng dụng được viết mới trong thư mục này. Repository GitHub ở thư mục cha chỉ dùng tham khảo; dự án này không import mã hoặc DLL của repository đó.
 
-Bản đầu tiên có hai công cụ đọc dữ liệu:
+Các công cụ hiện có (đều chỉ đọc dữ liệu):
 
 - `ping_revit`: kiểm tra cầu nối, phiên bản Revit và danh sách command; tham số `message` được trả lại để kiểm tra đường truyền tham số.
 - `get_document_info`: đọc tên, đường dẫn, loại mô hình và view đang mở.
+- `get_levels`: danh sách level và cao độ (mm).
+- `list_categories`: số phần tử theo category, dùng để biết giá trị lọc hợp lệ.
+- `get_elements`: tìm phần tử theo category, view, level, tên; có phân trang.
+- `get_selected_elements`: các phần tử đang chọn trong Revit; có phân trang.
+- `get_element_parameters`: parameter của tối đa 50 phần tử, lọc theo tên parameter, đơn vị cố định.
+
+Quy ước chung: ID phần tử là chuỗi; danh sách trả `total`, `hasMore`, `nextOffset`; chiều dài mm, diện tích m², thể tích m³, góc độ.
 
 ## Bắt đầu đọc từ đâu?
 
@@ -33,8 +40,10 @@ bimtech-revit-mcp/
 │   │   └── tools/
 │   │       ├── define.ts           # Kiểu RevitTool và cách đăng ký với MCP
 │   │       ├── index.ts            # Danh sách allTools
+│   │       ├── schemas.ts          # Schema dùng chung: ID, phân trang, bộ lọc
 │   │       ├── diagnostics.ts      # ping_revit
-│   │       └── document.ts         # get_document_info
+│   │       ├── document.ts         # get_document_info, get_levels, list_categories
+│   │       └── elements.ts         # get_elements, get_selected_elements, get_element_parameters
 │   └── tests/
 │       ├── connection.test.mjs     # Kiểm thử với cầu nối giả lập
 │       └── contract.test.mjs       # Method server khớp command add-in
@@ -53,8 +62,10 @@ bimtech-revit-mcp/
 │       ├── CommandContext.cs       # Document, params, cancellation
 │       ├── CommandParams.cs        # Đọc và kiểm tra tham số
 │       ├── RevitJson.cs            # Chuyển đổi Revit → JSON
-│       ├── Diagnostics/PingCommand.cs
-│       └── Documents/GetDocumentInfoCommand.cs
+│       ├── Common/                 # Dùng chung: phân trang, bộ lọc, đơn vị, parameter
+│       ├── Diagnostics/            # ping
+│       ├── Documents/              # get_document_info, get_levels, list_categories
+│       └── Elements/               # get_elements, get_selected_elements, get_element_parameters
 ├── config/claude-desktop.example.json
 └── docs/
     ├── 01-folder-map.md
@@ -119,13 +130,13 @@ Cổng mặc định của dự án mới là `8081`. Cổng này được khai 
 
 - Build TypeScript thành công.
 - Build add-in Revit 2025 thành công. Có hai cảnh báo `MSB3277` về phiên bản dependency Microsoft.VisualBasic và WindowsBase do tham chiếu DLL cài trên máy; chưa xác minh ảnh hưởng trong Revit thật.
-- 13 kiểm thử thành công: dữ liệu lớn/Unicode chia gói, lỗi JSON-RPC kèm `data`, sai ID, ngắt kết nối, timeout và thời gian chờ thêm, truyền `params`/`timeoutMs`, schema và annotations MCP, từ chối tham số sai trước khi gọi Revit, và đối chiếu method giữa server và add-in.
+- 15 kiểm thử thành công: dữ liệu lớn/Unicode chia gói, lỗi JSON-RPC kèm `data`, sai ID, ngắt kết nối, timeout và thời gian chờ thêm, truyền `params`/`timeoutMs`, schema và annotations MCP, từ chối tham số sai trước khi gọi Revit, chuyển nguyên bộ lọc và phân trang của `get_elements`, từ chối `limit`/`offset`/ID sai, và đối chiếu method giữa server và add-in.
 - Chưa cài add-in mới, chưa đổi cấu hình Claude, chưa kiểm thử trên Revit thật.
-- Phần C# (`CommandParams`, registry, timeout trong bridge) mới được kiểm chứng bằng build, chưa có kiểm thử tự động vì cần Revit API.
+- Phần C# (`CommandParams`, registry, timeout, `Commands/Common`, 5 command đọc mới) mới được kiểm chứng bằng build, chưa có kiểm thử tự động vì cần Revit API.
 - Bộ giao tiếp nội bộ chỉ hỗ trợ một request/response mỗi kết nối và ID dạng chuỗi. Đây là nền tảng học tập, chưa phải bản triển khai đầy đủ MCP/Revit cho sản xuất.
 
 ## Mở rộng từng bước
 
-Đã có: tham số và timeout theo request, registry command. Tiếp theo: khung đọc dữ liệu (phân trang, lọc, đơn vị), rồi khung ghi (Transaction, dry-run, giới hạn số phần tử). Xem [03 — Thêm một công cụ mới](docs/03-add-a-tool.md) cho quy trình thêm từng công cụ.
+Đã có: tham số và timeout theo request, registry command, khung đọc dữ liệu (phân trang, lọc, đơn vị, giới hạn kích thước response). Tiếp theo: khung ghi (Transaction, dry-run, giới hạn số phần tử). Xem [03 — Thêm một công cụ mới](docs/03-add-a-tool.md) cho quy trình thêm từng công cụ.
 
 Nền tảng API được đối chiếu với tài liệu Autodesk: [Revit 2025 dùng .NET 8](https://help.autodesk.com/cloudhelp/2025/ENU/Revit-WhatsNew/files/GUID-50024FD2-16BE-40BE-96E6-550294D9537D.htm), [ExternalEvent.Raise](https://help.autodesk.com/cloudhelp/2026/ENU/Revit-API-MainReference/files/html/13bf4411-c400-dcd2-458c-7f09357d9ecb.htm).

@@ -90,6 +90,25 @@ dotnet build Bimtech.RevitMcp.sln -c Release
 | `Cancellation` | Gọi `ThrowIfCancellationRequested()` trong vòng lặp dài |
 | `RevitJson.Id(...)` | Trả ElementId dạng chuỗi |
 
+## Khung đọc dữ liệu dùng chung
+
+Công cụ trả danh sách nên dùng lại các phần sau thay vì tự viết:
+
+| Phía | Thành phần | Dùng để |
+| --- | --- | --- |
+| Server | `schemas.ts`: `paging`, `elementFilter`, `elementId` | Trải vào `inputSchema`: `{ ...elementFilter, ...paging }` |
+| Server | `pagingNote`, `unitsNote` | Nối vào `description` để Claude biết cách lật trang và đơn vị |
+| Add-in | `Common/Paging`: `PageRequest.From(params)`, `Paging.ToPage(...)` | Đọc `limit`/`offset`, trả `total`, `hasMore`, `nextOffset`, `items` |
+| Add-in | `Common/ElementQuery`: `ElementQuery.From(params).Apply(doc)` | Lọc category/view/level/tên, sắp theo ID |
+| Add-in | `Common/ElementInfo`: `new ElementInfo(doc).Summary(e)` | Mô tả ngắn một phần tử (tên type, level có cache) |
+| Add-in | `Common/ParameterInfo`: `Select`, `From` | Đọc parameter, đổi đơn vị, kèm `display` của Revit |
+| Add-in | `Common/UnitConvert` | Feet nội bộ → mm, m², m³, độ |
+| Add-in | `Common/CategoryNames.Resolve` | `"OST_Walls"`, `"Walls"` hoặc tên category → ElementId |
+
+Ví dụ một command danh sách hoàn chỉnh chỉ cần vài dòng; xem `Commands/Elements/GetElementsCommand.cs`.
+
+Không đặt tên class trùng kiểu Revit (`Units`, `Categories`, `ElementFilter`...) vì sẽ gây lỗi tham chiếu mơ hồ.
+
 ## Mã lỗi
 
 | Mã | Ý nghĩa |
@@ -101,6 +120,7 @@ dotnet build Bimtech.RevitMcp.sln -c Release
 | `-32002` | Revit từ chối ExternalEvent |
 | `-32003` | Hết thời gian chờ Revit |
 | `-32004` | Cầu nối đang dừng |
+| `-32005` | Kết quả lớn hơn 1 MiB; giảm `limit` hoặc lọc hẹp hơn |
 | `-32010` | Revit API ném lỗi; `data.type` là tên exception |
 
 Ném `RpcException` khi muốn Claude nhận một lỗi cụ thể. Các exception khác được handler chuyển thành `-32010` hoặc `-32603`.

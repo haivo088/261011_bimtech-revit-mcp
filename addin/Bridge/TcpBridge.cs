@@ -25,6 +25,8 @@ public sealed class TcpBridge : IDisposable
     internal const int MinTimeoutMs = 1000;
     internal const int MaxTimeoutMs = 120000;
     private const int MaxRequestChars = 256 * 1024;
+    // Matches the server's limit in server/src/revit-client.ts.
+    private const int MaxResponseBytes = 1024 * 1024;
 
     public TcpBridge(int port, RevitRequestHandler handler)
     {
@@ -108,7 +110,14 @@ public sealed class TcpBridge : IDisposable
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
             timeout.CancelAfter(timeoutMs);
             var result = await _handler.ExecuteAsync(request, timeout.Token);
-            return JsonSerializer.Serialize(new { jsonrpc = "2.0", id, result }, JsonOptions);
+            var response = JsonSerializer.Serialize(new { jsonrpc = "2.0", id, result }, JsonOptions);
+            var bytes = Encoding.UTF8.GetByteCount(response);
+            if (bytes > MaxResponseBytes)
+                throw new RpcException(RpcErrorCodes.ResponseTooLarge,
+                    $"The result is {bytes / 1024} KiB, above the {MaxResponseBytes / 1024} KiB limit. "
+                    + "Use a smaller limit, narrower filters, or parameterNames.",
+                    new { bytes, maxBytes = MaxResponseBytes });
+            return response;
         }
         catch (JsonException exception) { return Error(id, RpcErrorCodes.ParseError, exception.Message); }
         catch (RpcException exception) { return Error(id, exception.Code, exception.Message, exception.ErrorData); }

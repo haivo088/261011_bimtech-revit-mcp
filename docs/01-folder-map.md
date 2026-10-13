@@ -24,7 +24,8 @@ Mỗi công cụ có một file định nghĩa ở `server/src/tools/` và một
 | `src/config.ts` | Đọc host, port và timeout từ môi trường | Khi đổi thiết lập kết nối |
 | `src/tools/define.ts` | Kiểu `RevitTool`, `defineTool` và cách đăng ký công cụ với MCP | Khi đổi cách mọi công cụ chạy |
 | `src/tools/index.ts` | Danh sách `allTools` Claude nhìn thấy | Khi thêm công cụ |
-| `src/tools/diagnostics.ts`, `document.ts` | Định nghĩa từng công cụ: tên, mô tả, schema, annotations | Khi thêm hoặc sửa công cụ |
+| `src/tools/schemas.ts` | Schema dùng chung: ID phần tử, phân trang, bộ lọc | Khi thêm kiểu tham số dùng chung |
+| `src/tools/diagnostics.ts`, `document.ts`, `elements.ts` | Định nghĩa từng công cụ: tên, mô tả, schema, annotations | Khi thêm hoặc sửa công cụ |
 | `src/revit-client.ts` | Kết nối TCP, gửi method + params + timeout, ghép dữ liệu nhận được, báo lỗi | Khi thay giao thức kết nối |
 | `tests/connection.test.mjs` | Chạy một cầu nối TCP giả lập và kiểm tra MCP | Khi đổi hành vi giao tiếp |
 | `tests/contract.test.mjs` | So sánh method của server với command của add-in | Tự chạy cùng `npm test` |
@@ -47,7 +48,8 @@ Mỗi công cụ có một file định nghĩa ở `server/src/tools/` và một
 | `Commands/CommandContext.cs` | UIApplication, params, cancellation và hàm lấy Document | Khi command cần thêm tiện ích chung |
 | `Commands/CommandParams.cs` | Đọc và kiểm tra tham số theo kiểu | Khi cần kiểu tham số mới |
 | `Commands/RevitJson.cs` | Chuyển đối tượng Revit sang giá trị JSON | Khi cần chuyển đổi dùng chung |
-| `Commands/Diagnostics/`, `Commands/Documents/` | Mỗi command một file, nhóm theo chủ đề | Khi thêm hoặc sửa command |
+| `Commands/Common/` | Phân trang, bộ lọc phần tử, đơn vị, parameter, category dùng chung | Khi nhiều command cần cùng một tiện ích |
+| `Commands/Diagnostics/`, `Documents/`, `Elements/` | Mỗi command một file, nhóm theo chủ đề | Khi thêm hoặc sửa command |
 
 `bin/` chứa kết quả build; `obj/` chứa dữ liệu trung gian của trình biên dịch. Không viết mã nguồn vào các thư mục này.
 

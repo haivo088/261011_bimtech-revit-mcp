@@ -14,6 +14,9 @@ export interface RevitToolAnnotations {
   idempotentHint?: boolean;
 }
 
+// Annotations for tools that only read the model.
+export const readOnly: RevitToolAnnotations = { readOnlyHint: true, destructiveHint: false, idempotentHint: true };
+
 // One MCP tool backed by one add-in method.
 export interface RevitTool<S extends Shape = Shape> {
   name: string; // Public name Claude sees, e.g. "get_document_info".
