@@ -52,10 +52,18 @@ public static class ParameterInfo
             case StorageType.ElementId:
                 var id = parameter.AsElementId();
                 if (id == ElementId.InvalidElementId) return (null, null);
-                var target = document.GetElement(id);
-                return (new { id = RevitJson.Id(id), name = target is null ? null : ElementQuery.SafeName(target) }, null);
+                return (new { id = RevitJson.Id(id), name = NameOf(id, document) }, null);
             default:
                 return (null, null);
         }
+    }
+
+    // An ElementId value may point to an element or, for parameters such as "Category",
+    // to a category, which is not an element.
+    private static string? NameOf(ElementId id, Document document)
+    {
+        var target = document.GetElement(id);
+        if (target is not null) return ElementQuery.SafeName(target);
+        return Category.GetCategory(document, id)?.Name;
     }
 }

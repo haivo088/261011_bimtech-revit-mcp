@@ -7,7 +7,8 @@ export const getElements = defineTool({
   method: "get_elements",
   title: "Find elements",
   description:
-    "Find elements in the open model by category, view, level, or name, sorted by ID."
+    "Find elements in the open model by category, category type, view, level, or name, sorted by ID."
+    + " Use categoryType \"Model\" to skip annotations and internal elements."
     + " Each item has id, name, category, builtInCategory, typeName, and level."
     + " Use filters to narrow large models." + pagingNote,
   inputSchema: { ...elementFilter, ...paging },

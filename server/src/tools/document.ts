@@ -1,4 +1,5 @@
 import { defineTool, readOnly } from "./define.js";
+import { categoryType } from "./schemas.js";
 
 export const getDocumentInfo = defineTool({
   name: "get_document_info",
@@ -26,8 +27,9 @@ export const listCategories = defineTool({
   title: "List categories",
   description:
     "Count placed elements per category in the open model, most common first."
+    + " listed is false for internal categories hidden from Revit's Object Styles."
     + " Use builtInCategory values as the categories filter of get_elements.",
-  inputSchema: {},
+  inputSchema: { categoryType: categoryType.optional() },
   annotations: readOnly,
   timeoutMs: 60000,
 });

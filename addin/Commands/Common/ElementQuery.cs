@@ -5,6 +5,7 @@ namespace Bimtech.RevitMcp.Commands.Common;
 
 // Filter params shared by element queries:
 //   categories   ["Walls", "OST_Doors", ...]  built-in names (with or without OST_) or category names
+//   categoryType "Model", "Annotation" or "AnalyticalModel"; skips internal categories
 //   viewId       only elements visible in this view
 //   levelId      only elements on this level
 //   nameContains case-insensitive match on the element name
@@ -13,6 +14,7 @@ namespace Bimtech.RevitMcp.Commands.Common;
 public sealed class ElementQuery
 {
     private IReadOnlyList<string> _categories = [];
+    private CategoryType? _categoryType;
     private ElementId? _viewId;
     private ElementId? _levelId;
     private string? _nameContains;
@@ -21,6 +23,7 @@ public sealed class ElementQuery
     public static ElementQuery From(CommandParams parameters) => new()
     {
         _categories = parameters.GetStringList("categories", maxCount: 50, maxLength: 100),
+        _categoryType = CategoryNames.ReadCategoryType(parameters),
         _viewId = parameters.Has("viewId") ? parameters.RequireElementId("viewId") : null,
         _levelId = parameters.Has("levelId") ? parameters.RequireElementId("levelId") : null,
         _nameContains = parameters.GetString("nameContains", maxLength: 200),
@@ -40,6 +43,13 @@ public sealed class ElementQuery
         if (_categories.Count > 0)
             collector.WherePasses(new ElementMulticategoryFilter(
                 _categories.Select((name, index) => CategoryNames.Resolve(document, name, $"categories[{index}]")).ToList()));
+
+        if (_categoryType is { } type)
+        {
+            var ids = CategoryNames.IdsOfType(document, type);
+            if (ids.Count == 0) return [];
+            collector.WherePasses(new ElementMulticategoryFilter(ids));
+        }
 
         if (_levelId is not null)
         {

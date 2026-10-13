@@ -15,9 +15,13 @@ export const paging = {
     .describe("Items to skip. Pass nextOffset from the previous page to continue."),
 };
 
+export const categoryType = z.enum(["Model", "Annotation", "AnalyticalModel"])
+  .describe("Only categories of this kind, e.g. \"Model\" for physical elements. Skips internal categories such as Material Assets.");
+
 export const elementFilter = {
   categories: z.array(z.string().min(1).max(100)).max(50).optional()
     .describe("Built-in category names such as \"OST_Walls\" or \"Doors\". Call list_categories to see what the model contains."),
+  categoryType: categoryType.optional(),
   viewId: elementId.optional().describe("Only elements visible in this view."),
   levelId: elementId.optional().describe("Only elements on this level. Call get_levels for IDs."),
   nameContains: z.string().min(1).max(200).optional()
@@ -32,5 +36,6 @@ export const pagingNote =
 
 // Appended to descriptions of tools that return measured values.
 export const unitsNote =
-  " Values use fixed units regardless of project settings: lengths mm, areas m2, volumes m3, angles degrees;"
-  + " 'display' shows Revit's formatted text.";
+  " Values use fixed SI units regardless of project settings, named in each 'unit' field"
+  + " (mm, m2, m3, deg, kg, kg/m3, kN, kN/m, kN/m2, kNm, kN/m3, MPa)."
+  + " When 'unit' is null the value is in Revit's internal unit; use 'display' instead.";

@@ -2,26 +2,47 @@ using Autodesk.Revit.DB;
 
 namespace Bimtech.RevitMcp.Commands.Common;
 
-// Revit stores lengths in feet internally. Every command reports fixed units instead,
-// independent of the project's display settings: mm, m², m³, degrees.
+// Revit stores values in internal units (feet, pounds-force...). Every command reports
+// fixed SI units instead, independent of the project's display settings.
 public static class UnitConvert
 {
     public const string Millimeters = "mm";
-    public const string SquareMeters = "m2";
-    public const string CubicMeters = "m3";
-    public const string Degrees = "deg";
+
+    // Spec → output unit. To support another spec, add one line.
+    private static readonly (ForgeTypeId Spec, ForgeTypeId Unit, string Label)[] Table =
+    [
+        (SpecTypeId.Length, UnitTypeId.Millimeters, "mm"),
+        (SpecTypeId.Area, UnitTypeId.SquareMeters, "m2"),
+        (SpecTypeId.Volume, UnitTypeId.CubicMeters, "m3"),
+        (SpecTypeId.Angle, UnitTypeId.Degrees, "deg"),
+        (SpecTypeId.SectionDimension, UnitTypeId.Millimeters, "mm"),
+        (SpecTypeId.BarDiameter, UnitTypeId.Millimeters, "mm"),
+        (SpecTypeId.ReinforcementLength, UnitTypeId.Millimeters, "mm"),
+        (SpecTypeId.ReinforcementSpacing, UnitTypeId.Millimeters, "mm"),
+        (SpecTypeId.ReinforcementCover, UnitTypeId.Millimeters, "mm"),
+        (SpecTypeId.ReinforcementArea, UnitTypeId.SquareMillimeters, "mm2"),
+        (SpecTypeId.Mass, UnitTypeId.Kilograms, "kg"),
+        (SpecTypeId.MassDensity, UnitTypeId.KilogramsPerCubicMeter, "kg/m3"),
+        (SpecTypeId.UnitWeight, UnitTypeId.KilonewtonsPerCubicMeter, "kN/m3"),
+        (SpecTypeId.Stress, UnitTypeId.Megapascals, "MPa"),
+        (SpecTypeId.Force, UnitTypeId.Kilonewtons, "kN"),
+        (SpecTypeId.LinearForce, UnitTypeId.KilonewtonsPerMeter, "kN/m"),
+        (SpecTypeId.AreaForce, UnitTypeId.KilonewtonsPerSquareMeter, "kN/m2"),
+        (SpecTypeId.Moment, UnitTypeId.KilonewtonMeters, "kNm"),
+    ];
 
     public static double Length(double internalFeet) => Convert(internalFeet, UnitTypeId.Millimeters);
 
     public static object Point(XYZ point) => new { x = Length(point.X), y = Length(point.Y), z = Length(point.Z) };
 
-    // Returns null for unit when the spec has no fixed output unit; value then stays in Revit's internal unit.
+    // Returns null for unit when the spec has no entry; value then stays in Revit's internal unit
+    // and callers should rely on the parameter's display text.
     public static (double Value, string? Unit) FromInternal(double value, ForgeTypeId spec)
     {
-        if (spec.Equals(SpecTypeId.Length)) return (Convert(value, UnitTypeId.Millimeters), Millimeters);
-        if (spec.Equals(SpecTypeId.Area)) return (Convert(value, UnitTypeId.SquareMeters), SquareMeters);
-        if (spec.Equals(SpecTypeId.Volume)) return (Convert(value, UnitTypeId.CubicMeters), CubicMeters);
-        if (spec.Equals(SpecTypeId.Angle)) return (Convert(value, UnitTypeId.Degrees), Degrees);
+        foreach (var (tableSpec, unit, label) in Table)
+        {
+            if (spec.Equals(tableSpec)) return (Convert(value, unit), label);
+        }
         return (Math.Round(value, 6), null);
     }
 
