@@ -1,6 +1,7 @@
 using Bimtech.RevitMcp.Commands.Diagnostics;
 using Bimtech.RevitMcp.Commands.Documents;
 using Bimtech.RevitMcp.Commands.Elements;
+using Bimtech.RevitMcp.Commands.Structural;
 
 namespace Bimtech.RevitMcp.Commands;
 
@@ -32,6 +33,11 @@ public sealed class CommandRegistry
         new GetElementsCommand(),
         new GetSelectedElementsCommand(),
         new GetElementParametersCommand(),
+        new ListCadSourcesCommand(),
+        new ScanCadColumnsCommand(),
+        new LoadDefaultColumnFamilyCommand(),
+        new PlaceColumnsCommand(),
+        new UndoBatchCommand(),
     ]);
 
     public IReadOnlyCollection<string> Methods => _commands.Keys;

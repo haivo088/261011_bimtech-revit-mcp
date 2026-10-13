@@ -11,7 +11,7 @@ namespace Bimtech.RevitMcp;
 public class App : IExternalApplication
 {
     internal const int BridgePort = 8081;
-    internal const string Version = "0.2.0";
+    internal const string Version = "0.3.0";
     internal static TcpBridge? Bridge { get; set; }
 
     public Result OnStartup(UIControlledApplication application)

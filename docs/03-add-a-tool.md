@@ -99,10 +99,10 @@ Công cụ trả danh sách nên dùng lại các phần sau thay vì tự viế
 | Server | `schemas.ts`: `paging`, `elementFilter`, `elementId` | Trải vào `inputSchema`: `{ ...elementFilter, ...paging }` |
 | Server | `pagingNote`, `unitsNote` | Nối vào `description` để Claude biết cách lật trang và đơn vị |
 | Add-in | `Common/Paging`: `PageRequest.From(params)`, `Paging.ToPage(...)` | Đọc `limit`/`offset`, trả `total`, `hasMore`, `nextOffset`, `items` |
-| Add-in | `Common/ElementQuery`: `ElementQuery.From(params).Apply(doc)` | Lọc category/view/level/tên, sắp theo ID |
+| Add-in | `Common/ElementQuery`: `ElementQuery.From(params).Apply(doc)` | Lọc category/loại category/view/level/tên, sắp theo ID |
 | Add-in | `Common/ElementInfo`: `new ElementInfo(doc).Summary(e)` | Mô tả ngắn một phần tử (tên type, level có cache) |
 | Add-in | `Common/ParameterInfo`: `Select`, `From` | Đọc parameter, đổi đơn vị, kèm `display` của Revit |
-| Add-in | `Common/UnitConvert` | Feet nội bộ → mm, m², m³, độ |
+| Add-in | `Common/UnitConvert` | Đơn vị nội bộ → SI cố định; thêm spec mới bằng một dòng trong bảng `Table` |
 | Add-in | `Common/CategoryNames.Resolve` | `"OST_Walls"`, `"Walls"` hoặc tên category → ElementId |
 
 Ví dụ một command danh sách hoàn chỉnh chỉ cần vài dòng; xem `Commands/Elements/GetElementsCommand.cs`.
@@ -121,6 +121,10 @@ Không đặt tên class trùng kiểu Revit (`Units`, `Categories`, `ElementFil
 | `-32003` | Hết thời gian chờ Revit |
 | `-32004` | Cầu nối đang dừng |
 | `-32005` | Kết quả lớn hơn 1 MiB; giảm `limit` hoặc lọc hẹp hơn |
+| `-32006` | Model không ghi được (family, chỉ đọc, đang trong transaction khác) |
+| `-32007` | `scanId`/`batchId` không còn (đã dùng, hết hạn, bridge khởi động lại, hoặc thuộc model khác) |
 | `-32010` | Revit API ném lỗi; `data.type` là tên exception |
+
+Công cụ **sửa model** dùng thêm khung ghi; xem mục "An toàn khi ghi" trong [04 — Dựng model kết cấu từ CAD](04-cad-to-structure.md) và mẫu `addin/Commands/Structural/PlaceColumnsCommand.cs`: `context.RequireWritableDocument()`, `dryRun` mặc định `true`, `FailureGuard` + `TransactionGroup`, lưu `WriteBatch` để `undo_batch` gỡ được.
 
 Ném `RpcException` khi muốn Claude nhận một lỗi cụ thể. Các exception khác được handler chuyển thành `-32010` hoặc `-32603`.

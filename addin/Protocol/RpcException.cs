@@ -14,6 +14,8 @@ public static class RpcErrorCodes
     public const int Timeout = -32003;
     public const int BridgeStopped = -32004;
     public const int ResponseTooLarge = -32005;
+    public const int NotWritable = -32006;
+    public const int SessionExpired = -32007;
     public const int RevitApiError = -32010;
 }
 

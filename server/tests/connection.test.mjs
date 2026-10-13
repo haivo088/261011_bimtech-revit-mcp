@@ -1,40 +1,9 @@
 import assert from "node:assert/strict";
-import { createServer } from "node:net";
-import { once } from "node:events";
 import { setTimeout as pause } from "node:timers/promises";
-import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { callRevit } from "../build/revit-client.js";
 import { allTools } from "../build/tools/index.js";
-
-// A small TCP stand-in verifies transport behavior without opening Revit.
-async function bridge(t, respond) {
-  const sockets = new Set();
-  const server = createServer((socket) => {
-    sockets.add(socket);
-    socket.on("close", () => sockets.delete(socket));
-    socket.on("error", () => {});
-    socket.setEncoding("utf8");
-    let buffer = "";
-    socket.on("data", (chunk) => {
-      buffer += chunk;
-      const newline = buffer.indexOf("\n");
-      if (newline < 0) return;
-      const request = JSON.parse(buffer.slice(0, newline));
-      socket.removeAllListeners("data");
-      Promise.resolve(respond(socket, request)).catch(() => socket.destroy());
-    });
-  });
-  server.listen(0, "127.0.0.1");
-  await once(server, "listening");
-  t.after(() => new Promise((resolve) => {
-    for (const socket of sockets) socket.destroy();
-    server.close(resolve);
-  }));
-  return { host: "127.0.0.1", port: server.address().port, timeoutMs: 2000, graceMs: 0 };
-}
+import { bridge, mcpClient } from "./helpers.mjs";
 
 test("reads a large response split inside a Vietnamese UTF-8 character", async (t) => {
   const expected = { title: "Dự án hạ tầng", content: "Việt Nam ".repeat(3000) };
@@ -110,25 +79,6 @@ test("keeps the error code and details reported by the add-in", async (t) => {
   });
 });
 
-// Starts the built MCP server as Claude would and points it at the fake bridge.
-async function mcpClient(t, port) {
-  const transport = new StdioClientTransport({
-    command: process.execPath,
-    args: [fileURLToPath(new URL("../build/index.js", import.meta.url))],
-    env: { ...process.env, REVIT_MCP_PORT: String(port) },
-    stderr: "pipe",
-  });
-  // Show server diagnostics in the test log; stdout stays reserved for MCP.
-  transport.stderr?.on("data", (chunk) => t.diagnostic(String(chunk).trim()));
-  const client = new Client({ name: "bimtech-test-client", version: "0.2.0" });
-  await client.connect(transport);
-  t.after(async () => {
-    await client.close();
-    await transport.close();
-  });
-  return client;
-}
-
 test("MCP lists tools with annotations and an input schema", async (t) => {
   const options = await bridge(t, () => {});
   const client = await mcpClient(t, options.port);
@@ -182,7 +132,7 @@ test("get_elements forwards filters and paging unchanged", async (t) => {
     socket.end(JSON.stringify({ jsonrpc: "2.0", id: request.id, result: page }) + "\n");
   });
   const client = await mcpClient(t, options.port);
-  const args = { categories: ["OST_Walls", "Doors"], levelId: "311", nameContains: "Tường", limit: 50, offset: 50 };
+  const args = { categories: ["OST_Walls", "Doors"], categoryType: "Model", levelId: "311", nameContains: "Tường", limit: 50, offset: 50 };
   const result = await client.callTool({ name: "get_elements", arguments: args });
   assert.equal(result.isError, false);
   assert.deepEqual(JSON.parse(result.content[0].text), page);
@@ -199,6 +149,8 @@ test("read tools reject out-of-range paging and malformed element IDs", async (t
     { name: "get_elements", arguments: { limit: 501 } },
     { name: "get_elements", arguments: { offset: -1 } },
     { name: "get_elements", arguments: { levelId: "Level 1" } },
+    { name: "get_elements", arguments: { categoryType: "Internal" } },
+    { name: "list_categories", arguments: { categoryType: "model" } },
     { name: "get_element_parameters", arguments: { elementIds: [] } },
     { name: "get_element_parameters", arguments: { elementIds: Array.from({ length: 51 }, (_, i) => String(i)) } },
     { name: "get_element_parameters", arguments: { elementIds: [12345] } },

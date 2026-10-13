@@ -16,6 +16,7 @@ public sealed class RevitRequestHandler : IExternalEventHandler, IDisposable
     private readonly ConcurrentQueue<Job> _jobs = new();
     private readonly object _eventLock = new();
     private readonly CommandRegistry _registry;
+    private readonly SessionStore _sessions = new();
     private readonly ExternalEvent _externalEvent;
     private bool _disposed;
 
@@ -66,7 +67,7 @@ public sealed class RevitRequestHandler : IExternalEventHandler, IDisposable
             if (job.Completion.Task.IsCompleted) continue;
             try
             {
-                var context = new CommandContext(application, job.Params, _registry, job.Cancellation);
+                var context = new CommandContext(application, job.Params, _registry, _sessions, job.Cancellation);
                 job.Completion.TrySetResult(job.Command.Execute(context));
             }
             catch (OperationCanceledException) { job.Completion.TrySetCanceled(job.Cancellation); }
