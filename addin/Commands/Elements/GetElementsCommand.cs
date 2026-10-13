@@ -6,6 +6,7 @@ namespace Bimtech.RevitMcp.Commands.Elements;
 public sealed class GetElementsCommand : IRevitCommand
 {
     public string Method => "get_elements";
+    public CommandAccess Access => CommandAccess.Read;
 
     public object? Execute(CommandContext context)
     {

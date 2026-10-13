@@ -47,6 +47,7 @@ namespace Bimtech.RevitMcp.Commands.Elements;
 public sealed class GetElementCommand : IRevitCommand
 {
     public string Method => "get_element";
+    public CommandAccess Access => CommandAccess.Read;
 
     public object? Execute(CommandContext context)
     {
@@ -65,6 +66,8 @@ public sealed class GetElementCommand : IRevitCommand
 ```
 
 Thêm `new GetElementCommand()` vào `CommandRegistry.CreateDefault()`.
+
+`Access` là bắt buộc (`Read`, `Write` hoặc `Delete`) và phải khớp `annotations` phía server; chế độ chỉ đọc trong Settings dựa vào nó để chặn lệnh ghi. Lệnh mới tự xuất hiện trong cửa sổ Settings, nhóm theo thư mục chứa nó.
 
 Không đặt namespace là `Commands.Document` hoặc tên trùng kiểu Revit khác: namespace sẽ che kiểu `Autodesk.Revit.DB.Document`.
 
@@ -123,6 +126,7 @@ Không đặt tên class trùng kiểu Revit (`Units`, `Categories`, `ElementFil
 | `-32005` | Kết quả lớn hơn 1 MiB; giảm `limit` hoặc lọc hẹp hơn |
 | `-32006` | Model không ghi được (family, chỉ đọc, đang trong transaction khác) |
 | `-32007` | `scanId`/`batchId` không còn (đã dùng, hết hạn, bridge khởi động lại, hoặc thuộc model khác) |
+| `-32008` | Lệnh bị tắt trong Settings, hoặc sẽ sửa model khi đang ở chế độ chỉ đọc (`data.reason`) |
 | `-32010` | Revit API ném lỗi; `data.type` là tên exception |
 
 Công cụ **sửa model** dùng thêm khung ghi; xem mục "An toàn khi ghi" trong [04 — Dựng model kết cấu từ CAD](04-cad-to-structure.md) và mẫu `addin/Commands/Structural/PlaceColumnsCommand.cs`: `context.RequireWritableDocument()`, `dryRun` mặc định `true`, `FailureGuard` + `TransactionGroup`, lưu `WriteBatch` để `undo_batch` gỡ được.

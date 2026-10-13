@@ -15,9 +15,11 @@ Công cụ đọc dữ liệu:
 Công cụ dựng model kết cấu từ CAD (xem [04 — Dựng model kết cấu từ CAD](docs/04-cad-to-structure.md)):
 
 - `list_cad_sources`: các file CAD import/link trong model.
-- `scan_cad_columns`: đọc đường bao cột theo layer, gom nhóm kích thước, gợi ý Type; trả `scanId`.
-- `load_default_column_family`: nạp family cột bê tông chuẩn `BTC-CotCN_BeTong` khi model chưa có.
-- `place_columns`: đặt cột từ `scanId`; mặc định chỉ xem trước (`dryRun`), chạy thật trả `batchId`.
+- `load_default_family`: nạp family chuẩn công ty (`kind`: column, beam, pile); với cọc còn tạo Type đài/lót mặc định.
+- `scan_cad_columns` / `place_columns`: cột theo đường bao chữ nhật.
+- `scan_cad_beams` / `place_beams`: dầm theo cặp line song song, tên và kích thước đọc từ Text Note.
+- `scan_cad_piles` / `place_piles`: cọc tròn + đài móng, kèm lớp lót, bắt tròn theo lưới và join cọc với đài.
+- Mọi `place_*` mặc định chỉ xem trước (`dryRun`); chạy thật trả `batchId`.
 - `undo_batch`: xóa đúng những gì một lần ghi đã tạo.
 
 Phần thuật toán CAD nằm trong lõi dùng chung ở repo `RevitAddinManager` (`Tools/_Shared/StructuralCore/`); repo đó phải nằm cạnh repo này khi build.
@@ -47,6 +49,7 @@ bimtech-revit-mcp/
 │   │   ├── index.ts                # Khởi động MCP
 │   │   ├── config.ts               # Host, port, timeout
 │   │   ├── revit-client.ts         # Gửi method + params + timeout qua TCP
+│   │   ├── availability.ts         # Ẩn tool bị tắt trong Settings của Revit
 │   │   └── tools/
 │   │       ├── define.ts           # Kiểu RevitTool và cách đăng ký với MCP
 │   │       ├── index.ts            # Danh sách allTools
@@ -61,7 +64,8 @@ bimtech-revit-mcp/
 ├── addin/                          # Thư viện C# được Revit nạp
 │   ├── Bimtech.RevitMcp.Addin.csproj
 │   ├── Bimtech.RevitMcp.addin       # Manifest đăng ký với Revit
-│   ├── App.cs                      # Ribbon, mở/đóng cầu nối
+│   ├── App.cs                      # Ribbon (MCP Bridge, Settings), mở/đóng cầu nối
+│   ├── Settings/                   # settings.json, CommandPolicy, cửa sổ Settings (WPF)
 │   ├── Bridge/TcpBridge.cs         # Nhận kết nối TCP
 │   ├── Protocol/
 │   │   ├── RpcRequest.cs           # Cấu trúc request
@@ -83,7 +87,8 @@ bimtech-revit-mcp/
     ├── 01-folder-map.md
     ├── 02-request-flow.md
     ├── 03-add-a-tool.md
-    └── 04-cad-to-structure.md
+    ├── 04-cad-to-structure.md
+    └── 05-settings.md
 ```
 
 ## Build
@@ -125,7 +130,7 @@ Build không tự cài hoặc thay add-in trên máy.
 
 Revit cung cấp các DLL API của chính nó khi chạy, nên không chép `RevitAPI.dll` hoặc `RevitAPIUI.dll` vào thư mục add-in.
 
-Mở Revit, mở một mô hình thử nghiệm, vào **Add-Ins → BIMTECH MCP → Start / Stop MCP Bridge**. Khi thông báo cổng `8081` xuất hiện, đóng hộp thoại đó để Revit tiếp tục xử lý các lệnh.
+Mở Revit, mở một mô hình thử nghiệm, vào **Add-Ins → BIMTECH MCP → MCP Bridge**. Nhãn nút đổi thành "Đang chạy" khi cầu nối đã mở. Nút **Settings** bật chế độ chỉ đọc, tắt từng lệnh, đổi cổng, hoặc cho cầu nối tự bật khi mở Revit; xem [05 — Cài đặt và quản lý lệnh](docs/05-settings.md).
 
 ## Kết nối Claude Desktop
 
@@ -137,7 +142,7 @@ Khởi động lại Claude Desktop rồi thử:
 
 > Dùng get_document_info để đọc thông tin mô hình đang mở.
 
-Cổng mặc định của dự án mới là `8081`. Cổng này được khai báo ở `addin/App.cs` và `server/src/config.ts`. Nếu đổi cổng, cập nhật cả hai phía. Biến môi trường `REVIT_MCP_HOST`, `REVIT_MCP_PORT`, `REVIT_MCP_TIMEOUT_MS` điều khiển phía server.
+Cổng mặc định là `8081`, đổi trong cửa sổ Settings của Revit. Server đọc cùng file `%APPDATA%\BIMTECH\RevitMcp\settings.json` nên không cần sửa ở nơi khác; khởi động lại Claude Desktop sau khi đổi cổng. Biến môi trường phía server được liệt kê trong [docs/05](docs/05-settings.md).
 
 ## Đã kiểm chứng và giới hạn
 

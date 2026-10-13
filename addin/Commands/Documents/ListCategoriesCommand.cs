@@ -8,6 +8,7 @@ namespace Bimtech.RevitMcp.Commands.Documents;
 public sealed class ListCategoriesCommand : IRevitCommand
 {
     public string Method => "list_categories";
+    public CommandAccess Access => CommandAccess.Read;
 
     public object? Execute(CommandContext context)
     {

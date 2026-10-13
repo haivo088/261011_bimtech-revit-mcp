@@ -21,6 +21,7 @@ public sealed class ScanCadColumnsCommand : IRevitCommand
     private const int MaxLayersReturned = 200;
 
     public string Method => "scan_cad_columns";
+    public CommandAccess Access => CommandAccess.Read;
 
     public object? Execute(CommandContext context)
     {
@@ -94,8 +95,8 @@ public sealed class ScanCadColumnsCommand : IRevitCommand
             next = hasSizedTypes
                 ? "Review the groups. Then call place_columns with this scanId, base/top levels, and dryRun=true. "
                   + "Groups without exactType need a type in 'types' or a templateFamilyId to create one."
-                : "The model has no column type with b/h parameters. Ask the user, then call load_default_column_family "
-                  + "and use its familyId as templateFamilyId in place_columns.",
+                : "The model has no column type with b/h parameters. Ask the user, then call load_default_family "
+                  + "with kind=column and use its familyId as templateFamilyId in place_columns.",
         };
     }
 }

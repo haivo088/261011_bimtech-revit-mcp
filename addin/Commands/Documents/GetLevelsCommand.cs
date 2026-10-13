@@ -6,6 +6,7 @@ namespace Bimtech.RevitMcp.Commands.Documents;
 public sealed class GetLevelsCommand : IRevitCommand
 {
     public string Method => "get_levels";
+    public CommandAccess Access => CommandAccess.Read;
 
     public object? Execute(CommandContext context)
     {

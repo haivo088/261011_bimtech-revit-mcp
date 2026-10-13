@@ -1,8 +1,12 @@
+using System.Globalization;
 using Autodesk.Revit.DB;
 using Bimtech.RevitMcp.Commands.Common;
 using Bimtech.RevitMcp.Protocol;
 using Bimtech.StructuralCore.Cad;
+using Bimtech.StructuralCore;
+using Bimtech.StructuralCore.Beams;
 using Bimtech.StructuralCore.Columns;
+using Bimtech.StructuralCore.Piles;
 
 namespace Bimtech.RevitMcp.Commands.Structural;
 
@@ -27,6 +31,60 @@ internal static class StructuralJson
         bMm = Round(ColumnTypeMatcher.ReadLengthMm(symbol, ColumnTypeMatcher.ColumnBParam)),
         hMm = Round(ColumnTypeMatcher.ReadLengthMm(symbol, ColumnTypeMatcher.ColumnHParam)),
     };
+
+    public const string UndoHint = "Call undo_batch with this batchId, or press Ctrl+Z once in Revit.";
+
+    // A type ID from a "types" map entry, checked to belong to the expected category.
+    public static FamilySymbol RequireType(Document document, string idText, string param, BuiltInCategory category, string scanTool)
+    {
+        if (!long.TryParse(idText, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var id))
+            throw RpcException.InvalidParams(param, "expected a type ID such as \"12345\".");
+        if (document.GetElement(new ElementId(id)) is FamilySymbol symbol && symbol.Category?.BuiltInCategory == category)
+            return symbol;
+        throw RpcException.InvalidParams(param, $"is not a type of the right category. Use exactType/nearestType IDs from {scanTool}.");
+    }
+
+    public static Family RequireFamily(Document document, ElementId id, BuiltInCategory category) =>
+        document.GetElement(id) is Family family && family.FamilyCategory?.BuiltInCategory == category
+            ? family
+            : throw RpcException.InvalidParams("templateFamilyId",
+                "is not a family of the right category. Use the familyId of a type from the scan, or load_default_family.");
+
+    public static object BeamType(FamilySymbol symbol) => new
+    {
+        id = RevitJson.Id(symbol.Id),
+        name = symbol.Name,
+        family = symbol.FamilyName,
+        familyId = RevitJson.Id(symbol.Family.Id),
+        bMm = Round(SymbolParameters.ReadLengthMm(symbol, BeamTypeMatcher.BeamBParam)),
+        hMm = Round(SymbolParameters.ReadLengthMm(symbol, BeamTypeMatcher.BeamHParam)),
+    };
+
+    public static object PileType(FamilySymbol symbol) => new
+    {
+        id = RevitJson.Id(symbol.Id),
+        name = symbol.Name,
+        family = symbol.FamilyName,
+        familyId = RevitJson.Id(symbol.Family.Id),
+        diameterMm = Round(PileTypeMatcher.DiameterMm(symbol)),
+    };
+
+    public static object SlabType(FloorType type) => new
+    {
+        id = RevitJson.Id(type.Id),
+        name = type.Name,
+        thicknessMm = Round(PileFoundationPlacer.CapThicknessFeet(type) is double feet
+            ? UnitUtils.ConvertFromInternalUnits(feet, UnitTypeId.Millimeters) : null),
+    };
+
+    // Keys of a "types"/"include"/"exclude" parameter that match no group of the scan.
+    public static void RequireKnownKeys(IEnumerable<string> keys, IReadOnlyCollection<string> validKeys, string param)
+    {
+        var unknown = keys.Except(validKeys).ToList();
+        if (unknown.Count > 0)
+            throw RpcException.InvalidParams(param,
+                $"unknown group key(s) {string.Join(", ", unknown)}. Valid keys: {string.Join(", ", validKeys)}.");
+    }
 
     public static ImportInstance RequireCad(Document document, ElementId id, string param) =>
         document.GetElement(id) as ImportInstance

@@ -31,6 +31,9 @@ public sealed class SessionStore
     // Returns the value only for the same open document, so a scan of model A is never applied to model B.
     public T Require<T>(string kind, string id, Document document, string paramName) where T : class
     {
+        if (_entries.TryGetValue(id, out var other) && other.Value is not T && id.StartsWith(kind + "-", StringComparison.Ordinal))
+            throw RpcException.InvalidParams(paramName,
+                $"'{id}' comes from a different tool. Use the {kind} ID returned by the matching scan tool.");
         if (!_entries.TryGetValue(id, out var entry) || entry.Value is not T value || !id.StartsWith(kind + "-", StringComparison.Ordinal))
             throw new RpcException(RpcErrorCodes.SessionExpired,
                 $"Unknown {kind} ID '{id}'. It was already used up (e.g. undone), expired, or the bridge was restarted.",

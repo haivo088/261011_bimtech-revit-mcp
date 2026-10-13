@@ -1,4 +1,3 @@
-using System.Globalization;
 using Autodesk.Revit.DB;
 using Bimtech.RevitMcp.Commands.Common;
 using Bimtech.RevitMcp.Protocol;
@@ -14,9 +13,11 @@ namespace Bimtech.RevitMcp.Commands.Structural;
 // in templateFamilyId → unresolved. A real run refuses to start while any group is unresolved.
 public sealed class PlaceColumnsCommand : IRevitCommand
 {
-    public const int MaxColumns = 5000;
-
     public string Method => "place_columns";
+    public CommandAccess Access => CommandAccess.Write;
+
+    // A dry run only reads, so previews stay available in read-only mode.
+    public bool ModifiesModel(CommandParams parameters) => !parameters.GetBool("dryRun", true);
 
     private enum TypeSource { Assigned, Exact, ReuseInFamily, CreateType }
 
@@ -35,11 +36,15 @@ public sealed class PlaceColumnsCommand : IRevitCommand
             throw RpcException.InvalidParams("topLevelId", "must be higher than baseLevelId.");
 
         var total = scan.Groups.Sum(group => group.Columns.Count);
-        if (total > MaxColumns)
+        var limit = context.Settings.MaxElementsPerWrite;
+        if (total > limit)
             throw RpcException.InvalidParams("scanId",
-                $"the scan has {total} columns, above the {MaxColumns} limit per call. Scan a smaller region.");
+                $"the scan has {total} columns, above the limit of {limit} per call set in BIMTECH MCP Settings. "
+                + "Scan a smaller region, or ask the user to raise the limit.");
 
-        var templateFamily = p.Has("templateFamilyId") ? RequireColumnFamily(document, p.RequireElementId("templateFamilyId")) : null;
+        var templateFamily = p.Has("templateFamilyId")
+            ? StructuralJson.RequireFamily(document, p.RequireElementId("templateFamilyId"), BuiltInCategory.OST_StructuralColumns)
+            : null;
         var plans = Resolve(document, scan.Groups, p.GetStringMap("types", maxCount: 200, maxLength: 32), templateFamily);
 
         var unresolved = plans.Where(plan => plan.Source is null).ToList();
@@ -68,7 +73,8 @@ public sealed class PlaceColumnsCommand : IRevitCommand
         {
             if (assigned.TryGetValue(group.Key, out var typeId))
             {
-                plans.Add(new GroupPlan(group, RequireColumnType(document, typeId, group.Key), TypeSource.Assigned, null, null));
+                plans.Add(new GroupPlan(group, StructuralJson.RequireType(document, typeId, $"types.{group.Key}",
+                    BuiltInCategory.OST_StructuralColumns, "scan_cad_columns"), TypeSource.Assigned, null, null));
                 continue;
             }
             var exact = ColumnTypeMatcher.FindExactMatch(group.SizeAMm, group.SizeBMm, available, s => s);
@@ -144,81 +150,34 @@ public sealed class PlaceColumnsCommand : IRevitCommand
     private static object Run(
         CommandContext context, Document document, List<GroupPlan> plans, Family? templateFamily, Level baseLevel, Level topLevel)
     {
-        using var guard = new FailureGuard(context.UIApplication.Application);
-        using var transactionGroup = new TransactionGroup(document, "BIMTECH MCP: Đặt cột theo CAD");
-        transactionGroup.Start();
-        try
+        using var write = new WriteSession(context, document, "BIMTECH MCP: Đặt cột theo CAD");
+        var symbols = plans.ToDictionary(plan => plan.Group, plan => plan.Symbol);
+        var createdTypes = new List<FamilySymbol>();
+        var typeErrors = new List<string>();
+        var toCreate = plans.Where(plan => plan.Source == TypeSource.CreateType).Select(plan => plan.Group).ToList();
+        if (toCreate.Count > 0 && templateFamily is not null)
         {
-            var symbols = plans.ToDictionary(plan => plan.Group, plan => plan.Symbol);
-            var createdTypes = new List<FamilySymbol>();
-            var typeErrors = new List<string>();
-            var toCreate = plans.Where(plan => plan.Source == TypeSource.CreateType).Select(plan => plan.Group).ToList();
-            if (toCreate.Count > 0 && templateFamily is not null)
-            {
-                var typeSummary = ColumnPlacer.CreateMissingTypes(document, toCreate, templateFamily);
-                createdTypes = typeSummary.CreatedSymbols;
-                typeErrors = typeSummary.Errors;
-                foreach (var (group, symbol) in typeSummary.Resolved) symbols[group] = symbol;
-            }
-
-            var assignments = plans.Select(plan => new ColumnAssignment(plan.Group, symbols[plan.Group])).ToList();
-            var summary = ColumnPlacer.Place(document, assignments, baseLevel, topLevel);
-
-            if (guard.Errors.Count > 0)
-            {
-                transactionGroup.RollBack();
-                throw new RpcException(RpcErrorCodes.RevitApiError,
-                    "Revit rejected the changes; nothing was placed. " + string.Join(" | ", guard.Errors),
-                    new { revitErrors = guard.Errors });
-            }
-
-            string? batchId = null;
-            if (summary.Created == 0 && createdTypes.Count == 0)
-            {
-                transactionGroup.RollBack();
-            }
-            else
-            {
-                transactionGroup.Assimilate();
-                batchId = context.Sessions.Add(WriteBatch.Kind, document, new WriteBatch(
-                    $"Đặt {summary.Created} cột", summary.CreatedIds, createdTypes.Select(type => type.Id).ToList()));
-            }
-
-            return new
-            {
-                dryRun = false,
-                batchId,
-                created = summary.Created,
-                skippedDuplicates = summary.Skipped,
-                failed = summary.Failed,
-                errors = typeErrors.Concat(summary.Errors).ToList(),
-                typesCreated = createdTypes.Select(StructuralJson.ColumnType).ToList(),
-                revitWarningCount = guard.WarningCount,
-                revitWarnings = guard.Warnings,
-                undo = batchId is null ? null : "Call undo_batch with this batchId, or press Ctrl+Z once in Revit.",
-            };
+            var typeSummary = ColumnPlacer.CreateMissingTypes(document, toCreate, templateFamily);
+            createdTypes = typeSummary.CreatedSymbols;
+            typeErrors = typeSummary.Errors;
+            foreach (var (group, symbol) in typeSummary.Resolved) symbols[group] = symbol;
         }
-        catch
+
+        var assignments = plans.Select(plan => new ColumnAssignment(plan.Group, symbols[plan.Group])).ToList();
+        var summary = ColumnPlacer.Place(document, assignments, baseLevel, topLevel);
+        var batchId = write.Complete($"Đặt {summary.Created} cột", summary.CreatedIds, createdTypes.Select(type => type.Id).ToList());
+
+        return new
         {
-            if (transactionGroup.HasStarted()) transactionGroup.RollBack();
-            throw;
-        }
+            dryRun = false,
+            batchId,
+            created = summary.Created,
+            skippedDuplicates = summary.Skipped,
+            failed = summary.Failed,
+            errors = typeErrors.Concat(summary.Errors).ToList(),
+            typesCreated = createdTypes.Select(StructuralJson.ColumnType).ToList(),
+            revitWarnings = write.WarningReport,
+            undo = batchId is null ? null : StructuralJson.UndoHint,
+        };
     }
-
-    private static FamilySymbol RequireColumnType(Document document, string idText, string key)
-    {
-        var param = $"types.{key}";
-        if (!long.TryParse(idText, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var id))
-            throw RpcException.InvalidParams(param, "expected a type ID such as \"12345\".");
-        if (document.GetElement(new ElementId(id)) is FamilySymbol symbol
-            && symbol.Category?.BuiltInCategory == BuiltInCategory.OST_StructuralColumns)
-            return symbol;
-        throw RpcException.InvalidParams(param, "is not a Structural Column type. Use exactType/nearestType IDs from scan_cad_columns.");
-    }
-
-    private static Family RequireColumnFamily(Document document, ElementId id) =>
-        document.GetElement(id) is Family family && family.FamilyCategory?.BuiltInCategory == BuiltInCategory.OST_StructuralColumns
-            ? family
-            : throw RpcException.InvalidParams("templateFamilyId",
-                "is not a Structural Column family. Use the 'family' of a type from scan_cad_columns, or list families with get_elements.");
 }

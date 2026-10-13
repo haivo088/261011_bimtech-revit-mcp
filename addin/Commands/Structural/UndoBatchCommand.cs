@@ -10,6 +10,7 @@ namespace Bimtech.RevitMcp.Commands.Structural;
 public sealed class UndoBatchCommand : IRevitCommand
 {
     public string Method => "undo_batch";
+    public CommandAccess Access => CommandAccess.Delete;
 
     public object? Execute(CommandContext context)
     {
@@ -31,13 +32,11 @@ public sealed class UndoBatchCommand : IRevitCommand
         if (elements.Count > 0) document.Delete(elements);
 
         var deletedTypes = new List<string>();
-        var keptTypes = new List<FamilySymbol>();
+        var keptTypes = new List<ElementType>();
         foreach (var typeId in batch.TypeIds)
         {
-            if (document.GetElement(typeId) is not FamilySymbol type) continue;
-            var inUse = new FilteredElementCollector(document).WhereElementIsNotElementType()
-                .WherePasses(new FamilyInstanceFilter(document, typeId)).Any();
-            if (inUse)
+            if (document.GetElement(typeId) is not ElementType type) continue;
+            if (IsTypeUsed(document, type))
             {
                 keptTypes.Add(type);
                 continue;
@@ -70,6 +69,11 @@ public sealed class UndoBatchCommand : IRevitCommand
             keptFamiliesInUse = keptFamilies.Select(family => family.Name).ToList(),
         };
     }
+
+    private static bool IsTypeUsed(Document document, ElementType type) =>
+        type is FamilySymbol
+            ? new FilteredElementCollector(document).WherePasses(new FamilyInstanceFilter(document, type.Id)).Any()
+            : new FilteredElementCollector(document).WhereElementIsNotElementType().Any(element => element.GetTypeId() == type.Id);
 
     private static bool IsUsed(Document document, Family family) =>
         family.GetFamilySymbolIds().Any(symbolId =>

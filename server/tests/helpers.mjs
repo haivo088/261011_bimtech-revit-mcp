@@ -32,11 +32,15 @@ export async function bridge(t, respond) {
 }
 
 // Starts the built MCP server as Claude would and points it at the fake bridge.
-export async function mcpClient(t, port) {
+// Availability sync is off unless a test passes its own env, so scripted bridges see only the tool calls.
+export async function mcpClient(t, port, extraEnv = {}) {
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: [fileURLToPath(new URL("../build/index.js", import.meta.url))],
-    env: { ...process.env, REVIT_MCP_PORT: String(port) },
+    // A key set to undefined in extraEnv is removed, e.g. to test reading the port from settings.json.
+    env: Object.fromEntries(Object.entries({
+      ...process.env, REVIT_MCP_PORT: String(port), REVIT_MCP_AVAILABILITY_POLL_MS: "0", ...extraEnv,
+    }).filter(([, value]) => value !== undefined)),
     stderr: "pipe",
   });
   // Show server diagnostics in the test log; stdout stays reserved for MCP.

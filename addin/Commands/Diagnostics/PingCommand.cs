@@ -1,10 +1,13 @@
+using Bimtech.RevitMcp.Settings;
+
 namespace Bimtech.RevitMcp.Commands.Diagnostics;
 
 // Confirms the bridge works end to end. "message" proves params reach Revit,
-// and "methods" lets the server compare its tools with this add-in's commands.
+// and "commands" lets the server hide tools the user switched off in the settings window.
 public sealed class PingCommand : IRevitCommand
 {
     public string Method => "ping";
+    public CommandAccess Access => CommandAccess.Read;
 
     public object? Execute(CommandContext context) => new
     {
@@ -13,5 +16,13 @@ public sealed class PingCommand : IRevitCommand
         bridgeVersion = App.Version,
         echo = context.Params.GetString("message", maxLength: 200),
         methods = context.Registry.Methods.Order().ToArray(),
+        readOnlyMode = context.Settings.ReadOnlyMode,
+        commands = context.Registry.Commands.Select(command => new
+        {
+            method = command.Method,
+            access = command.Access.ToString().ToLowerInvariant(),
+            enabled = CommandPolicy.IsEnabled(command, context.Settings),
+            available = CommandPolicy.IsAvailable(command, context.Settings),
+        }).ToArray(),
     };
 }

@@ -1,6 +1,7 @@
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using Bimtech.RevitMcp.Protocol;
+using Bimtech.RevitMcp.Settings;
 
 namespace Bimtech.RevitMcp.Commands;
 
@@ -10,6 +11,7 @@ public sealed class CommandContext(
     CommandParams parameters,
     CommandRegistry registry,
     SessionStore sessions,
+    McpSettings settings,
     CancellationToken cancellation)
 {
     public UIApplication UIApplication { get; } = uiApplication;
@@ -18,6 +20,9 @@ public sealed class CommandContext(
 
     // Scan results and write batches kept between calls; see SessionStore.
     public SessionStore Sessions { get; } = sessions;
+
+    // Settings as they were when the request arrived; a change during the call does not affect it.
+    public McpSettings Settings { get; } = settings;
 
     // Cancelled when the client times out or disconnects. Long loops should call
     // Cancellation.ThrowIfCancellationRequested() so Revit is not kept busy for nothing.

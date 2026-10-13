@@ -10,6 +10,7 @@ public sealed class GetElementParametersCommand : IRevitCommand
     public const int MaxElements = 50;
 
     public string Method => "get_element_parameters";
+    public CommandAccess Access => CommandAccess.Read;
 
     public object? Execute(CommandContext context)
     {

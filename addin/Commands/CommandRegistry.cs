@@ -34,13 +34,25 @@ public sealed class CommandRegistry
         new GetSelectedElementsCommand(),
         new GetElementParametersCommand(),
         new ListCadSourcesCommand(),
+        new LoadDefaultFamilyCommand(),
         new ScanCadColumnsCommand(),
-        new LoadDefaultColumnFamilyCommand(),
         new PlaceColumnsCommand(),
+        new ScanCadBeamsCommand(),
+        new PlaceBeamsCommand(),
+        new ScanCadPilesCommand(),
+        new PlacePilesCommand(),
         new UndoBatchCommand(),
     ]);
 
     public IReadOnlyCollection<string> Methods => _commands.Keys;
+
+    // Commands sorted by group, then method, as shown in the settings window.
+    public IReadOnlyList<IRevitCommand> Commands =>
+        _commands.Values.OrderBy(GroupOf).ThenBy(command => command.Method, StringComparer.Ordinal).ToList();
+
+    // The folder a command lives in (Diagnostics, Documents, Elements, Structural...).
+    public static string GroupOf(IRevitCommand command) =>
+        command.GetType().Namespace?.Split('.').LastOrDefault() ?? "Other";
 
     public bool TryGet(string method, out IRevitCommand command) =>
         _commands.TryGetValue(method, out command!);

@@ -11,6 +11,15 @@ const regionMm = z.object({
   minX: z.number(), minY: z.number(), maxX: z.number(), maxY: z.number(),
 }).describe("Optional plan rectangle in millimeters (model coordinates); only outlines whose center lies inside are kept.");
 
+const write = { readOnlyHint: false, destructiveHint: false, idempotentHint: false };
+const viewId = elementId.optional()
+  .describe("Plan view showing the CAD. Defaults to the CAD's own view if it is view-specific, else the active view.");
+const layerList = (what: string) => z.array(z.string().min(1).max(255)).max(50).optional()
+  .describe(`CAD layer names holding ${what}, exactly as returned by the first call.`);
+const typeMap = (example: string) => z.record(z.string(), elementId).optional()
+  .describe(`Type to use per group key, e.g. {"${example}": "12345"}. Overrides automatic matching.`);
+const dryRun = z.boolean().optional().describe("Default true: report only. false: modify the model.");
+
 export const listCadSources = defineTool({
   name: "list_cad_sources",
   method: "list_cad_sources",
@@ -33,24 +42,27 @@ export const scanCadColumns = defineTool({
     + " (exactType or nearestType), and a scanId for place_columns. Changes nothing in the model.",
   inputSchema: {
     cadId: elementId.describe("CAD import or link ID from list_cad_sources."),
-    viewId: elementId.optional().describe("Plan view showing the CAD. Defaults to the CAD's own view if it is view-specific, else the active view."),
-    layers: z.array(z.string().min(1).max(255)).max(50).optional()
-      .describe("CAD layer names holding column outlines, exactly as returned by the first call."),
+    viewId,
+    layers: layerList("column outlines"),
     region: regionMm.optional(),
   },
   annotations: readOnly,
   timeoutMs: 120000,
 });
 
-export const loadDefaultColumnFamily = defineTool({
-  name: "load_default_column_family",
-  method: "load_default_column_family",
-  title: "Load default column family",
+export const loadDefaultFamily = defineTool({
+  name: "load_default_family",
+  method: "load_default_family",
+  title: "Load default family",
   description:
-    "Load the company concrete column family (BTC-CotCN_BeTong, with b/h size parameters) into the model,"
-    + " so place_columns can create sized types in it via templateFamilyId. Use when scan_cad_columns reports"
-    + " no column type with b/h parameters. Does nothing if already loaded. Confirm with the user first.",
-  inputSchema: {},
+    "Load a company structural family packaged with the add-in: column BTC-CotCN_BeTong (b/h), beam BTC-DamCN_BeTong"
+    + " (b/h), or pile BTC-CocTron_BeTong (Diameter). For piles it also creates the default cap (BTC-DaiMong_1500)"
+    + " and lean-concrete (BTC-BeTongLot_100) Foundation Slab types when missing. Use when a scan reports no suitable"
+    + " type; its familyId is the templateFamilyId for place_columns/place_beams. Does nothing if already loaded."
+    + " Confirm with the user first.",
+  inputSchema: {
+    kind: z.enum(["column", "beam", "pile"]).describe("Which family to load."),
+  },
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
   timeoutMs: 60000,
 });
@@ -70,13 +82,114 @@ export const placeColumns = defineTool({
     scanId: z.string().min(1).max(64).describe("scanId from scan_cad_columns."),
     baseLevelId: elementId.describe("Bottom level of the columns."),
     topLevelId: elementId.describe("Top level of the columns; must be higher than the base level."),
-    types: z.record(z.string(), elementId).optional()
-      .describe("Type to use per group key, e.g. {\"500x300\": \"12345\"}. Overrides automatic matching."),
+    types: typeMap("500x300"),
     templateFamilyId: elementId.optional()
-      .describe("Column family (familyId from a scan type) in which to create types for groups with no matching type."),
-    dryRun: z.boolean().optional().describe("Default true: report only. false: modify the model."),
+      .describe("Column family (familyId from a scan type or load_default_family) in which to create types for groups with no matching type."),
+    dryRun,
   },
-  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+  annotations: write,
+  timeoutMs: 120000,
+});
+
+export const scanCadBeams = defineTool({
+  name: "scan_cad_beams",
+  method: "scan_cad_beams",
+  title: "Scan CAD for beams",
+  description:
+    "Read beams from a CAD drawing as pairs of parallel lines, and their names/sizes from nearby Text Notes in the"
+    + " view (e.g. \"D2-X7(220x600)\"). Call first without layers to list the layers, ask the user which hold beams,"
+    + " then call again with layers. Groups: by tag name (placed by default), by bxh from bare text, or by width"
+    + " only (key like \"b220\"). Optionally extends beam ends to columns on levelId. Changes nothing in the model.",
+  inputSchema: {
+    cadId: elementId.describe("CAD import or link ID from list_cad_sources."),
+    viewId,
+    layers: layerList("beam outlines"),
+    region: regionMm.optional(),
+    textSearchMm: z.number().min(1).max(20000).optional()
+      .describe("How far from a beam to look for its text (default 1000)."),
+    extendToColumns: z.boolean().optional()
+      .describe("Extend beam ends to the nearest columns (needs levelId). Default false."),
+    levelId: elementId.optional().describe("Level whose columns beams are extended to."),
+    columnSearchMm: z.number().min(1).max(20000).optional()
+      .describe("How far to look for a column from a beam end (default 3000)."),
+  },
+  annotations: readOnly,
+  timeoutMs: 120000,
+});
+
+export const placeBeams = defineTool({
+  name: "place_beams",
+  method: "place_beams",
+  title: "Place beams from scan",
+  description:
+    "Place structural beams from a scan on a level (offset 0); beams overlapping an existing beam are skipped."
+    + " Groups with a tag name are placed unless listed in 'exclude'; groups without one only when listed in"
+    + " 'include'. dryRun defaults to true and only reports the plan: always show it to the user and get"
+    + " confirmation before calling again with dryRun=false. A real run is one undo step and returns a batchId."
+    + " Type per group: 'types' entry, else an existing type with matching bxh, else a new type in templateFamilyId."
+    + " Width-only groups always need a 'types' entry.",
+  inputSchema: {
+    scanId: z.string().min(1).max(64).describe("scanId from scan_cad_beams."),
+    levelId: elementId.describe("Level the beams are placed on."),
+    include: z.array(z.string().min(1).max(200)).max(500).optional()
+      .describe("Keys of groups without a tag name to place as well."),
+    exclude: z.array(z.string().min(1).max(200)).max(500).optional()
+      .describe("Keys of groups not to place."),
+    types: typeMap("D2-X7"),
+    templateFamilyId: elementId.optional()
+      .describe("Beam family (familyId from a scan type or load_default_family) in which to create bxh types."),
+    tagParameterName: z.string().min(1).max(200).optional()
+      .describe("Text parameter of the beam that receives the group's tag name, e.g. \"Mark\"."),
+    dryRun,
+  },
+  annotations: write,
+  timeoutMs: 120000,
+});
+
+export const scanCadPiles = defineTool({
+  name: "scan_cad_piles",
+  method: "scan_cad_piles",
+  title: "Scan CAD for piles and caps",
+  description:
+    "Read pile circles and pile cap outlines from a CAD drawing as shown in a plan view. Call first without layers"
+    + " to list layers with their circle and outline counts and ask the user which are piles and which are caps;"
+    + " then call again with pileLayers and capLayers. Piles are grouped by diameter (key like \"D600\") and"
+    + " assigned to the cap containing them. Changes nothing in the model.",
+  inputSchema: {
+    cadId: elementId.describe("CAD import or link ID from list_cad_sources."),
+    viewId,
+    pileLayers: layerList("pile circles"),
+    capLayers: layerList("pile cap outlines"),
+    region: regionMm.optional(),
+  },
+  annotations: readOnly,
+  timeoutMs: 120000,
+});
+
+export const placePiles = defineTool({
+  name: "place_piles",
+  method: "place_piles",
+  title: "Place piles and caps from scan",
+  description:
+    "Place piles and pile caps from a scan, like the BIMTECH pile tool: caps are Foundation Slabs on capLevelId"
+    + " (default type BTC-DaiMong_1500), pile tops sit at cap level minus cap thickness, then lean concrete under"
+    + " each cap (default BTC-BeTongLot_100, withLot=false to skip), dimensions rounded to the grid, and piles"
+    + " joined with caps. dryRun defaults to true and only reports the plan: always show it to the user and get"
+    + " confirmation before calling again with dryRun=false. A real run is one undo step and returns a batchId.",
+  inputSchema: {
+    scanId: z.string().min(1).max(64).describe("scanId from scan_cad_piles."),
+    capLevelId: elementId.describe("Level at the top of the pile caps."),
+    capFloorTypeId: elementId.optional().describe("Foundation Slab type for caps. Default BTC-DaiMong_1500."),
+    withLot: z.boolean().optional().describe("Place lean concrete under caps. Default true."),
+    lotFloorTypeId: elementId.optional().describe("Foundation Slab type for lean concrete. Default BTC-BeTongLot_100."),
+    embedmentMm: z.number().min(0).max(5000).optional().describe("Pile embedment into the cap (default 100)."),
+    lotOffsetMm: z.number().min(0).max(5000).optional().describe("Lean concrete extends this far beyond the cap (default 50)."),
+    types: typeMap("D600"),
+    createMissingTypes: z.boolean().optional()
+      .describe("Create a pile type for each diameter without one, duplicated from the nearest type. Default false."),
+    dryRun,
+  },
+  annotations: write,
   timeoutMs: 120000,
 });
 

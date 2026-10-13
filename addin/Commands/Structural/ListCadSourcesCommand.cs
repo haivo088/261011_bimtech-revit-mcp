@@ -7,6 +7,7 @@ namespace Bimtech.RevitMcp.Commands.Structural;
 public sealed class ListCadSourcesCommand : IRevitCommand
 {
     public string Method => "list_cad_sources";
+    public CommandAccess Access => CommandAccess.Read;
 
     public object? Execute(CommandContext context)
     {
