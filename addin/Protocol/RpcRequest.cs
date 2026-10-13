@@ -8,10 +8,8 @@ public sealed class RpcRequest
     public string? Jsonrpc { get; init; }
     public string? Id { get; init; }
     public string? Method { get; init; }
+    // Undefined when the sender omits params; CommandParams treats that as {}.
     public JsonElement Params { get; init; }
-}
-
-public sealed class RpcException(int code, string message) : Exception(message)
-{
-    public int Code { get; } = code;
+    // How long this request may take in Revit. Not part of JSON-RPC; the bridge clamps it.
+    public int? TimeoutMs { get; init; }
 }

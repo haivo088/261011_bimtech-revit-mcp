@@ -2,23 +2,52 @@ import { randomUUID } from "node:crypto";
 import { createConnection } from "node:net";
 import { config } from "./config.js";
 
-type ConnectionOptions = typeof config;
+export type RevitParams = Record<string, unknown>;
+
+export interface CallOptions {
+  host: string;
+  port: number;
+  // How long the add-in may spend on this request, including waiting in Revit's queue.
+  timeoutMs: number;
+  // Extra time the client waits so the add-in's own timeout error can arrive first.
+  graceMs: number;
+}
+
+const defaultOptions: CallOptions = {
+  host: config.host,
+  port: config.port,
+  timeoutMs: config.timeoutMs,
+  graceMs: 2000,
+};
+
+const maxResponseBytes = 1024 * 1024;
+
+// An error reported by the add-in as a JSON-RPC error object.
+export class RevitError extends Error {
+  constructor(readonly code: number, message: string, readonly data?: unknown) {
+    super(`Revit error ${code}: ${message}`);
+    this.name = "RevitError";
+  }
+}
 
 // One command per connection keeps the first implementation easy to follow.
 // A newline ends each JSON message; TCP chunks are not message boundaries.
 export function callRevit(
   method: string,
-  options: ConnectionOptions = config,
+  params: RevitParams = {},
+  overrides: Partial<CallOptions> = {},
 ): Promise<unknown> {
+  const options = { ...defaultOptions, ...overrides };
   return new Promise((resolve, reject) => {
     const id = randomUUID();
+    const waitMs = options.timeoutMs + options.graceMs;
     const socket = createConnection({ host: options.host, port: options.port });
     socket.setEncoding("utf8"); // Preserve Unicode even when bytes arrive separately.
     let buffer = "";
     let finished = false;
     const timer = setTimeout(() => finish(new Error(
-      `Revit did not respond within ${options.timeoutMs} ms. Check the BIMTECH bridge and close any modal dialogs.`,
-    )), options.timeoutMs);
+      `Revit did not respond within ${waitMs} ms. Check the BIMTECH bridge and close any modal dialogs.`,
+    )), waitMs);
 
     function finish(error?: Error, result?: unknown): void {
       if (finished) return;
@@ -30,14 +59,14 @@ export function callRevit(
     }
 
     socket.once("connect", () => {
-      const request = { jsonrpc: "2.0", id, method, params: {} };
+      const request = { jsonrpc: "2.0", id, method, params, timeoutMs: options.timeoutMs };
       socket.write(JSON.stringify(request) + "\n");
     });
 
     socket.on("data", (chunk: string) => {
       buffer += chunk;
-      if (Buffer.byteLength(buffer, "utf8") > 1024 * 1024) {
-        finish(new Error("Revit response exceeds the 1 MiB limit."));
+      if (Buffer.byteLength(buffer, "utf8") > maxResponseBytes) {
+        finish(new Error("Revit response exceeds the 1 MiB limit. Narrow the request or use paging."));
         return;
       }
       const newline = buffer.indexOf("\n");
@@ -48,7 +77,7 @@ export function callRevit(
           throw new Error("Invalid JSON-RPC response or mismatched request ID.");
         }
         if (response.error) {
-          throw new Error(`Revit error ${response.error.code}: ${response.error.message}`);
+          throw new RevitError(response.error.code, response.error.message, response.error.data);
         }
         if (!("result" in response)) throw new Error("Revit response has no result.");
         finish(undefined, response.result);

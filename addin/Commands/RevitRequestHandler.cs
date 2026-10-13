@@ -7,20 +7,37 @@ namespace Bimtech.RevitMcp.Commands;
 // TCP runs in the background; Execute is called by Revit on its API thread.
 public sealed class RevitRequestHandler : IExternalEventHandler, IDisposable
 {
-    private sealed record Job(RpcRequest Request, TaskCompletionSource<object> Completion);
+    private sealed record Job(
+        IRevitCommand Command,
+        CommandParams Params,
+        TaskCompletionSource<object?> Completion,
+        CancellationToken Cancellation);
+
     private readonly ConcurrentQueue<Job> _jobs = new();
     private readonly object _eventLock = new();
+    private readonly CommandRegistry _registry;
     private readonly ExternalEvent _externalEvent;
     private bool _disposed;
 
-    public RevitRequestHandler() => _externalEvent = ExternalEvent.Create(this);
-
-    public async Task<object> ExecuteAsync(RpcRequest request, CancellationToken cancellation)
+    public RevitRequestHandler(CommandRegistry registry)
     {
-        var job = new Job(request, new(TaskCreationOptions.RunContinuationsAsynchronously));
+        _registry = registry;
+        _externalEvent = ExternalEvent.Create(this);
+    }
+
+    // Called on the TCP thread. Checks that need no Revit API run here, so bad
+    // requests fail immediately instead of waiting for Revit to become idle.
+    public async Task<object?> ExecuteAsync(RpcRequest request, CancellationToken cancellation)
+    {
+        if (!_registry.TryGet(request.Method!, out var command))
+            throw new RpcException(RpcErrorCodes.MethodNotFound, $"Unknown method: {request.Method}",
+                new { available = _registry.Methods.Order().ToArray() });
+        var parameters = new CommandParams(request.Params);
+
+        var job = new Job(command, parameters, new(TaskCreationOptions.RunContinuationsAsynchronously), cancellation);
         lock (_eventLock)
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (_disposed) throw BridgeStopped();
             _jobs.Enqueue(job);
         }
         using var registration = cancellation.Register(() => job.Completion.TrySetCanceled(cancellation));
@@ -31,9 +48,10 @@ public sealed class RevitRequestHandler : IExternalEventHandler, IDisposable
         {
             lock (_eventLock)
             {
-                if (_disposed) job.Completion.TrySetException(new ObjectDisposedException(nameof(RevitRequestHandler)));
+                if (_disposed) job.Completion.TrySetException(BridgeStopped());
                 else if (_externalEvent.Raise() == ExternalEventRequest.Denied)
-                    job.Completion.TrySetException(new RpcException(-32002, "Revit denied the external event."));
+                    job.Completion.TrySetException(new RpcException(RpcErrorCodes.EventDenied,
+                        "Revit denied the external event. Finish or cancel the current Revit command, then retry."));
             }
             await Task.WhenAny(job.Completion.Task, Task.Delay(100, cancellation));
         }
@@ -44,40 +62,30 @@ public sealed class RevitRequestHandler : IExternalEventHandler, IDisposable
     {
         while (_jobs.TryDequeue(out var job))
         {
+            // Skip jobs whose client already timed out or disconnected.
             if (job.Completion.Task.IsCompleted) continue;
-            try { job.Completion.TrySetResult(Dispatch(application, job.Request)); }
-            catch (Exception exception) { job.Completion.TrySetException(exception); }
+            try
+            {
+                var context = new CommandContext(application, job.Params, _registry, job.Cancellation);
+                job.Completion.TrySetResult(job.Command.Execute(context));
+            }
+            catch (OperationCanceledException) { job.Completion.TrySetCanceled(job.Cancellation); }
+            catch (Exception exception) { job.Completion.TrySetException(Translate(exception)); }
         }
     }
 
-    private static object Dispatch(UIApplication application, RpcRequest request)
+    // Gives every failure a JSON-RPC code so the bridge never leaks a raw stack trace.
+    private static RpcException Translate(Exception exception) => exception switch
     {
-        switch (request.Method)
-        {
-            case "ping":
-                return new { status = "ok", revitVersion = application.Application.VersionNumber, bridgeVersion = "0.1.0" };
+        RpcException rpc => rpc,
+        Autodesk.Revit.Exceptions.ApplicationException revit => new RpcException(
+            RpcErrorCodes.RevitApiError, revit.Message, new { type = revit.GetType().Name }),
+        _ => new RpcException(RpcErrorCodes.InternalError, exception.Message,
+            new { type = exception.GetType().Name }),
+    };
 
-            case "get_document_info":
-                var document = application.ActiveUIDocument?.Document
-                    ?? throw new RpcException(-32001, "Open a Revit model before calling get_document_info.");
-                return new
-                {
-                    title = document.Title,
-                    path = document.PathName,
-                    isFamilyDocument = document.IsFamilyDocument,
-                    isWorkshared = document.IsWorkshared,
-                    activeView = new
-                    {
-                        id = document.ActiveView.Id.Value.ToString(),
-                        name = document.ActiveView.Name,
-                        type = document.ActiveView.ViewType.ToString(),
-                    },
-                };
-
-            default:
-                throw new RpcException(-32601, $"Unknown method: {request.Method}");
-        }
-    }
+    private static RpcException BridgeStopped() =>
+        new(RpcErrorCodes.BridgeStopped, "The BIMTECH bridge is stopping. Start it again from the Revit ribbon.");
 
     public string GetName() => "BIMTECH MCP request handler";
 
@@ -88,7 +96,7 @@ public sealed class RevitRequestHandler : IExternalEventHandler, IDisposable
             if (_disposed) return;
             _disposed = true;
             while (_jobs.TryDequeue(out var job))
-                job.Completion.TrySetException(new ObjectDisposedException(nameof(RevitRequestHandler)));
+                job.Completion.TrySetException(BridgeStopped());
             _externalEvent.Dispose();
         }
     }

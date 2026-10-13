@@ -4,16 +4,17 @@
 
 Bản đầu tiên có hai công cụ đọc dữ liệu:
 
-- `ping_revit`: kiểm tra cầu nối và phiên bản Revit.
+- `ping_revit`: kiểm tra cầu nối, phiên bản Revit và danh sách command; tham số `message` được trả lại để kiểm tra đường truyền tham số.
 - `get_document_info`: đọc tên, đường dẫn, loại mô hình và view đang mở.
 
 ## Bắt đầu đọc từ đâu?
 
 1. Đọc [bản đồ thư mục và file](docs/01-folder-map.md).
 2. Đọc [luồng một lệnh đi từ Claude đến Revit](docs/02-request-flow.md).
-3. Mở `server/src/index.ts`, sau đó `tools.ts` và `revit-client.ts`.
-4. Mở `addin/App.cs`, sau đó `Bridge/TcpBridge.cs` và `Commands/RevitRequestHandler.cs`.
+3. Mở `server/src/index.ts`, sau đó `tools/index.ts`, `tools/define.ts` và `revit-client.ts`.
+4. Mở `addin/App.cs`, sau đó `Bridge/TcpBridge.cs`, `Commands/RevitRequestHandler.cs` và `Commands/CommandRegistry.cs`.
 5. Build và chạy thử theo phần bên dưới.
+6. Khi thêm công cụ, làm theo [03 — Thêm một công cụ mới](docs/03-add-a-tool.md).
 
 ## Cấu trúc
 
@@ -28,20 +29,37 @@ bimtech-revit-mcp/
 │   ├── src/
 │   │   ├── index.ts                # Khởi động MCP
 │   │   ├── config.ts               # Host, port, timeout
-│   │   ├── tools.ts                # Hai công cụ Claude có thể gọi
-│   │   └── revit-client.ts         # Gửi/nhận JSON qua TCP
-│   └── tests/connection.test.mjs   # Kiểm thử với cầu nối giả lập
+│   │   ├── revit-client.ts         # Gửi method + params + timeout qua TCP
+│   │   └── tools/
+│   │       ├── define.ts           # Kiểu RevitTool và cách đăng ký với MCP
+│   │       ├── index.ts            # Danh sách allTools
+│   │       ├── diagnostics.ts      # ping_revit
+│   │       └── document.ts         # get_document_info
+│   └── tests/
+│       ├── connection.test.mjs     # Kiểm thử với cầu nối giả lập
+│       └── contract.test.mjs       # Method server khớp command add-in
 ├── addin/                          # Thư viện C# được Revit nạp
 │   ├── Bimtech.RevitMcp.Addin.csproj
 │   ├── Bimtech.RevitMcp.addin       # Manifest đăng ký với Revit
 │   ├── App.cs                      # Ribbon, mở/đóng cầu nối
 │   ├── Bridge/TcpBridge.cs         # Nhận kết nối TCP
-│   ├── Protocol/RpcRequest.cs      # Cấu trúc lệnh và lỗi
-│   └── Commands/RevitRequestHandler.cs # Chạy Revit API qua ExternalEvent
+│   ├── Protocol/
+│   │   ├── RpcRequest.cs           # Cấu trúc request
+│   │   └── RpcException.cs         # Mã lỗi và exception
+│   └── Commands/
+│       ├── RevitRequestHandler.cs  # Chạy command qua ExternalEvent
+│       ├── CommandRegistry.cs      # Danh sách command theo method
+│       ├── IRevitCommand.cs        # Giao diện một command
+│       ├── CommandContext.cs       # Document, params, cancellation
+│       ├── CommandParams.cs        # Đọc và kiểm tra tham số
+│       ├── RevitJson.cs            # Chuyển đổi Revit → JSON
+│       ├── Diagnostics/PingCommand.cs
+│       └── Documents/GetDocumentInfoCommand.cs
 ├── config/claude-desktop.example.json
 └── docs/
     ├── 01-folder-map.md
-    └── 02-request-flow.md
+    ├── 02-request-flow.md
+    └── 03-add-a-tool.md
 ```
 
 ## Build
@@ -101,12 +119,13 @@ Cổng mặc định của dự án mới là `8081`. Cổng này được khai 
 
 - Build TypeScript thành công.
 - Build add-in Revit 2025 thành công. Có hai cảnh báo `MSB3277` về phiên bản dependency Microsoft.VisualBasic và WindowsBase do tham chiếu DLL cài trên máy; chưa xác minh ảnh hưởng trong Revit thật.
-- Sáu kiểm thử thành công: dữ liệu lớn/Unicode chia gói, lỗi JSON-RPC, sai ID, ngắt kết nối, timeout và giao tiếp MCP → TCP giả lập.
+- 13 kiểm thử thành công: dữ liệu lớn/Unicode chia gói, lỗi JSON-RPC kèm `data`, sai ID, ngắt kết nối, timeout và thời gian chờ thêm, truyền `params`/`timeoutMs`, schema và annotations MCP, từ chối tham số sai trước khi gọi Revit, và đối chiếu method giữa server và add-in.
 - Chưa cài add-in mới, chưa đổi cấu hình Claude, chưa kiểm thử trên Revit thật.
-- Bộ giao tiếp nội bộ chỉ hỗ trợ một request/response mỗi kết nối, ID dạng chuỗi và hai lệnh đã định nghĩa. Đây là nền tảng học tập, chưa phải bản triển khai đầy đủ MCP/Revit cho sản xuất.
+- Phần C# (`CommandParams`, registry, timeout trong bridge) mới được kiểm chứng bằng build, chưa có kiểm thử tự động vì cần Revit API.
+- Bộ giao tiếp nội bộ chỉ hỗ trợ một request/response mỗi kết nối và ID dạng chuỗi. Đây là nền tảng học tập, chưa phải bản triển khai đầy đủ MCP/Revit cho sản xuất.
 
 ## Mở rộng từng bước
 
-Sau khi hiểu và kiểm thử hai công cụ đầu tiên, thêm `get_selected_elements`, rồi đọc parameter. Khi đã vững luồng đọc dữ liệu, mới thêm sửa parameter kèm Transaction và kiểm thử bằng mô hình mẫu.
+Đã có: tham số và timeout theo request, registry command. Tiếp theo: khung đọc dữ liệu (phân trang, lọc, đơn vị), rồi khung ghi (Transaction, dry-run, giới hạn số phần tử). Xem [03 — Thêm một công cụ mới](docs/03-add-a-tool.md) cho quy trình thêm từng công cụ.
 
 Nền tảng API được đối chiếu với tài liệu Autodesk: [Revit 2025 dùng .NET 8](https://help.autodesk.com/cloudhelp/2025/ENU/Revit-WhatsNew/files/GUID-50024FD2-16BE-40BE-96E6-550294D9537D.htm), [ExternalEvent.Raise](https://help.autodesk.com/cloudhelp/2026/ENU/Revit-API-MainReference/files/html/13bf4411-c400-dcd2-458c-7f09357d9ecb.htm).

@@ -11,7 +11,7 @@
 | `config/` | Ví dụ cấu hình ứng dụng AI | Claude đọc sau khi áp dụng cấu hình |
 | `docs/` | Tài liệu học cấu trúc và luồng gọi lệnh | Người phát triển đọc |
 
-Trong bản đầu tiên, các lệnh Revit nằm ngay trong add-in. Khi số lệnh tăng lên, có thể tách từng lệnh ra file riêng. Chưa cần một hệ thống nạp command DLL động để hiểu kết nối cơ bản.
+Mỗi công cụ có một file định nghĩa ở `server/src/tools/` và một class command ở `addin/Commands/`. Hai phía nối với nhau bằng tên method. Chưa cần một hệ thống nạp command DLL động để hiểu kết nối cơ bản.
 
 ## File phía server
 
@@ -22,9 +22,12 @@ Trong bản đầu tiên, các lệnh Revit nằm ngay trong add-in. Khi số l�
 | `tsconfig.json` | Quy tắc biên dịch TypeScript sang JavaScript | Khi đổi cách build |
 | `src/index.ts` | Tạo MCP Server, đăng ký công cụ, mở giao tiếp stdio | Khi đổi khởi động hoặc thông tin server |
 | `src/config.ts` | Đọc host, port và timeout từ môi trường | Khi đổi thiết lập kết nối |
-| `src/tools.ts` | Tên, mô tả và cách thực thi công cụ Claude nhìn thấy | Khi thêm công cụ hoặc tham số |
-| `src/revit-client.ts` | Kết nối TCP, gửi JSON, ghép dữ liệu nhận được, báo lỗi | Khi thay giao thức kết nối |
+| `src/tools/define.ts` | Kiểu `RevitTool`, `defineTool` và cách đăng ký công cụ với MCP | Khi đổi cách mọi công cụ chạy |
+| `src/tools/index.ts` | Danh sách `allTools` Claude nhìn thấy | Khi thêm công cụ |
+| `src/tools/diagnostics.ts`, `document.ts` | Định nghĩa từng công cụ: tên, mô tả, schema, annotations | Khi thêm hoặc sửa công cụ |
+| `src/revit-client.ts` | Kết nối TCP, gửi method + params + timeout, ghép dữ liệu nhận được, báo lỗi | Khi thay giao thức kết nối |
 | `tests/connection.test.mjs` | Chạy một cầu nối TCP giả lập và kiểm tra MCP | Khi đổi hành vi giao tiếp |
+| `tests/contract.test.mjs` | So sánh method của server với command của add-in | Tự chạy cùng `npm test` |
 
 `node_modules/` chứa dependencies được npm cài. `build/` chứa JavaScript được TypeScript sinh ra. Cả hai được bỏ qua trong Git.
 
@@ -36,8 +39,15 @@ Trong bản đầu tiên, các lệnh Revit nằm ngay trong add-in. Khi số l�
 | `Bimtech.RevitMcp.addin` | Cho Revit biết DLL ở đâu và lớp nào cần gọi | Khi đổi vị trí cài hoặc tên lớp khởi động |
 | `App.cs` | Tạo nút ribbon và bắt đầu/dừng cầu nối | Khi đổi giao diện hoặc vòng đời add-in |
 | `Bridge/TcpBridge.cs` | Nhận chuỗi JSON qua TCP và gửi kết quả trả về | Khi đổi cách đóng gói hoặc nhận dữ liệu |
-| `Protocol/RpcRequest.cs` | Định nghĩa dữ liệu request và mã lỗi | Khi mở rộng hợp đồng giao tiếp |
-| `Commands/RevitRequestHandler.cs` | Xếp lệnh vào hàng đợi và chạy trên luồng Revit API | Khi thêm thao tác Revit |
+| `Protocol/RpcRequest.cs` | Định nghĩa dữ liệu request (method, params, timeoutMs) | Khi mở rộng hợp đồng giao tiếp |
+| `Protocol/RpcException.cs` | Bảng mã lỗi `RpcErrorCodes` và `RpcException` | Khi thêm loại lỗi mới |
+| `Commands/RevitRequestHandler.cs` | Xếp lệnh vào hàng đợi, chạy trên luồng Revit API, chuyển exception thành mã lỗi | Hiếm khi |
+| `Commands/CommandRegistry.cs` | Danh sách command, tra cứu theo tên method | Khi thêm command |
+| `Commands/IRevitCommand.cs` | Giao diện mọi command phải cài đặt | Hiếm khi |
+| `Commands/CommandContext.cs` | UIApplication, params, cancellation và hàm lấy Document | Khi command cần thêm tiện ích chung |
+| `Commands/CommandParams.cs` | Đọc và kiểm tra tham số theo kiểu | Khi cần kiểu tham số mới |
+| `Commands/RevitJson.cs` | Chuyển đối tượng Revit sang giá trị JSON | Khi cần chuyển đổi dùng chung |
+| `Commands/Diagnostics/`, `Commands/Documents/` | Mỗi command một file, nhóm theo chủ đề | Khi thêm hoặc sửa command |
 
 `bin/` chứa kết quả build; `obj/` chứa dữ liệu trung gian của trình biên dịch. Không viết mã nguồn vào các thư mục này.
 
@@ -55,12 +65,4 @@ Trong bản đầu tiên, các lệnh Revit nằm ngay trong add-in. Khi số l�
 
 ## Cách thêm một công cụ sau này
 
-Ví dụ muốn thêm `get_selected_elements`:
-
-1. Khai báo công cụ và mô tả trong `server/src/tools.ts`.
-2. Khai báo method tương ứng trong `addin/Commands/RevitRequestHandler.cs`.
-3. Đọc các ID được chọn thông qua `UIApplication.ActiveUIDocument` trong handler.
-4. Trả dữ liệu có thể serialize sang JSON.
-5. Build hai phía và kiểm tra trên một mô hình thử nghiệm.
-
-Bạn chỉ cần đổi phía định nghĩa công cụ và phía xử lý Revit. Khi giao thức đã ổn định, phần kết nối TCP thường giữ nguyên.
+Xem [03 — Thêm một công cụ mới](03-add-a-tool.md). Bạn chỉ cần thêm một file định nghĩa phía server và một class command phía add-in; phần kết nối TCP giữ nguyên.

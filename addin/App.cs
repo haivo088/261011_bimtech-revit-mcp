@@ -11,6 +11,7 @@ namespace Bimtech.RevitMcp;
 public class App : IExternalApplication
 {
     internal const int BridgePort = 8081;
+    internal const string Version = "0.2.0";
     internal static TcpBridge? Bridge { get; set; }
 
     public Result OnStartup(UIControlledApplication application)
@@ -47,7 +48,7 @@ public class ToggleBridgeCommand : IExternalCommand
             }
             else
             {
-                var handler = new RevitRequestHandler();
+                var handler = new RevitRequestHandler(CommandRegistry.CreateDefault());
                 try { App.Bridge = new TcpBridge(App.BridgePort, handler); }
                 catch { handler.Dispose(); throw; }
                 TaskDialog.Show("BIMTECH MCP", $"Bridge listening at 127.0.0.1:{App.BridgePort}.");
