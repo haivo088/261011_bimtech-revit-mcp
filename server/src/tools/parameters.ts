@@ -9,7 +9,8 @@ export const proposeSetParameters = defineTool({
     "Plan setting one instance parameter to one value on many elements, without changing the model. "
     + "Uses the current Revit selection unless elementIds is given. Elements that already have the value "
     + "are skipped; elements that cannot take it become Blocked items with a reason. "
-    + "Returns a planId and a summary; tell the user the counts and that the plan waits for their review.",
+    + "Opens the review window in Revit and returns a planId and a summary at once. Tell the user the counts, "
+    + "ask them to review in Revit and say when they are done, then call get_plan_status.",
   inputSchema: {
     parameter: z.string().min(1).max(256).describe("Parameter name as shown in Revit, e.g. \"Comments\"."),
     value: z.string().max(4096)

@@ -3,13 +3,14 @@ using Autodesk.Revit.DB;
 using Bimtech.RevitMcp.Commands.Plans;
 using Bimtech.RevitMcp.Planning;
 using Bimtech.RevitMcp.Protocol;
+using Bimtech.RevitMcp.Ui;
 
 namespace Bimtech.RevitMcp.Commands.Parameters;
 
 // Proposes setting one parameter to one value on many elements. Read-only:
 // it checks every element and saves a plan, but never opens a Transaction.
 // This is the simplest propose command, used to try the plan flow end to end.
-public sealed class ProposeSetParametersCommand(PlanService plans) : IRevitCommand
+public sealed class ProposeSetParametersCommand(PlanService plans, ReviewWindowHost review) : IRevitCommand
 {
     public string Method => "propose_set_parameters";
 
@@ -62,13 +63,15 @@ public sealed class ProposeSetParametersCommand(PlanService plans) : IRevitComma
                 elementCount = ids.Count,
             }),
             items: items);
+        review.Show(plan, context.UIApplication);
 
         return new
         {
             plan = PlanResults.Status(plan),
             unchangedElementIds = unchanged,
-            note = "Nothing was changed in the model. The plan waits for review; "
-                + "use get_plan to show the user each item and its reasons.",
+            reviewWindow = "opened",
+            note = "Nothing was changed in the model. The review window is open in Revit; "
+                + "ask the user to review there and say when they are done, then call get_plan_status.",
         };
     }
 

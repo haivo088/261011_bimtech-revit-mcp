@@ -22,6 +22,12 @@ public static class PlanStorageLocation
         };
     }
 
+    // Whether a plan belongs to this open model. Cheap and side-effect free, unlike For,
+    // which may create the plans folder.
+    public static bool IsSameModel(Document document, PlanDocument plan) =>
+        string.Equals(document.PathName ?? "", plan.Path, StringComparison.OrdinalIgnoreCase)
+        && document.Title == plan.Title;
+
     private static string? NextToModel(Document document, string path)
     {
         if (path.Length == 0 || document.IsModelInCloud || IsCentralModel(document, path)) return null;

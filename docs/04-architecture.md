@@ -1,6 +1,6 @@
 # 04 — Kiến trúc đề xuất và duyệt (propose / approve / commit)
 
-Tài liệu này mô tả kiến trúc cho các công cụ **ghi** vào mô hình, ví dụ dựng móng, cột, dầm từ CAD. Bước 1 của [Lộ trình](#lộ-trình-triển-khai) đã có mã; bước 2 đang làm (đã có phần dữ liệu và luật duyệt, chưa có cửa sổ); các bước sau vẫn là thiết kế.
+Tài liệu này mô tả kiến trúc cho các công cụ **ghi** vào mô hình, ví dụ dựng móng, cột, dầm từ CAD. Bước 1 của [Lộ trình](#lộ-trình-triển-khai) đã có mã; bước 2 đã có mã nhưng chưa thử trong Revit thật; các bước sau vẫn là thiết kế.
 
 ## Vấn đề cần giải quyết
 
@@ -235,7 +235,7 @@ Tiếp nối [bảng mã lỗi](03-add-a-tool.md#mã-lỗi):
 Mỗi bước kết thúc bằng một phiên bản chạy được và kiểm thử được.
 
 1. **Lõi kế hoạch** *(đã làm)*. `Plan`, `PlanItem`, `PlanService` với luật chuyển trạng thái, `PlanStore` JSON; tool `get_plan`, `get_plan_status`, `cancel_plan`; mã lỗi mới. Kèm một lệnh mẫu đơn giản, `propose_set_parameters` (gán giá trị parameter cho các phần tử đang chọn), để thử trọn luồng mà chưa cần CAD. Chưa có `modelStamp`; phát hiện kế hoạch cũ thuộc bước 3.
-2. **Cửa sổ duyệt** *(đang làm)*. Đã có: `Plan.Approval`, `PlanService.SetItemStatus` / `Approve`, sự kiện `Changed`, kiểm thử xUnit, kiểm thử bảo đảm không command nào gọi `Approve`. Còn lại: WPF modeless, danh sách mục, chọn và zoom, Duyệt / Bỏ; tool `open_plan_review`.
+2. **Cửa sổ duyệt** *(đã làm, chờ thử trong Revit)*. `Plan.Approval`, `PlanService.SetItemStatus` / `Approve`, sự kiện `Changed`; cửa sổ WPF modeless trong `addin/Ui/` (một cửa sổ dùng chung, đóng theo model, chọn và zoom qua `FocusHandler`); `propose_set_parameters` tự mở cửa sổ; tool `open_plan_review`. Kiểm thử xUnit cho luật duyệt và ViewModel, kiểm thử bảo đảm không command nào gọi `Approve`.
    2b. Sửa giá trị (`overrides`) trong cửa sổ.
 3. **Ghi vào mô hình.** `PlanExecutor`, `IPlanAction` cho gán parameter, `TransactionGroup`, phát hiện kế hoạch cũ; tool `commit_plan`; nhật ký audit.
 4. **Gắn tool móng, cột, dầm hiện có** vào khung: tách phần tính toán thành `propose_*`, phần tạo phần tử thành `IPlanAction`.

@@ -3,6 +3,7 @@ using Bimtech.RevitMcp.Commands.Documents;
 using Bimtech.RevitMcp.Commands.Parameters;
 using Bimtech.RevitMcp.Commands.Plans;
 using Bimtech.RevitMcp.Planning;
+using Bimtech.RevitMcp.Ui;
 
 namespace Bimtech.RevitMcp.Commands;
 
@@ -25,20 +26,18 @@ public sealed class CommandRegistry
 
     // To add a command: create a class implementing IRevitCommand and list it here.
     // server/tests/contract.test.mjs checks that each method has a matching server tool.
-    public static CommandRegistry CreateDefault()
-    {
-        // One PlanService shared by every plan command; plans themselves live in JSON files.
-        var plans = new PlanService(new JsonPlanStore());
-        return new(
-        [
-            new PingCommand(),
-            new GetDocumentInfoCommand(),
-            new ProposeSetParametersCommand(plans),
-            new GetPlanCommand(plans),
-            new GetPlanStatusCommand(plans),
-            new CancelPlanCommand(plans),
-        ]);
-    }
+    // The plan service and review window outlive the bridge (see App), so an open
+    // review window keeps working while the bridge is stopped and restarted.
+    public static CommandRegistry CreateDefault(PlanService plans, ReviewWindowHost review) => new(
+    [
+        new PingCommand(),
+        new GetDocumentInfoCommand(),
+        new ProposeSetParametersCommand(plans, review),
+        new GetPlanCommand(plans),
+        new GetPlanStatusCommand(plans),
+        new OpenPlanReviewCommand(plans, review),
+        new CancelPlanCommand(plans),
+    ]);
 
     public IReadOnlyCollection<string> Methods => _commands.Keys;
 

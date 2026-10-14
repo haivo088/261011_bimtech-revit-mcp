@@ -12,7 +12,8 @@ export const getPlanStatus = defineTool({
   title: "Get plan status",
   description:
     "Read a plan's status and item counts. Call it when the user says they finished reviewing. "
-    + "Statuses: InReview, Approved, Committed, Stale, Cancelled. Only the user can approve a plan, in Revit.",
+    + "Statuses: InReview, Approved, Committed, Stale, Cancelled. Only the user can approve a plan, "
+    + "in the Revit review window; approvalId is set once they do.",
   inputSchema: { planId },
   annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
 });
@@ -34,6 +35,18 @@ export const getPlan = defineTool({
     offset: z.number().int().min(0).optional().describe("Items to skip. Default 0."),
     limit: z.number().int().min(1).max(200).optional().describe("Items per page. Default 50."),
   },
+  annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+});
+
+export const openPlanReview = defineTool({
+  name: "open_plan_review",
+  method: "open_plan_review",
+  title: "Open plan review window",
+  description:
+    "Open the review window in Revit for a plan, e.g. after the user closed it. Returns at once; "
+    + "the user approves or rejects items there and says when they are done. The model is not changed.",
+  inputSchema: { planId },
+  // Opens a window but never changes the model.
   annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
 });
 

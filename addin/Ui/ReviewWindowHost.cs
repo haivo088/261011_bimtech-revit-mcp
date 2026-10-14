@@ -1,0 +1,81 @@
+using System.Windows;
+using System.Windows.Interop;
+using Autodesk.Revit.DB.Events;
+using Autodesk.Revit.UI;
+using Bimtech.RevitMcp.Planning;
+
+namespace Bimtech.RevitMcp.Ui;
+
+// Owns the single review window. Commands call Show from Revit's main thread;
+// the window then lives on that thread, like Revit's own dialogs.
+// Create it in a Revit API context, because it creates an ExternalEvent.
+public sealed class ReviewWindowHost : IDisposable
+{
+    private readonly PlanService _plans;
+    private readonly FocusHandler _focus;
+    private readonly ExternalEvent _focusEvent;
+    private Autodesk.Revit.ApplicationServices.Application? _application;
+    private ReviewWindow? _window;
+    private ReviewViewModel? _model;
+
+    public ReviewWindowHost(PlanService plans)
+    {
+        _plans = plans;
+        _focus = new FocusHandler(message => _model?.ShowMessage(message));
+        _focusEvent = ExternalEvent.Create(_focus);
+        _plans.Changed += OnPlanChanged;
+    }
+
+    // Opens the window, or brings it forward with this plan. Returns at once;
+    // the person reviews while Claude and Revit carry on.
+    public void Show(Plan plan, UIApplication application)
+    {
+        if (_application is null)
+        {
+            _application = application.Application;
+            _application.DocumentClosing += OnDocumentClosing;
+        }
+        if (_window is null)
+        {
+            _model = new ReviewViewModel(_plans);
+            _window = new ReviewWindow(_model, FocusElements);
+            // Keeps the window above Revit and minimizes it together with Revit.
+            _ = new WindowInteropHelper(_window) { Owner = application.MainWindowHandle };
+            _window.Closed += (_, _) => (_window, _model) = (null, null);
+        }
+        _model!.Load(plan);
+        _window.Show();
+        if (_window.WindowState == WindowState.Minimized) _window.WindowState = WindowState.Normal;
+        _window.Activate();
+    }
+
+    private void FocusElements(IReadOnlyList<string> elementIds)
+    {
+        if (_model?.Plan is not { } plan) return;
+        _focus.Request(plan.Document, elementIds);
+        _focusEvent.Raise();
+    }
+
+    // Keeps the window in step when Claude cancels the plan it shows.
+    private void OnPlanChanged(Plan plan)
+    {
+        if (_window is null || _model?.Plan?.PlanId != plan.PlanId) return;
+        if (_window.Dispatcher.CheckAccess()) _model.Load(plan);
+        else _window.Dispatcher.Invoke(() => _model?.Load(plan));
+    }
+
+    // Plans belong to one model, so the window closes with it. The plan itself stays.
+    private void OnDocumentClosing(object? sender, DocumentClosingEventArgs e)
+    {
+        if (_model?.Plan is { } plan && PlanStorageLocation.IsSameModel(e.Document, plan.Document))
+            _window?.Close();
+    }
+
+    public void Dispose()
+    {
+        _plans.Changed -= OnPlanChanged;
+        if (_application is not null) _application.DocumentClosing -= OnDocumentClosing;
+        _window?.Close();
+        _focusEvent.Dispose();
+    }
+}
