@@ -124,7 +124,7 @@ Cổng mặc định của dự án mới là `8081`. Cổng này được khai 
 - Build TypeScript thành công.
 - Build add-in Revit 2025 thành công. Có hai cảnh báo `MSB3277` về phiên bản dependency Microsoft.VisualBasic và WindowsBase do tham chiếu DLL cài trên máy; chưa xác minh ảnh hưởng trong Revit thật.
 - 15 kiểm thử thành công: dữ liệu lớn/Unicode chia gói, lỗi JSON-RPC kèm `data`, sai ID, ngắt kết nối, timeout và thời gian chờ thêm, truyền `params`/`timeoutMs`, schema và annotations MCP, từ chối tham số sai (kể cả `planId` sai dạng) trước khi gọi Revit, chuyển bộ lọc của `get_plan`, và đối chiếu method giữa server và add-in.
-- Phần `Planning/` không phụ thuộc Revit (`Plan`, `PlanService`, `JsonPlanStore`) đã được biên dịch với .NET 8 và chạy thử ngoài Revit: lưu/đọc JSON giữ tiếng Việt, đếm tóm tắt, huỷ, chặn chuyển trạng thái sai, chặn `planId` dạng đường dẫn. Các command mới (`Commands/Plans/`, `Commands/Parameters/`) và `PlanStorageLocation` dùng Revit API nên chưa được build.
+- Phần `Planning/` không phụ thuộc Revit (`Plan`, `PlanService`, `JsonPlanStore`) đã được biên dịch với .NET 8 và chạy thử ngoài Revit: lưu/đọc JSON giữ tiếng Việt, đếm tóm tắt, huỷ, chặn chuyển trạng thái sai, chặn `planId` dạng đường dẫn. Các command mới (`Commands/Plans/`, `Commands/Parameters/`) và `PlanStorageLocation` dùng Revit API đã build thành công với Revit 2025, chưa thử trên Revit thật.
 - Chưa cài add-in mới, chưa đổi cấu hình Claude, chưa kiểm thử trên Revit thật.
 - Phần C# (`CommandParams`, registry, timeout trong bridge) mới được kiểm chứng bằng build, chưa có kiểm thử tự động vì cần Revit API.
 - Bộ giao tiếp nội bộ chỉ hỗ trợ một request/response mỗi kết nối và ID dạng chuỗi. Đây là nền tảng học tập, chưa phải bản triển khai đầy đủ MCP/Revit cho sản xuất.
