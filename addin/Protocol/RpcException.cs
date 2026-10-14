@@ -14,6 +14,12 @@ public static class RpcErrorCodes
     public const int Timeout = -32003;
     public const int BridgeStopped = -32004;
     public const int RevitApiError = -32010;
+
+    // Plans (docs/04-architecture.md).
+    public const int PlanNotFound = -32020;
+    public const int PlanWrongStatus = -32021;
+    public const int PlanStale = -32022;
+    public const int ApprovalMismatch = -32023;
 }
 
 // Thrown by commands to send a specific error back to Claude.
