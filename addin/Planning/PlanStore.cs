@@ -1,5 +1,7 @@
 using System.IO;
+using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Text.Unicode;
 
 namespace Bimtech.RevitMcp.Planning;
 
@@ -15,7 +17,12 @@ public interface IPlanStore
 // One readable JSON file per plan, in PlanDocument.StorageFolder.
 public sealed class JsonPlanStore : IPlanStore
 {
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
+    // Keeps Vietnamese text readable in the file instead of \uXXXX escapes.
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        WriteIndented = true,
+        Encoder = JavaScriptEncoder.Create(UnicodeRanges.All),
+    };
 
     public void Save(Plan plan)
     {

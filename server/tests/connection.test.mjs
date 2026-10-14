@@ -132,9 +132,12 @@ test("MCP lists tools with annotations and an input schema", async (t) => {
   const options = await bridge(t, () => {});
   const client = await mcpClient(t, options.port);
   const { tools } = await client.listTools();
-  assert.deepEqual(tools.map((tool) => tool.name).sort(), ["get_document_info", "ping_revit"]);
+  assert.deepEqual(tools.map((tool) => tool.name).sort(), [
+    "cancel_plan", "get_document_info", "get_plan", "get_plan_status", "ping_revit", "propose_set_parameters",
+  ]);
+  // No tool can change the model yet: propose_* only saves a plan, cancel_plan only changes a plan.
   for (const tool of tools) {
-    assert.equal(tool.annotations.readOnlyHint, true, tool.name);
+    assert.equal(tool.annotations.readOnlyHint, tool.name !== "cancel_plan", tool.name);
     assert.equal(tool.annotations.destructiveHint, false, tool.name);
     assert.equal(tool.inputSchema.type, "object", tool.name);
   }
@@ -171,4 +174,27 @@ test("MCP rejects invalid arguments before contacting Revit", async (t) => {
   const result = await client.callTool({ name: "ping_revit", arguments: { message: "x".repeat(201) } });
   assert.equal(result.isError, true);
   assert.equal(contacted, false);
+});
+
+test("MCP rejects a malformed plan ID before contacting Revit", async (t) => {
+  let contacted = false;
+  const options = await bridge(t, (socket) => { contacted = true; socket.destroy(); });
+  const client = await mcpClient(t, options.port);
+  const result = await client.callTool({ name: "get_plan", arguments: { planId: "../../secret" } });
+  assert.equal(result.isError, true);
+  assert.equal(contacted, false);
+});
+
+test("MCP forwards plan filters to the add-in unchanged", async (t) => {
+  let received;
+  const options = await bridge(t, (socket, request) => {
+    received = request;
+    socket.end(JSON.stringify({ jsonrpc: "2.0", id: request.id, result: { items: [] } }) + "\n");
+  });
+  const client = await mcpClient(t, options.port);
+  const args = { planId: "pln_20261014_8f3a2c", tier: "Blocked", limit: 20 };
+  const result = await client.callTool({ name: "get_plan", arguments: args });
+  assert.equal(result.isError, false);
+  assert.equal(received.method, "get_plan");
+  assert.deepEqual(received.params, args);
 });

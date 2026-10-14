@@ -1,6 +1,6 @@
 # 04 — Kiến trúc đề xuất và duyệt (propose / approve / commit)
 
-Tài liệu này mô tả kiến trúc cho các công cụ **ghi** vào mô hình, ví dụ dựng móng, cột, dầm từ CAD. Đây là bản thiết kế, chưa có mã tương ứng; phần [Lộ trình](#lộ-trình-triển-khai) cho biết thứ tự xây dựng.
+Tài liệu này mô tả kiến trúc cho các công cụ **ghi** vào mô hình, ví dụ dựng móng, cột, dầm từ CAD. Bước 1 của [Lộ trình](#lộ-trình-triển-khai) đã có mã; các bước sau vẫn là thiết kế.
 
 ## Vấn đề cần giải quyết
 
@@ -217,7 +217,7 @@ Tiếp nối [bảng mã lỗi](03-add-a-tool.md#mã-lỗi):
 | Mã | Ý nghĩa |
 | --- | --- |
 | `-32020` | Không tìm thấy kế hoạch (`data.planId`) |
-| `-32021` | Kế hoạch chưa được duyệt hoặc đã huỷ (`data.status`) |
+| `-32021` | Trạng thái kế hoạch không cho phép thao tác này, ví dụ commit khi chưa duyệt hoặc huỷ kế hoạch đã huỷ (`data.status`, `data.target`) |
 | `-32022` | Kế hoạch đã cũ vì mô hình thay đổi; cần propose lại |
 | `-32023` | `approvalId` không khớp lần duyệt mới nhất |
 
@@ -225,7 +225,7 @@ Tiếp nối [bảng mã lỗi](03-add-a-tool.md#mã-lỗi):
 
 Mỗi bước kết thúc bằng một phiên bản chạy được và kiểm thử được.
 
-1. **Lõi kế hoạch.** `Plan`, `PlanItem`, `PlanService` với luật chuyển trạng thái, `PlanStore` JSON; tool `get_plan`, `get_plan_status`, `cancel_plan`; mã lỗi mới. Kèm một lệnh mẫu đơn giản, `propose_set_parameters` (gán giá trị parameter cho các phần tử đang chọn), để thử trọn luồng mà chưa cần CAD.
+1. **Lõi kế hoạch** *(đã làm)*. `Plan`, `PlanItem`, `PlanService` với luật chuyển trạng thái, `PlanStore` JSON; tool `get_plan`, `get_plan_status`, `cancel_plan`; mã lỗi mới. Kèm một lệnh mẫu đơn giản, `propose_set_parameters` (gán giá trị parameter cho các phần tử đang chọn), để thử trọn luồng mà chưa cần CAD. Chưa có `modelStamp`; phát hiện kế hoạch cũ thuộc bước 3.
 2. **Cửa sổ duyệt.** WPF modeless, danh sách mục, chọn và zoom, Duyệt / Bỏ, cấp `approvalId`; tool `open_plan_review`.
 3. **Ghi vào mô hình.** `PlanExecutor`, `IPlanAction` cho gán parameter, `TransactionGroup`, phát hiện kế hoạch cũ; tool `commit_plan`; nhật ký audit.
 4. **Gắn tool móng, cột, dầm hiện có** vào khung: tách phần tính toán thành `propose_*`, phần tạo phần tử thành `IPlanAction`.

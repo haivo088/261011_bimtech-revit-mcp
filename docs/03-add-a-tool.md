@@ -102,5 +102,9 @@ dotnet build Bimtech.RevitMcp.sln -c Release
 | `-32003` | Hết thời gian chờ Revit |
 | `-32004` | Cầu nối đang dừng |
 | `-32010` | Revit API ném lỗi; `data.type` là tên exception |
+| `-32020` | Không tìm thấy kế hoạch (`data.planId`) |
+| `-32021` | Trạng thái kế hoạch không cho phép thao tác này (`data.status`, `data.target`) |
+| `-32022` | Kế hoạch đã cũ vì mô hình thay đổi (dành cho bước 3) |
+| `-32023` | `approvalId` không khớp lần duyệt mới nhất (dành cho bước 3) |
 
 Ném `RpcException` khi muốn Claude nhận một lỗi cụ thể. Các exception khác được handler chuyển thành `-32010` hoặc `-32603`.

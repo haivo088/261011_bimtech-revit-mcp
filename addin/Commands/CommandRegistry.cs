@@ -1,5 +1,8 @@
 using Bimtech.RevitMcp.Commands.Diagnostics;
 using Bimtech.RevitMcp.Commands.Documents;
+using Bimtech.RevitMcp.Commands.Parameters;
+using Bimtech.RevitMcp.Commands.Plans;
+using Bimtech.RevitMcp.Planning;
 
 namespace Bimtech.RevitMcp.Commands;
 
@@ -22,11 +25,20 @@ public sealed class CommandRegistry
 
     // To add a command: create a class implementing IRevitCommand and list it here.
     // server/tests/contract.test.mjs checks that each method has a matching server tool.
-    public static CommandRegistry CreateDefault() => new(
-    [
-        new PingCommand(),
-        new GetDocumentInfoCommand(),
-    ]);
+    public static CommandRegistry CreateDefault()
+    {
+        // One PlanService shared by every plan command; plans themselves live in JSON files.
+        var plans = new PlanService(new JsonPlanStore());
+        return new(
+        [
+            new PingCommand(),
+            new GetDocumentInfoCommand(),
+            new ProposeSetParametersCommand(plans),
+            new GetPlanCommand(plans),
+            new GetPlanStatusCommand(plans),
+            new CancelPlanCommand(plans),
+        ]);
+    }
 
     public IReadOnlyCollection<string> Methods => _commands.Keys;
 
