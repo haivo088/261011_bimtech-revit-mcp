@@ -15,6 +15,7 @@ Bản đầu tiên có hai công cụ đọc dữ liệu:
 4. Mở `addin/App.cs`, sau đó `Bridge/TcpBridge.cs`, `Commands/RevitRequestHandler.cs` và `Commands/CommandRegistry.cs`.
 5. Build và chạy thử theo phần bên dưới.
 6. Khi thêm công cụ, làm theo [03 — Thêm một công cụ mới](docs/03-add-a-tool.md).
+7. Trước khi làm công cụ ghi vào mô hình, đọc [04 — Kiến trúc đề xuất và duyệt](docs/04-architecture.md).
 
 ## Cấu trúc
 
@@ -59,7 +60,8 @@ bimtech-revit-mcp/
 └── docs/
     ├── 01-folder-map.md
     ├── 02-request-flow.md
-    └── 03-add-a-tool.md
+    ├── 03-add-a-tool.md
+    └── 04-architecture.md
 ```
 
 ## Build
@@ -126,6 +128,6 @@ Cổng mặc định của dự án mới là `8081`. Cổng này được khai 
 
 ## Mở rộng từng bước
 
-Đã có: tham số và timeout theo request, registry command. Tiếp theo: khung đọc dữ liệu (phân trang, lọc, đơn vị), rồi khung ghi (Transaction, dry-run, giới hạn số phần tử). Xem [03 — Thêm một công cụ mới](docs/03-add-a-tool.md) cho quy trình thêm từng công cụ.
+Đã có: tham số và timeout theo request, registry command. Tiếp theo: khung đọc dữ liệu (phân trang, lọc, đơn vị), rồi khung ghi theo mô hình đề xuất, duyệt, ghi (xem [04 — Kiến trúc](docs/04-architecture.md)). Xem [03 — Thêm một công cụ mới](docs/03-add-a-tool.md) cho quy trình thêm từng công cụ.
 
 Nền tảng API được đối chiếu với tài liệu Autodesk: [Revit 2025 dùng .NET 8](https://help.autodesk.com/cloudhelp/2025/ENU/Revit-WhatsNew/files/GUID-50024FD2-16BE-40BE-96E6-550294D9537D.htm), [ExternalEvent.Raise](https://help.autodesk.com/cloudhelp/2026/ENU/Revit-API-MainReference/files/html/13bf4411-c400-dcd2-458c-7f09357d9ecb.htm).
