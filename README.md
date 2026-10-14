@@ -8,6 +8,7 @@ Các công cụ hiện có:
 - `get_document_info`: đọc tên, đường dẫn, loại mô hình và view đang mở.
 - `propose_set_parameters`: lập kế hoạch gán một giá trị parameter cho các phần tử đang chọn và mở cửa sổ duyệt trong Revit; **không sửa mô hình**.
 - `get_plan`, `get_plan_status`, `open_plan_review`, `cancel_plan`: đọc kế hoạch, mở lại cửa sổ duyệt, huỷ kế hoạch (xem [04 — Kiến trúc](docs/04-architecture.md)). Chỉ người dùng duyệt được kế hoạch, trong cửa sổ Revit.
+- `commit_plan`: ghi các mục người dùng đã duyệt vào mô hình, cần `approvalId` từ `get_plan_status`; cả lần ghi là một bước Undo. Từ chối khi mô hình đã đổi kể từ lúc propose.
 
 ## Bắt đầu đọc từ đâu?
 
@@ -59,8 +60,8 @@ bimtech-revit-mcp/
 │   │   ├── Diagnostics/PingCommand.cs
 │   │   ├── Documents/GetDocumentInfoCommand.cs
 │   │   ├── Parameters/             # propose_set_parameters
-│   │   └── Plans/                  # get_plan, get_plan_status, open_plan_review, cancel_plan
-│   ├── Planning/                   # Kế hoạch: dữ liệu, luật trạng thái, lưu JSON
+│   │   └── Plans/                  # get_plan, get_plan_status, open_plan_review, cancel_plan, commit_plan
+│   ├── Planning/                   # Kế hoạch: dữ liệu, luật trạng thái, lưu JSON, commit, đếm thay đổi model
 │   └── Ui/                         # Cửa sổ duyệt WPF modeless
 ├── tests/
 │   └── Bimtech.RevitMcp.Planning.Tests/  # xUnit cho Planning/ và ViewModel, chạy không cần Revit
@@ -132,7 +133,7 @@ Cổng mặc định của dự án mới là `8081`. Cổng này được khai 
 
 - Build TypeScript thành công.
 - Build add-in Revit 2025 thành công. Có hai cảnh báo `MSB3277` về phiên bản dependency Microsoft.VisualBasic và WindowsBase do tham chiếu DLL cài trên máy; chưa xác minh ảnh hưởng trong Revit thật.
-- 31 kiểm thử xUnit thành công. 8 kiểm thử cho ViewModel của cửa sổ duyệt: tách mục Blocked sang tab riêng, mô tả phần tử và thay đổi, chỉ bật **Duyệt kế hoạch** khi mọi mục đã có quyết định, giữ dòng đang chọn sau khi bấm nút, hiện lỗi thành thông báo, huỷ từ Claude cập nhật cửa sổ. 23 kiểm thử cho `Planning/`: duyệt/bỏ từng mục, mục Blocked không duyệt được, chỉ duyệt kế hoạch khi mọi mục cần xem đã có quyết định, `approvalId` mất hiệu lực khi sửa lại, huỷ xoá phê duyệt, mã băm các mục đã duyệt giữ nguyên sau khi lưu/đọc tiếng Việt, đọc file kế hoạch phiên bản 1, chặn `planId` dạng đường dẫn.
+- 41 kiểm thử xUnit thành công. 10 kiểm thử cho `commit_plan` (`PlanCommitter` với writer giả): chỉ ghi mục đã duyệt theo thứ tự duyệt, commit lần hai trả kết quả cũ, từ chối kế hoạch chưa duyệt, `approvalId` cũ và mục bị sửa sau khi duyệt, chuyển `Stale` khi mô hình đổi hoặc Revit khởi động lại, kế hoạch không có `modelStamp` coi là cũ, một dòng audit mỗi lần ghi, `overrides` đè lên `params`. Còn lại: 8 kiểm thử cho ViewModel của cửa sổ duyệt: tách mục Blocked sang tab riêng, mô tả phần tử và thay đổi, chỉ bật **Duyệt kế hoạch** khi mọi mục đã có quyết định, giữ dòng đang chọn sau khi bấm nút, hiện lỗi thành thông báo, huỷ từ Claude cập nhật cửa sổ. 23 kiểm thử cho `Planning/`: duyệt/bỏ từng mục, mục Blocked không duyệt được, chỉ duyệt kế hoạch khi mọi mục cần xem đã có quyết định, `approvalId` mất hiệu lực khi sửa lại, huỷ xoá phê duyệt, mã băm các mục đã duyệt giữ nguyên sau khi lưu/đọc tiếng Việt, đọc file kế hoạch phiên bản 1, chặn `planId` dạng đường dẫn.
 - Cửa sổ duyệt đã được dựng thử ngoài Revit với dữ liệu mẫu để kiểm tra bố cục. Phần nối với Revit (`ReviewWindowHost`, `FocusHandler`, `OpenPlanReviewCommand`) đã build, chưa chạy trong Revit thật.
 - 16 kiểm thử server thành công, gồm một kiểm thử bảo đảm không command nào trong `addin/Commands/` gọi `Approve`. Các mục: dữ liệu lớn/Unicode chia gói, lỗi JSON-RPC kèm `data`, sai ID, ngắt kết nối, timeout và thời gian chờ thêm, truyền `params`/`timeoutMs`, schema và annotations MCP, từ chối tham số sai (kể cả `planId` sai dạng) trước khi gọi Revit, chuyển bộ lọc của `get_plan`, và đối chiếu method giữa server và add-in.
 - Phần `Planning/` không phụ thuộc Revit (`Plan`, `PlanService`, `JsonPlanStore`) đã được biên dịch với .NET 8 và chạy thử ngoài Revit: lưu/đọc JSON giữ tiếng Việt, đếm tóm tắt, huỷ, chặn chuyển trạng thái sai, chặn `planId` dạng đường dẫn. Các command mới (`Commands/Plans/`, `Commands/Parameters/`) và `PlanStorageLocation` dùng Revit API đã build thành công với Revit 2025, chưa thử trên Revit thật.

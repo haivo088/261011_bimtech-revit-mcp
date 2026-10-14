@@ -1,6 +1,6 @@
 # 04 — Kiến trúc đề xuất và duyệt (propose / approve / commit)
 
-Tài liệu này mô tả kiến trúc cho các công cụ **ghi** vào mô hình, ví dụ dựng móng, cột, dầm từ CAD. Bước 1 của [Lộ trình](#lộ-trình-triển-khai) đã có mã; bước 2 đã có mã nhưng chưa thử trong Revit thật; các bước sau vẫn là thiết kế.
+Tài liệu này mô tả kiến trúc cho các công cụ **ghi** vào mô hình, ví dụ dựng móng, cột, dầm từ CAD. Bước 1 của [Lộ trình](#lộ-trình-triển-khai) đã có mã; bước 2 và 3 đã có mã nhưng chưa thử trong Revit thật; các bước sau vẫn là thiết kế.
 
 ## Vấn đề cần giải quyết
 
@@ -35,7 +35,7 @@ flowchart LR
     Propose --> Plans[Planning<br/>PlanService + PlanStore]
     PlanCmds --> Plans
     Plans --> Review[Ui<br/>Cửa sổ duyệt WPF modeless]
-    Plans --> Executor[Planning<br/>PlanExecutor]
+    Plans --> Executor[Planning<br/>PlanCommitter + RevitPlanWriter]
     Executor --> Revit[(Revit API<br/>Transaction)]
     Review -- người dùng bấm --> Plans
 ```
@@ -47,7 +47,9 @@ Server vẫn mỏng như hiện nay: mỗi tool chỉ khai báo schema rồi g�
 | `Plan`, `PlanItem` | `addin/Planning/` | Hợp đồng dữ liệu của kế hoạch |
 | `PlanService` | `addin/Planning/` | Tạo, tra cứu, chuyển trạng thái kế hoạch; kiểm tra luật chuyển trạng thái |
 | `PlanStore` | `addin/Planning/` | Lưu và đọc kế hoạch dạng JSON |
-| `PlanExecutor` | `addin/Planning/` | Ghi các mục đã duyệt trong một `TransactionGroup` |
+| `PlanCommitter` | `addin/Planning/` | Luật commit, không dùng Revit: trạng thái, `approvalId`, hash mục đã duyệt, kế hoạch cũ, ghi kết quả và audit |
+| `RevitPlanWriter` | `addin/Planning/` | Ghi các mục đã duyệt trong một `TransactionGroup`, mỗi mục một `Transaction` |
+| `ModelChangeTracker` | `addin/Planning/` | Đếm `DocumentChanged` theo model trong phiên Revit, tạo `ModelStamp` |
 | `ReviewWindow` | `addin/Ui/` | Cửa sổ duyệt WPF modeless |
 | `IPlanAction` | `addin/Planning/Actions/` | Cách thực thi một loại mục (tạo dầm, đặt móng, gán parameter…) |
 | Lệnh `propose_*` | `addin/Commands/<Nhóm>/` | Đọc dữ liệu, lập danh sách mục, gửi cho `PlanService` |
@@ -149,8 +151,10 @@ Luật duyệt (trong `PlanService`):
 
 1. **Propose là thuần đọc.** Lệnh `propose_*` không mở Transaction. Nếu cần tính toán hình học thử, dùng dữ liệu trong bộ nhớ, không tạo phần tử tạm trong mô hình.
 2. **Chỉ cửa sổ duyệt mới đưa kế hoạch sang `Approved`.** Không có lệnh JSON-RPC nào làm được việc này. Khi người dùng bấm Duyệt, add-in tạo một `approvalId` ngẫu nhiên gắn với ảnh chụp (snapshot) danh sách mục đã duyệt. `commit_plan` phải gửi đúng `approvalId` mới nhất; nếu người dùng sửa lại sau khi duyệt, `approvalId` cũ hết hiệu lực.
-3. **Phát hiện kế hoạch cũ.** Add-in đếm sự kiện `DocumentChanged` trong phiên Revit. Khi commit, nếu `changeCounter` khác lúc propose (trừ các thay đổi do chính add-in ghi) hoặc khác phiên Revit, kế hoạch thành `Stale` và phải propose lại.
-4. **Commit gom trong một `TransactionGroup`.** Người dùng hoàn tác bằng một lần Undo. Mỗi mục ghi `result` sau khi chạy, nên gọi `commit_plan` lần hai trên kế hoạch đã `Committed` chỉ trả lại kết quả cũ, không tạo trùng.
+3. **Phát hiện kế hoạch cũ.** Add-in đếm sự kiện `DocumentChanged` của từng model trong phiên Revit (`ModelChangeTracker`, đăng ký ngay khi Revit khởi động). Propose lưu `modelStamp` (`sessionId`, `changeCounter`). Khi commit, nếu bộ đếm khác lúc propose hoặc khác phiên Revit, kế hoạch thành `Stale` và phải propose lại. **Mọi** thay đổi đều tính, kể cả Undo, add-in khác và commit của kế hoạch khác: các mục được kiểm tra trên mô hình lúc propose, nên mô hình đổi thì không còn bảo đảm. Kế hoạch tạo trước khi có `modelStamp` (schema 1–2) luôn coi là cũ.
+4. **Commit gom trong một `TransactionGroup`.** Người dùng hoàn tác bằng một lần Undo. Bên trong, mỗi mục chạy trong một `Transaction` riêng: mục lỗi chỉ rollback chính nó thành `Failed`, các mục khác vẫn ghi. Cảnh báo Revit được ghi vào `result.warnings` và bỏ qua; lỗi Revit rollback mục đó; không có hộp thoại nào hiện ra. Mỗi mục ghi `result` sau khi chạy, nên gọi `commit_plan` lần hai trên kế hoạch đã `Committed` chỉ trả lại kết quả cũ, không tạo trùng.
+
+   Trước khi ghi, commit tính lại `itemsHash` của các mục đã duyệt; nếu khác bản lúc duyệt (ví dụ file kế hoạch bị sửa tay) thì từ chối với `-32023`. Sau khi ghi, add-in nối một dòng vào `audit.jsonl` cạnh các file kế hoạch: thời điểm, `planId`, `approvalId`, người dùng Windows, số mục ghi được và lỗi.
 
 ## Luồng một lượt làm việc
 
@@ -237,7 +241,7 @@ Mỗi bước kết thúc bằng một phiên bản chạy được và kiểm t
 1. **Lõi kế hoạch** *(đã làm)*. `Plan`, `PlanItem`, `PlanService` với luật chuyển trạng thái, `PlanStore` JSON; tool `get_plan`, `get_plan_status`, `cancel_plan`; mã lỗi mới. Kèm một lệnh mẫu đơn giản, `propose_set_parameters` (gán giá trị parameter cho các phần tử đang chọn), để thử trọn luồng mà chưa cần CAD. Chưa có `modelStamp`; phát hiện kế hoạch cũ thuộc bước 3.
 2. **Cửa sổ duyệt** *(đã làm, chờ thử trong Revit)*. `Plan.Approval`, `PlanService.SetItemStatus` / `Approve`, sự kiện `Changed`; cửa sổ WPF modeless trong `addin/Ui/` (một cửa sổ dùng chung, đóng theo model, chọn và zoom qua `FocusHandler`); `propose_set_parameters` tự mở cửa sổ; tool `open_plan_review`. Kiểm thử xUnit cho luật duyệt và ViewModel, kiểm thử bảo đảm không command nào gọi `Approve`.
    2b. Sửa giá trị (`overrides`) trong cửa sổ.
-3. **Ghi vào mô hình.** `PlanExecutor`, `IPlanAction` cho gán parameter, `TransactionGroup`, phát hiện kế hoạch cũ; tool `commit_plan`; nhật ký audit.
+3. **Ghi vào mô hình** *(đã làm, chờ thử trong Revit)*. `PlanCommitter` (luật commit, kiểm thử xUnit với writer giả), `RevitPlanWriter`, `IPlanAction` + `SetParameterAction`, `ModelChangeTracker` và `Plan.ModelStamp` (schema 3), nhật ký `audit.jsonl`; tool `commit_plan`.
 4. **Gắn tool móng, cột, dầm hiện có** vào khung: tách phần tính toán thành `propose_*`, phần tạo phần tử thành `IPlanAction`.
 5. **Độ tin cậy.** CAD preflight, luật chấm điểm theo từng mục, chính sách ngưỡng theo loại việc (để sau; xem phần dưới).
 6. **Vòng phản hồi với thiết kế.** Câu hỏi, xuất danh sách câu hỏi, ghi nhớ quyết định theo dự án.

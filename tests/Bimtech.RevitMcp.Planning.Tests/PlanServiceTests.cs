@@ -234,17 +234,19 @@ public sealed class PlanServiceTests : IDisposable
     {
         var plan = CreatePlan();
         var path = Path.Combine(_folder, plan.PlanId + ".json");
-        // A version 1 file has no approval field at all.
+        // A version 1 file has neither the approval (version 2) nor the model stamp (version 3).
         var json = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
         json["schemaVersion"] = 1;
         Assert.True(json.Remove("approval"));
+        Assert.True(json.Remove("modelStamp"));
         File.WriteAllText(path, json.ToJsonString());
 
         var loaded = _plans.Get(_document, plan.PlanId);
         Assert.Null(loaded.Approval);
+        Assert.Null(loaded.ModelStamp);
 
         _plans.SetItemStatus(_document, plan.PlanId, ["E1"], PlanItemStatus.Approved);
-        Assert.Contains("\"schemaVersion\": 2", File.ReadAllText(path));
+        Assert.Contains($"\"schemaVersion\": {Plan.CurrentSchemaVersion}", File.ReadAllText(path));
     }
 
     [Fact]

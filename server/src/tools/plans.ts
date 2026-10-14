@@ -50,6 +50,25 @@ export const openPlanReview = defineTool({
   annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
 });
 
+const approvalId = z.string().regex(/^apr_[0-9a-f]{16}$/)
+  .describe("approvalId from get_plan_status after the user approved, e.g. \"apr_3f9c0e7a1b2d4c68\". Never guess one.");
+
+export const commitPlan = defineTool({
+  name: "commit_plan",
+  method: "commit_plan",
+  title: "Commit approved plan",
+  description:
+    "Write the items the user approved in the Revit review window into the model. Call it only after the user "
+    + "says they finished reviewing and get_plan_status shows status Approved; pass that approvalId. "
+    + "Rejected items are never written. The whole commit is one undo step in Revit. Errors: -32022 the model "
+    + "changed since the plan was proposed (plan becomes Stale; propose again), -32023 the approvalId is not the "
+    + "latest (read get_plan_status again). Calling it again on a committed plan returns the same results.",
+  inputSchema: { planId, approvalId },
+  // Plans may hold items that overwrite or delete, so treat a commit as destructive.
+  annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+  timeoutMs: 120000,
+});
+
 export const cancelPlan = defineTool({
   name: "cancel_plan",
   method: "cancel_plan",

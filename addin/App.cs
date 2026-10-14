@@ -19,9 +19,13 @@ public class App : IExternalApplication
     internal static PlanService Plans { get; } = new(new JsonPlanStore());
     // Created on the first bridge start, which runs in a Revit API context.
     internal static ReviewWindowHost? Review { get; set; }
+    // Counts model changes from Revit start, so plans proposed later can be checked for staleness.
+    internal static ModelChangeTracker? Changes { get; private set; }
 
     public Result OnStartup(UIControlledApplication application)
     {
+        Changes = new ModelChangeTracker(application.ControlledApplication);
+
         var panel = application.CreateRibbonPanel("BIMTECH MCP");
         panel.AddItem(new PushButtonData(
             "BimtechMcpToggle", "Start / Stop\nMCP Bridge",
@@ -36,6 +40,8 @@ public class App : IExternalApplication
         Bridge = null;
         Review?.Dispose();
         Review = null;
+        Changes?.Dispose();
+        Changes = null;
         return Result.Succeeded;
     }
 }
@@ -57,7 +63,7 @@ public class ToggleBridgeCommand : IExternalCommand
             else
             {
                 App.Review ??= new ReviewWindowHost(App.Plans);
-                var handler = new RevitRequestHandler(CommandRegistry.CreateDefault(App.Plans, App.Review));
+                var handler = new RevitRequestHandler(CommandRegistry.CreateDefault(App.Plans, App.Review, App.Changes!));
                 try { App.Bridge = new TcpBridge(App.BridgePort, handler); }
                 catch { handler.Dispose(); throw; }
                 TaskDialog.Show("BIMTECH MCP", $"Bridge listening at 127.0.0.1:{App.BridgePort}.");

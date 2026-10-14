@@ -10,7 +10,7 @@ namespace Bimtech.RevitMcp.Commands.Parameters;
 // Proposes setting one parameter to one value on many elements. Read-only:
 // it checks every element and saves a plan, but never opens a Transaction.
 // This is the simplest propose command, used to try the plan flow end to end.
-public sealed class ProposeSetParametersCommand(PlanService plans, ReviewWindowHost review) : IRevitCommand
+public sealed class ProposeSetParametersCommand(PlanService plans, ReviewWindowHost review, ModelChangeTracker changes) : IRevitCommand
 {
     public string Method => "propose_set_parameters";
 
@@ -62,7 +62,8 @@ public sealed class ProposeSetParametersCommand(PlanService plans, ReviewWindowH
                 source = fromSelection ? "selection" : "elementIds",
                 elementCount = ids.Count,
             }),
-            items: items);
+            items: items,
+            modelStamp: changes.Current(document));
         review.Show(plan, context.UIApplication);
 
         return new

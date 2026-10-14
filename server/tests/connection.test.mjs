@@ -133,13 +133,14 @@ test("MCP lists tools with annotations and an input schema", async (t) => {
   const client = await mcpClient(t, options.port);
   const { tools } = await client.listTools();
   assert.deepEqual(tools.map((tool) => tool.name).sort(), [
-    "cancel_plan", "get_document_info", "get_plan", "get_plan_status", "open_plan_review", "ping_revit",
+    "cancel_plan", "commit_plan", "get_document_info", "get_plan", "get_plan_status", "open_plan_review", "ping_revit",
     "propose_set_parameters",
   ]);
-  // No tool can change the model yet: propose_* only saves a plan, cancel_plan only changes a plan.
+  // Only commit_plan changes the model: propose_* only saves a plan, cancel_plan only changes a plan.
+  const changesPlanOrModel = ["cancel_plan", "commit_plan"];
   for (const tool of tools) {
-    assert.equal(tool.annotations.readOnlyHint, tool.name !== "cancel_plan", tool.name);
-    assert.equal(tool.annotations.destructiveHint, false, tool.name);
+    assert.equal(tool.annotations.readOnlyHint, !changesPlanOrModel.includes(tool.name), tool.name);
+    assert.equal(tool.annotations.destructiveHint, tool.name === "commit_plan", tool.name);
     assert.equal(tool.inputSchema.type, "object", tool.name);
   }
   const ping = tools.find((tool) => tool.name === "ping_revit");
@@ -198,4 +199,24 @@ test("MCP forwards plan filters to the add-in unchanged", async (t) => {
   assert.equal(result.isError, false);
   assert.equal(received.method, "get_plan");
   assert.deepEqual(received.params, args);
+});
+
+test("commit_plan forwards planId and approvalId and rejects malformed approval IDs locally", async (t) => {
+  const requests = [];
+  const options = await bridge(t, (socket, request) => {
+    requests.push(request);
+    socket.end(JSON.stringify({ jsonrpc: "2.0", id: request.id, result: { applied: 1 } }) + "\n");
+  });
+  const client = await mcpClient(t, options.port);
+  const args = { planId: "pln_20261014_8f3a2c", approvalId: "apr_3f9c0e7a1b2d4c68" };
+  const ok = await client.callTool({ name: "commit_plan", arguments: args });
+  assert.equal(ok.isError, false);
+  assert.deepEqual(requests[0].params, args);
+  assert.equal(requests[0].timeoutMs, 120000);
+
+  for (const approvalId of ["apr_123", "pln_20261014_8f3a2c", "APR_3F9C0E7A1B2D4C68"]) {
+    const bad = await client.callTool({ name: "commit_plan", arguments: { ...args, approvalId } });
+    assert.equal(bad.isError, true, approvalId);
+  }
+  assert.equal(requests.length, 1);
 });

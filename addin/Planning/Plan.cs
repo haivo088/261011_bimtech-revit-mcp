@@ -9,8 +9,8 @@ namespace Bimtech.RevitMcp.Planning;
 // without Revit. See docs/04-architecture.md for the full lifecycle.
 public sealed class Plan
 {
-    // 2 added Approval. Version 1 files still load; Approval is then null.
-    public const int CurrentSchemaVersion = 2;
+    // 2 added Approval; 3 added ModelStamp. Older files still load; the new fields are then null.
+    public const int CurrentSchemaVersion = 3;
 
     public int SchemaVersion { get; set; } = CurrentSchemaVersion;
     public string PlanId { get; set; } = "";
@@ -27,6 +27,9 @@ public sealed class Plan
     public List<PlanQuestion> Questions { get; set; } = [];
     // Set only by the review window when the person approves; cleared when they edit again.
     public PlanApproval? Approval { get; set; }
+    // The model's change count when the plan was proposed. commit_plan refuses to write when the
+    // model changed since (the plan is then Stale), because the items were checked against that state.
+    public ModelStamp? ModelStamp { get; set; }
 
     public PlanSummary Summarize() => new(
         Items.Count,
@@ -76,6 +79,10 @@ public sealed class PlanApproval
         return Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
     }
 }
+
+// Identifies one state of an open model: the Revit session and how many DocumentChanged events the
+// add-in has seen for that model. Any edit, undo or other add-in's change moves the counter.
+public sealed record ModelStamp(string SessionId, long ChangeCounter);
 
 // A question for the designer, raised when the drawings cannot settle an item.
 public sealed class PlanQuestion

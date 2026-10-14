@@ -21,7 +21,7 @@ public sealed class PlanService(IPlanStore store, TimeProvider? clock = null)
     public event Action<Plan>? Changed;
 
     public Plan Create(PlanDocument document, string kind, string title, JsonElement? scope,
-        IEnumerable<PlanItem> items, IEnumerable<PlanQuestion>? questions = null)
+        IEnumerable<PlanItem> items, IEnumerable<PlanQuestion>? questions = null, ModelStamp? modelStamp = null)
     {
         var plan = new Plan
         {
@@ -34,6 +34,7 @@ public sealed class PlanService(IPlanStore store, TimeProvider? clock = null)
             Scope = scope,
             Items = items.ToList(),
             Questions = questions?.ToList() ?? [],
+            ModelStamp = modelStamp,
         };
         Validate(plan);
         lock (_lock) store.Save(plan);
@@ -125,6 +126,25 @@ public sealed class PlanService(IPlanStore store, TimeProvider? clock = null)
         };
         return true;
     });
+
+    // Records what commit_plan wrote: each approved item becomes Applied or Failed with its result,
+    // and the plan becomes Committed. The approval stays as a record of what was approved.
+    // Only PlanCommitter calls this, after the model was written.
+    public Plan MarkCommitted(PlanDocument document, string planId, IReadOnlyCollection<PlanItemOutcome> outcomes) =>
+        Update(document, planId, plan =>
+        {
+            PlanTransitions.Ensure(plan, PlanStatus.Committed);
+            var byId = plan.Items.ToDictionary(item => item.ItemId, StringComparer.Ordinal);
+            foreach (var outcome in outcomes)
+            {
+                if (!byId.TryGetValue(outcome.ItemId, out var item))
+                    throw new InvalidOperationException($"Plan '{planId}' has no item '{outcome.ItemId}'.");
+                item.Status = outcome.Applied ? PlanItemStatus.Applied : PlanItemStatus.Failed;
+                item.Result = outcome.Result;
+            }
+            plan.Status = PlanStatus.Committed;
+            return true;
+        });
 
     // Loads, changes and saves a plan under the lock. The change returns false when
     // nothing changed, so the file and UpdatedAt are left alone.

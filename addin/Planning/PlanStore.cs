@@ -12,6 +12,9 @@ public interface IPlanStore
 
     // Returns null when the model has no plan with this ID.
     Plan? Load(PlanDocument document, string planId);
+
+    // Appends one entry to the model's audit log. Entries are never rewritten or removed.
+    void AppendAudit(PlanDocument document, PlanAuditEntry entry);
 }
 
 // One readable JSON file per plan, in PlanDocument.StorageFolder.
@@ -49,6 +52,19 @@ public sealed class JsonPlanStore : IPlanStore
         plan.Document.StorageFolder = document.StorageFolder;
         return plan;
     }
+
+    // audit.jsonl next to the plan files: one JSON object per line, appended after each commit.
+    public void AppendAudit(PlanDocument document, PlanAuditEntry entry)
+    {
+        if (string.IsNullOrEmpty(document.StorageFolder)) throw new InvalidOperationException("Plan has no storage folder.");
+        Directory.CreateDirectory(document.StorageFolder);
+        var line = JsonSerializer.Serialize(entry, LineOptions) + Environment.NewLine;
+        File.AppendAllText(Path.Combine(document.StorageFolder, AuditFileName), line);
+    }
+
+    public const string AuditFileName = "audit.jsonl";
+
+    private static readonly JsonSerializerOptions LineOptions = new(JsonOptions) { WriteIndented = false };
 
     // PlanService validates planId, so it cannot contain path separators.
     private static string PathFor(string folder, string planId) => Path.Combine(folder, planId + ".json");

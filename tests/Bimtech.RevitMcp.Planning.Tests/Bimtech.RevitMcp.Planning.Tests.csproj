@@ -11,6 +11,7 @@
     <Compile Include="..\..\addin\Planning\Plan.cs" Link="Linked\Plan.cs" />
     <Compile Include="..\..\addin\Planning\PlanService.cs" Link="Linked\PlanService.cs" />
     <Compile Include="..\..\addin\Planning\PlanStore.cs" Link="Linked\PlanStore.cs" />
+    <Compile Include="..\..\addin\Planning\PlanCommitter.cs" Link="Linked\PlanCommitter.cs" />
     <Compile Include="..\..\addin\Protocol\RpcException.cs" Link="Linked\RpcException.cs" />
     <!-- The review window's view model uses no WPF or Revit types. -->
     <Compile Include="..\..\addin\Ui\ReviewViewModel.cs" Link="Linked\ReviewViewModel.cs" />
