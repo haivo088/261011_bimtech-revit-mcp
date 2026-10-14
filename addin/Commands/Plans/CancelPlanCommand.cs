@@ -6,6 +6,8 @@ namespace Bimtech.RevitMcp.Commands.Plans;
 public sealed class CancelPlanCommand(PlanService plans) : IRevitCommand
 {
     public string Method => "cancel_plan";
+    // Changes the plan file only, never the model, so read-only mode still allows it.
+    public CommandAccess Access => CommandAccess.Read;
 
     public object? Execute(CommandContext context)
     {

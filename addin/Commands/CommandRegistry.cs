@@ -1,7 +1,9 @@
 using Bimtech.RevitMcp.Commands.Diagnostics;
 using Bimtech.RevitMcp.Commands.Documents;
+using Bimtech.RevitMcp.Commands.Elements;
 using Bimtech.RevitMcp.Commands.Parameters;
 using Bimtech.RevitMcp.Commands.Plans;
+using Bimtech.RevitMcp.Commands.Structural;
 using Bimtech.RevitMcp.Planning;
 using Bimtech.RevitMcp.Planning.Actions;
 using Bimtech.RevitMcp.Ui;
@@ -39,9 +41,31 @@ public sealed class CommandRegistry
         new OpenPlanReviewCommand(plans, review),
         new CancelPlanCommand(plans),
         new CommitPlanCommand(plans, new PlanCommitter(plans, new JsonPlanStore()), PlanActions.CreateDefault(), changes),
+        new GetLevelsCommand(),
+        new ListCategoriesCommand(),
+        new GetElementsCommand(),
+        new GetSelectedElementsCommand(),
+        new GetElementParametersCommand(),
+        new ListCadSourcesCommand(),
+        new LoadDefaultFamilyCommand(),
+        new ScanCadColumnsCommand(),
+        new PlaceColumnsCommand(),
+        new ScanCadBeamsCommand(),
+        new PlaceBeamsCommand(),
+        new ScanCadPilesCommand(),
+        new PlacePilesCommand(),
+        new UndoBatchCommand(),
     ]);
 
     public IReadOnlyCollection<string> Methods => _commands.Keys;
+
+    // Commands sorted by group, then method, as shown in the settings window.
+    public IReadOnlyList<IRevitCommand> Commands =>
+        _commands.Values.OrderBy(GroupOf).ThenBy(command => command.Method, StringComparer.Ordinal).ToList();
+
+    // The folder a command lives in (Diagnostics, Documents, Elements, Structural...).
+    public static string GroupOf(IRevitCommand command) =>
+        command.GetType().Namespace?.Split('.').LastOrDefault() ?? "Other";
 
     public bool TryGet(string method, out IRevitCommand command) =>
         _commands.TryGetValue(method, out command!);

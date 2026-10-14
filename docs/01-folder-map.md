@@ -24,7 +24,8 @@ Mỗi công cụ có một file định nghĩa ở `server/src/tools/` và một
 | `src/config.ts` | Đọc host, port và timeout từ môi trường | Khi đổi thiết lập kết nối |
 | `src/tools/define.ts` | Kiểu `RevitTool`, `defineTool` và cách đăng ký công cụ với MCP | Khi đổi cách mọi công cụ chạy |
 | `src/tools/index.ts` | Danh sách `allTools` Claude nhìn thấy | Khi thêm công cụ |
-| `src/tools/diagnostics.ts`, `document.ts`, `parameters.ts`, `plans.ts` | Định nghĩa từng công cụ: tên, mô tả, schema, annotations | Khi thêm hoặc sửa công cụ |
+| `src/tools/schemas.ts` | Schema dùng chung: ID phần tử, phân trang, bộ lọc | Khi thêm kiểu tham số dùng chung |
+| `src/tools/diagnostics.ts`, `document.ts`, `elements.ts`, `parameters.ts`, `plans.ts`, `structural.ts` | Định nghĩa từng công cụ: tên, mô tả, schema, annotations | Khi thêm hoặc sửa công cụ |
 | `src/revit-client.ts` | Kết nối TCP, gửi method + params + timeout, ghép dữ liệu nhận được, báo lỗi | Khi thay giao thức kết nối |
 | `tests/connection.test.mjs` | Chạy một cầu nối TCP giả lập và kiểm tra MCP | Khi đổi hành vi giao tiếp |
 | `tests/contract.test.mjs` | So sánh method của server với command của add-in | Tự chạy cùng `npm test` |
@@ -47,7 +48,8 @@ Mỗi công cụ có một file định nghĩa ở `server/src/tools/` và một
 | `Commands/CommandContext.cs` | UIApplication, params, cancellation và hàm lấy Document | Khi command cần thêm tiện ích chung |
 | `Commands/CommandParams.cs` | Đọc và kiểm tra tham số theo kiểu | Khi cần kiểu tham số mới |
 | `Commands/RevitJson.cs` | Chuyển đối tượng Revit sang giá trị JSON | Khi cần chuyển đổi dùng chung |
-| `Commands/Diagnostics/`, `Commands/Documents/`, `Commands/Parameters/`, `Commands/Plans/` | Mỗi command một file, nhóm theo chủ đề | Khi thêm hoặc sửa command |
+| `Commands/Common/` | Phân trang, bộ lọc phần tử, đơn vị, parameter, category dùng chung | Khi nhiều command cần cùng một tiện ích |
+| `Commands/Diagnostics/`, `Documents/`, `Elements/`, `Parameters/`, `Plans/`, `Structural/` | Mỗi command một file, nhóm theo chủ đề | Khi thêm hoặc sửa command |
 | `Planning/` | Kế hoạch đề xuất: dữ liệu, trạng thái, lưu JSON, chọn thư mục lưu (xem [04](04-architecture.md)) | Khi đổi cách quản lý kế hoạch |
 | `Ui/` | Cửa sổ duyệt kế hoạch: `ReviewWindow.xaml` (giao diện), `ReviewViewModel` (trạng thái và nút, không dùng Revit), `ReviewWindowHost` (mở cửa sổ, nghe `PlanService.Changed`), `FocusHandler` (ExternalEvent chọn và zoom phần tử) | Khi đổi giao diện duyệt |
 

@@ -3,6 +3,7 @@ namespace Bimtech.RevitMcp.Commands.Documents;
 public sealed class GetDocumentInfoCommand : IRevitCommand
 {
     public string Method => "get_document_info";
+    public CommandAccess Access => CommandAccess.Read;
 
     public object? Execute(CommandContext context)
     {

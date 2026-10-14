@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer, RegisteredTool } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { callRevit, RevitError, type RevitParams } from "../revit-client.js";
 
@@ -13,6 +13,9 @@ export interface RevitToolAnnotations {
   destructiveHint: boolean;
   idempotentHint?: boolean;
 }
+
+// Annotations for tools that only read the model.
+export const readOnly: RevitToolAnnotations = { readOnlyHint: true, destructiveHint: false, idempotentHint: true };
 
 // One MCP tool backed by one add-in method.
 export interface RevitTool<S extends Shape = Shape> {
@@ -32,13 +35,21 @@ export function defineTool<S extends Shape>(tool: RevitTool<S>): RevitTool {
   return tool as unknown as RevitTool;
 }
 
-export function registerRevitTools(server: McpServer, tools: readonly RevitTool[]): void {
-  const names = new Set<string>();
-  for (const tool of tools) {
-    if (names.has(tool.name)) throw new Error(`Duplicate MCP tool name: ${tool.name}`);
-    names.add(tool.name);
+// Codes meaning the add-in's command list or settings differ from what Claude was shown.
+const availabilityErrors = new Set([-32601, -32008]);
 
-    server.registerTool(tool.name, {
+// Registers every tool and returns the SDK handles so tools can be hidden later.
+// onAvailabilityError runs when Revit reports a command as unknown or switched off.
+export function registerRevitTools(
+  server: McpServer, tools: readonly RevitTool[], onAvailabilityError?: () => void,
+): Map<RevitTool, RegisteredTool> {
+  const registered = new Map<RevitTool, RegisteredTool>();
+  for (const tool of tools) {
+    if ([...registered.keys()].some((other) => other.name === tool.name)) {
+      throw new Error(`Duplicate MCP tool name: ${tool.name}`);
+    }
+
+    const handle = server.registerTool(tool.name, {
       title: tool.title,
       description: tool.description,
       inputSchema: tool.inputSchema,
@@ -50,10 +61,13 @@ export function registerRevitTools(server: McpServer, tools: readonly RevitTool[
         const result = await callRevit(tool.method, params, options);
         return textResult(JSON.stringify(result, null, 2));
       } catch (error) {
+        if (error instanceof RevitError && availabilityErrors.has(error.code)) onAvailabilityError?.();
         return errorResult(error);
       }
     });
+    registered.set(tool, handle);
   }
+  return registered;
 }
 
 function textResult(text: string, isError = false): CallToolResult {

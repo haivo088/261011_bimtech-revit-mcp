@@ -13,6 +13,8 @@ namespace Bimtech.RevitMcp.Commands.Parameters;
 public sealed class ProposeSetParametersCommand(PlanService plans, ReviewWindowHost review, ModelChangeTracker changes) : IRevitCommand
 {
     public string Method => "propose_set_parameters";
+    // Saves a plan file but never changes the model.
+    public CommandAccess Access => CommandAccess.Read;
 
     private const int MaxElements = 1000;
 

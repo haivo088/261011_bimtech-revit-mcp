@@ -8,6 +8,7 @@ namespace Bimtech.RevitMcp.Commands.Plans;
 public sealed class OpenPlanReviewCommand(PlanService plans, ReviewWindowHost review) : IRevitCommand
 {
     public string Method => "open_plan_review";
+    public CommandAccess Access => CommandAccess.Read;
 
     public object? Execute(CommandContext context)
     {

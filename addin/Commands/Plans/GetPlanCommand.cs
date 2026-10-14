@@ -7,6 +7,7 @@ namespace Bimtech.RevitMcp.Commands.Plans;
 public sealed class GetPlanCommand(PlanService plans) : IRevitCommand
 {
     public string Method => "get_plan";
+    public CommandAccess Access => CommandAccess.Read;
 
     public object? Execute(CommandContext context)
     {

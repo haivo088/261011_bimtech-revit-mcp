@@ -1,6 +1,7 @@
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using Bimtech.RevitMcp.Protocol;
+using Bimtech.RevitMcp.Settings;
 
 namespace Bimtech.RevitMcp.Commands;
 
@@ -9,11 +10,19 @@ public sealed class CommandContext(
     UIApplication uiApplication,
     CommandParams parameters,
     CommandRegistry registry,
+    SessionStore sessions,
+    McpSettings settings,
     CancellationToken cancellation)
 {
     public UIApplication UIApplication { get; } = uiApplication;
     public CommandParams Params { get; } = parameters;
     public CommandRegistry Registry { get; } = registry;
+
+    // Scan results and write batches kept between calls; see SessionStore.
+    public SessionStore Sessions { get; } = sessions;
+
+    // Settings as they were when the request arrived; a change during the call does not affect it.
+    public McpSettings Settings { get; } = settings;
 
     // Cancelled when the client times out or disconnects. Long loops should call
     // Cancellation.ThrowIfCancellationRequested() so Revit is not kept busy for nothing.
@@ -24,4 +33,18 @@ public sealed class CommandContext(
         ?? throw new RpcException(RpcErrorCodes.NoDocument, "Open a Revit model, then try again.");
 
     public Document RequireDocument() => RequireUIDocument().Document;
+
+    // For commands that change the model. Checks what Revit would otherwise reject halfway through.
+    public Document RequireWritableDocument()
+    {
+        var document = RequireDocument();
+        if (document.IsFamilyDocument)
+            throw new RpcException(RpcErrorCodes.NotWritable, "The active document is a family. Open a project model.");
+        if (document.IsReadOnly)
+            throw new RpcException(RpcErrorCodes.NotWritable, "The active model is read-only.");
+        if (document.IsModifiable)
+            throw new RpcException(RpcErrorCodes.NotWritable,
+                "Revit is already inside a transaction. Finish the current Revit command, then retry.");
+        return document;
+    }
 }

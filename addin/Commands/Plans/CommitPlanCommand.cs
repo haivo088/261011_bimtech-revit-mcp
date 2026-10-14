@@ -11,6 +11,8 @@ public sealed class CommitPlanCommand(PlanService plans, PlanCommitter committer
     : IRevitCommand
 {
     public string Method => "commit_plan";
+    // A plan may hold items that overwrite or delete, so a commit counts as Delete.
+    public CommandAccess Access => CommandAccess.Delete;
 
     private const int MaxItemsReturned = 200;
 

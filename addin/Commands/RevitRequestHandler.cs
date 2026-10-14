@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using Autodesk.Revit.UI;
 using Bimtech.RevitMcp.Protocol;
+using Bimtech.RevitMcp.Settings;
 
 namespace Bimtech.RevitMcp.Commands;
 
@@ -10,12 +11,14 @@ public sealed class RevitRequestHandler : IExternalEventHandler, IDisposable
     private sealed record Job(
         IRevitCommand Command,
         CommandParams Params,
+        McpSettings Settings,
         TaskCompletionSource<object?> Completion,
         CancellationToken Cancellation);
 
     private readonly ConcurrentQueue<Job> _jobs = new();
     private readonly object _eventLock = new();
     private readonly CommandRegistry _registry;
+    private readonly SessionStore _sessions = new();
     private readonly ExternalEvent _externalEvent;
     private bool _disposed;
 
@@ -33,8 +36,10 @@ public sealed class RevitRequestHandler : IExternalEventHandler, IDisposable
             throw new RpcException(RpcErrorCodes.MethodNotFound, $"Unknown method: {request.Method}",
                 new { available = _registry.Methods.Order().ToArray() });
         var parameters = new CommandParams(request.Params);
+        var settings = SettingsStore.Current;
+        CommandPolicy.EnsureAllowed(command, parameters, settings);
 
-        var job = new Job(command, parameters, new(TaskCreationOptions.RunContinuationsAsynchronously), cancellation);
+        var job = new Job(command, parameters, settings, new(TaskCreationOptions.RunContinuationsAsynchronously), cancellation);
         lock (_eventLock)
         {
             if (_disposed) throw BridgeStopped();
@@ -66,7 +71,7 @@ public sealed class RevitRequestHandler : IExternalEventHandler, IDisposable
             if (job.Completion.Task.IsCompleted) continue;
             try
             {
-                var context = new CommandContext(application, job.Params, _registry, job.Cancellation);
+                var context = new CommandContext(application, job.Params, _registry, _sessions, job.Settings, job.Cancellation);
                 job.Completion.TrySetResult(job.Command.Execute(context));
             }
             catch (OperationCanceledException) { job.Completion.TrySetCanceled(job.Cancellation); }

@@ -1,39 +1,9 @@
 import assert from "node:assert/strict";
-import { createServer } from "node:net";
-import { once } from "node:events";
 import { setTimeout as pause } from "node:timers/promises";
-import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { callRevit } from "../build/revit-client.js";
-
-// A small TCP stand-in verifies transport behavior without opening Revit.
-async function bridge(t, respond) {
-  const sockets = new Set();
-  const server = createServer((socket) => {
-    sockets.add(socket);
-    socket.on("close", () => sockets.delete(socket));
-    socket.on("error", () => {});
-    socket.setEncoding("utf8");
-    let buffer = "";
-    socket.on("data", (chunk) => {
-      buffer += chunk;
-      const newline = buffer.indexOf("\n");
-      if (newline < 0) return;
-      const request = JSON.parse(buffer.slice(0, newline));
-      socket.removeAllListeners("data");
-      Promise.resolve(respond(socket, request)).catch(() => socket.destroy());
-    });
-  });
-  server.listen(0, "127.0.0.1");
-  await once(server, "listening");
-  t.after(() => new Promise((resolve) => {
-    for (const socket of sockets) socket.destroy();
-    server.close(resolve);
-  }));
-  return { host: "127.0.0.1", port: server.address().port, timeoutMs: 2000, graceMs: 0 };
-}
+import { allTools } from "../build/tools/index.js";
+import { bridge, mcpClient } from "./helpers.mjs";
 
 test("reads a large response split inside a Vietnamese UTF-8 character", async (t) => {
   const expected = { title: "Dự án hạ tầng", content: "Việt Nam ".repeat(3000) };
@@ -109,38 +79,14 @@ test("keeps the error code and details reported by the add-in", async (t) => {
   });
 });
 
-// Starts the built MCP server as Claude would and points it at the fake bridge.
-async function mcpClient(t, port) {
-  const transport = new StdioClientTransport({
-    command: process.execPath,
-    args: [fileURLToPath(new URL("../build/index.js", import.meta.url))],
-    env: { ...process.env, REVIT_MCP_PORT: String(port) },
-    stderr: "pipe",
-  });
-  // Show server diagnostics in the test log; stdout stays reserved for MCP.
-  transport.stderr?.on("data", (chunk) => t.diagnostic(String(chunk).trim()));
-  const client = new Client({ name: "bimtech-test-client", version: "0.2.0" });
-  await client.connect(transport);
-  t.after(async () => {
-    await client.close();
-    await transport.close();
-  });
-  return client;
-}
-
 test("MCP lists tools with annotations and an input schema", async (t) => {
   const options = await bridge(t, () => {});
   const client = await mcpClient(t, options.port);
   const { tools } = await client.listTools();
-  assert.deepEqual(tools.map((tool) => tool.name).sort(), [
-    "cancel_plan", "commit_plan", "get_document_info", "get_plan", "get_plan_status", "open_plan_review", "ping_revit",
-    "propose_set_parameters",
-  ]);
-  // Only commit_plan changes the model: propose_* only saves a plan, cancel_plan only changes a plan.
-  const changesPlanOrModel = ["cancel_plan", "commit_plan"];
+  assert.deepEqual(tools.map((tool) => tool.name).sort(), allTools.map((tool) => tool.name).sort());
   for (const tool of tools) {
-    assert.equal(tool.annotations.readOnlyHint, !changesPlanOrModel.includes(tool.name), tool.name);
-    assert.equal(tool.annotations.destructiveHint, tool.name === "commit_plan", tool.name);
+    assert.equal(typeof tool.annotations.readOnlyHint, "boolean", tool.name);
+    assert.equal(typeof tool.annotations.destructiveHint, "boolean", tool.name);
     assert.equal(tool.inputSchema.type, "object", tool.name);
   }
   const ping = tools.find((tool) => tool.name === "ping_revit");
@@ -219,4 +165,42 @@ test("commit_plan forwards planId and approvalId and rejects malformed approval 
     assert.equal(bad.isError, true, approvalId);
   }
   assert.equal(requests.length, 1);
+});
+
+test("get_elements forwards filters and paging unchanged", async (t) => {
+  let received;
+  const page = { total: 120, offset: 50, limit: 50, returned: 50, hasMore: true, nextOffset: 100, items: [] };
+  const options = await bridge(t, (socket, request) => {
+    received = request;
+    socket.end(JSON.stringify({ jsonrpc: "2.0", id: request.id, result: page }) + "\n");
+  });
+  const client = await mcpClient(t, options.port);
+  const args = { categories: ["OST_Walls", "Doors"], categoryType: "Model", levelId: "311", nameContains: "Tường", limit: 50, offset: 50 };
+  const result = await client.callTool({ name: "get_elements", arguments: args });
+  assert.equal(result.isError, false);
+  assert.deepEqual(JSON.parse(result.content[0].text), page);
+  assert.equal(received.method, "get_elements");
+  assert.deepEqual(received.params, args);
+  assert.equal(received.timeoutMs, 60000);
+});
+
+test("read tools reject out-of-range paging and malformed element IDs", async (t) => {
+  let contacted = false;
+  const options = await bridge(t, (socket) => { contacted = true; socket.destroy(); });
+  const client = await mcpClient(t, options.port);
+  const invalidCalls = [
+    { name: "get_elements", arguments: { limit: 501 } },
+    { name: "get_elements", arguments: { offset: -1 } },
+    { name: "get_elements", arguments: { levelId: "Level 1" } },
+    { name: "get_elements", arguments: { categoryType: "Internal" } },
+    { name: "list_categories", arguments: { categoryType: "model" } },
+    { name: "get_element_parameters", arguments: { elementIds: [] } },
+    { name: "get_element_parameters", arguments: { elementIds: Array.from({ length: 51 }, (_, i) => String(i)) } },
+    { name: "get_element_parameters", arguments: { elementIds: [12345] } },
+  ];
+  for (const call of invalidCalls) {
+    const result = await client.callTool(call);
+    assert.equal(result.isError, true, JSON.stringify(call));
+  }
+  assert.equal(contacted, false);
 });

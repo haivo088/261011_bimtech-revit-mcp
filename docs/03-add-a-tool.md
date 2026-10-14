@@ -47,6 +47,7 @@ namespace Bimtech.RevitMcp.Commands.Elements;
 public sealed class GetElementCommand : IRevitCommand
 {
     public string Method => "get_element";
+    public CommandAccess Access => CommandAccess.Read;
 
     public object? Execute(CommandContext context)
     {
@@ -65,6 +66,8 @@ public sealed class GetElementCommand : IRevitCommand
 ```
 
 Thêm `new GetElementCommand()` vào `CommandRegistry.CreateDefault()`.
+
+`Access` là bắt buộc (`Read`, `Write` hoặc `Delete`) và phải khớp `annotations` phía server; chế độ chỉ đọc trong Settings dựa vào nó để chặn lệnh ghi. Lệnh mới tự xuất hiện trong cửa sổ Settings, nhóm theo thư mục chứa nó.
 
 Không đặt namespace là `Commands.Document` hoặc tên trùng kiểu Revit khác: namespace sẽ che kiểu `Autodesk.Revit.DB.Document`.
 
@@ -90,6 +93,25 @@ dotnet build Bimtech.RevitMcp.sln -c Release
 | `Cancellation` | Gọi `ThrowIfCancellationRequested()` trong vòng lặp dài |
 | `RevitJson.Id(...)` | Trả ElementId dạng chuỗi |
 
+## Khung đọc dữ liệu dùng chung
+
+Công cụ trả danh sách nên dùng lại các phần sau thay vì tự viết:
+
+| Phía | Thành phần | Dùng để |
+| --- | --- | --- |
+| Server | `schemas.ts`: `paging`, `elementFilter`, `elementId` | Trải vào `inputSchema`: `{ ...elementFilter, ...paging }` |
+| Server | `pagingNote`, `unitsNote` | Nối vào `description` để Claude biết cách lật trang và đơn vị |
+| Add-in | `Common/Paging`: `PageRequest.From(params)`, `Paging.ToPage(...)` | Đọc `limit`/`offset`, trả `total`, `hasMore`, `nextOffset`, `items` |
+| Add-in | `Common/ElementQuery`: `ElementQuery.From(params).Apply(doc)` | Lọc category/loại category/view/level/tên, sắp theo ID |
+| Add-in | `Common/ElementInfo`: `new ElementInfo(doc).Summary(e)` | Mô tả ngắn một phần tử (tên type, level có cache) |
+| Add-in | `Common/ParameterInfo`: `Select`, `From` | Đọc parameter, đổi đơn vị, kèm `display` của Revit |
+| Add-in | `Common/UnitConvert` | Đơn vị nội bộ → SI cố định; thêm spec mới bằng một dòng trong bảng `Table` |
+| Add-in | `Common/CategoryNames.Resolve` | `"OST_Walls"`, `"Walls"` hoặc tên category → ElementId |
+
+Ví dụ một command danh sách hoàn chỉnh chỉ cần vài dòng; xem `Commands/Elements/GetElementsCommand.cs`.
+
+Không đặt tên class trùng kiểu Revit (`Units`, `Categories`, `ElementFilter`...) vì sẽ gây lỗi tham chiếu mơ hồ.
+
 ## Mã lỗi
 
 | Mã | Ý nghĩa |
@@ -101,10 +123,16 @@ dotnet build Bimtech.RevitMcp.sln -c Release
 | `-32002` | Revit từ chối ExternalEvent |
 | `-32003` | Hết thời gian chờ Revit |
 | `-32004` | Cầu nối đang dừng |
+| `-32005` | Kết quả lớn hơn 1 MiB; giảm `limit` hoặc lọc hẹp hơn |
+| `-32006` | Model không ghi được (family, chỉ đọc, đang trong transaction khác) |
+| `-32007` | `scanId`/`batchId` không còn (đã dùng, hết hạn, bridge khởi động lại, hoặc thuộc model khác) |
+| `-32008` | Lệnh bị tắt trong Settings, hoặc sẽ sửa model khi đang ở chế độ chỉ đọc (`data.reason`) |
 | `-32010` | Revit API ném lỗi; `data.type` là tên exception |
 | `-32020` | Không tìm thấy kế hoạch (`data.planId`) |
 | `-32021` | Trạng thái kế hoạch không cho phép thao tác này (`data.status`, `data.target`) |
 | `-32022` | Kế hoạch đã cũ vì mô hình thay đổi; cần propose lại |
 | `-32023` | `approvalId` không khớp lần duyệt mới nhất, hoặc mục đã duyệt bị đổi sau khi duyệt |
+
+Công cụ **sửa model** dùng thêm khung ghi; xem mục "An toàn khi ghi" trong [05 — Dựng model kết cấu từ CAD](05-cad-to-structure.md) và mẫu `addin/Commands/Structural/PlaceColumnsCommand.cs`: `context.RequireWritableDocument()`, `dryRun` mặc định `true`, `FailureGuard` + `TransactionGroup`, lưu `WriteBatch` để `undo_batch` gỡ được.
 
 Ném `RpcException` khi muốn Claude nhận một lỗi cụ thể. Các exception khác được handler chuyển thành `-32010` hoặc `-32603`.

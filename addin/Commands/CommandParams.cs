@@ -12,9 +12,14 @@ namespace Bimtech.RevitMcp.Commands;
 public sealed class CommandParams
 {
     private readonly JsonElement _root;
+    private readonly string _prefix;
 
-    public CommandParams(JsonElement value)
+    public CommandParams(JsonElement value) : this(value, "") { }
+
+    // prefix names a nested object in error messages, e.g. "region." gives "region.minX".
+    private CommandParams(JsonElement value, string prefix)
     {
+        _prefix = prefix;
         if (value.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null) return;
         if (value.ValueKind != JsonValueKind.Object)
             throw new RpcException(RpcErrorCodes.InvalidParams, "params must be a JSON object.");
@@ -33,10 +38,48 @@ public sealed class CommandParams
     {
         if (!TryGet(name, out var value)) return defaultValue;
         if (value.ValueKind != JsonValueKind.Number || !value.TryGetInt32(out var number))
-            throw RpcException.InvalidParams(name, "expected an integer.");
+            throw Invalid(name, "expected an integer.");
         if (number < min || number > max)
-            throw RpcException.InvalidParams(name, $"must be between {min} and {max}.");
+            throw Invalid(name, $"must be between {min} and {max}.");
         return number;
+    }
+
+    public double GetDouble(string name, double defaultValue, double min = double.MinValue, double max = double.MaxValue)
+    {
+        if (!TryGet(name, out var value)) return defaultValue;
+        if (value.ValueKind != JsonValueKind.Number || !value.TryGetDouble(out var number) || !double.IsFinite(number))
+            throw Invalid(name, "expected a number.");
+        if (number < min || number > max)
+            throw Invalid(name, $"must be between {min} and {max}.");
+        return number;
+    }
+
+    public double RequireDouble(string name, double min = double.MinValue, double max = double.MaxValue) =>
+        Has(name) ? GetDouble(name, 0, min, max) : throw Missing(name);
+
+    // A nested object, read with the same validation. Parameter names in errors stay prefixed, e.g. "region.minX".
+    public CommandParams? GetObject(string name)
+    {
+        if (!TryGet(name, out var value)) return null;
+        if (value.ValueKind != JsonValueKind.Object)
+            throw Invalid(name, "expected an object.");
+        return new CommandParams(value, name + ".");
+    }
+
+    // An object whose values are all strings, e.g. {"500x300": "12345"}.
+    public IReadOnlyDictionary<string, string> GetStringMap(string name, int maxCount = 1000, int maxLength = 4096)
+    {
+        if (!TryGet(name, out var value)) return new Dictionary<string, string>();
+        if (value.ValueKind != JsonValueKind.Object)
+            throw Invalid(name, "expected an object whose values are strings.");
+        var map = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var property in value.EnumerateObject())
+        {
+            if (map.Count >= maxCount)
+                throw Invalid(name, $"must contain at most {maxCount} entries.");
+            map[property.Name] = ReadString($"{name}.{property.Name}", property.Value, maxLength);
+        }
+        return map;
     }
 
     public bool GetBool(string name, bool defaultValue)
@@ -46,7 +89,7 @@ public sealed class CommandParams
         {
             JsonValueKind.True => true,
             JsonValueKind.False => false,
-            _ => throw RpcException.InvalidParams(name, "expected true or false."),
+            _ => throw Invalid(name, "expected true or false."),
         };
     }
 
@@ -57,7 +100,7 @@ public sealed class CommandParams
         if (text is null) return defaultValue;
         if (!int.TryParse(text, out _) && Enum.TryParse<TEnum>(text, ignoreCase: true, out var parsed))
             return parsed;
-        throw RpcException.InvalidParams(name,
+        throw Invalid(name,
             $"unknown value '{text}'. Allowed: {string.Join(", ", Enum.GetNames<TEnum>())}.");
     }
 
@@ -88,34 +131,36 @@ public sealed class CommandParams
             && value.ValueKind != JsonValueKind.Null;
     }
 
-    private static string ReadString(string name, JsonElement value, int maxLength)
+    private string ReadString(string name, JsonElement value, int maxLength)
     {
         if (value.ValueKind != JsonValueKind.String)
-            throw RpcException.InvalidParams(name, "expected a string.");
+            throw Invalid(name, "expected a string.");
         var text = value.GetString()!;
         if (text.Length > maxLength)
-            throw RpcException.InvalidParams(name, $"must be at most {maxLength} characters.");
+            throw Invalid(name, $"must be at most {maxLength} characters.");
         return text;
     }
 
-    private static List<JsonElement> ReadArray(string name, JsonElement value, int maxCount)
+    private List<JsonElement> ReadArray(string name, JsonElement value, int maxCount)
     {
         if (value.ValueKind != JsonValueKind.Array)
-            throw RpcException.InvalidParams(name, "expected an array.");
+            throw Invalid(name, "expected an array.");
         if (value.GetArrayLength() > maxCount)
-            throw RpcException.InvalidParams(name, $"must contain at most {maxCount} items.");
+            throw Invalid(name, $"must contain at most {maxCount} items.");
         return value.EnumerateArray().ToList();
     }
 
-    private static ElementId ReadElementId(string name, JsonElement value)
+    private ElementId ReadElementId(string name, JsonElement value)
     {
         long id = 0;
         var valid = value.ValueKind == JsonValueKind.String
             ? long.TryParse(value.GetString(), NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out id)
             : value.ValueKind == JsonValueKind.Number && value.TryGetInt64(out id);
-        if (!valid) throw RpcException.InvalidParams(name, "expected an element ID such as \"12345\".");
+        if (!valid) throw Invalid(name, "expected an element ID such as \"12345\".");
         return new ElementId(id);
     }
 
-    private static RpcException Missing(string name) => RpcException.InvalidParams(name, "is required.");
+    private RpcException Missing(string name) => Invalid(name, "is required.");
+
+    private RpcException Invalid(string name, string message) => RpcException.InvalidParams(_prefix + name, message);
 }

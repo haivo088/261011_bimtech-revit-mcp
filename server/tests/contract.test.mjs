@@ -34,6 +34,34 @@ test("no add-in command approves a plan", async () => {
   assert.deepEqual(approving, []);
 });
 
+// Reads each command's declared access (Read/Write/Delete) from the C# sources.
+async function addinAccess() {
+  const files = (await readdir(commandsDir, { recursive: true })).filter((file) => file.endsWith(".cs"));
+  const access = new Map();
+  for (const file of files) {
+    const source = await readFile(join(commandsDir, file), "utf8");
+    const method = source.match(/public\s+string\s+Method\s*=>\s*"([^"]+)"/)?.[1];
+    const kind = source.match(/public\s+CommandAccess\s+Access\s*=>\s*CommandAccess\.(\w+)/)?.[1];
+    if (method) access.set(method, kind);
+  }
+  return access;
+}
+
+// Tools that never touch the model (CommandAccess.Read, so read-only mode allows them) but change a
+// plan file, which MCP annotations count as not read-only.
+const changesPlanOnly = new Set(["cancel_plan"]);
+
+test("server annotations match the access each add-in command declares", async () => {
+  const access = await addinAccess();
+  for (const tool of allTools) {
+    const kind = access.get(tool.method);
+    assert.ok(kind, `${tool.method} declares no CommandAccess`);
+    const { readOnlyHint, destructiveHint } = tool.annotations;
+    assert.equal(readOnlyHint, kind === "Read" && !changesPlanOnly.has(tool.name), `${tool.name}: readOnlyHint vs ${kind}`);
+    assert.equal(destructiveHint, kind === "Delete", `${tool.name}: destructiveHint vs ${kind}`);
+  }
+});
+
 test("tool names and methods are unique", () => {
   for (const key of ["name", "method"]) {
     const values = allTools.map((tool) => tool[key]);
