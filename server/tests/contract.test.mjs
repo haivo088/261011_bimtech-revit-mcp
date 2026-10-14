@@ -7,12 +7,15 @@ import { allTools } from "../build/tools/index.js";
 
 const commandsDir = fileURLToPath(new URL("../../addin/Commands/", import.meta.url));
 
+async function commandSources() {
+  const files = (await readdir(commandsDir, { recursive: true })).filter((file) => file.endsWith(".cs"));
+  return Promise.all(files.map(async (file) => ({ file, source: await readFile(join(commandsDir, file), "utf8") })));
+}
+
 // Reads `public string Method => "..."` from every C# command file.
 async function addinMethods() {
-  const files = (await readdir(commandsDir, { recursive: true })).filter((file) => file.endsWith(".cs"));
   const methods = [];
-  for (const file of files) {
-    const source = await readFile(join(commandsDir, file), "utf8");
+  for (const { source } of await commandSources()) {
     for (const match of source.matchAll(/public\s+string\s+Method\s*=>\s*"([^"]+)"/g)) methods.push(match[1]);
   }
   return methods.sort();
@@ -21,6 +24,14 @@ async function addinMethods() {
 test("every server tool has a matching add-in command and vice versa", async () => {
   const serverMethods = allTools.map((tool) => tool.method).sort();
   assert.deepEqual(serverMethods, await addinMethods());
+});
+
+// docs/04-architecture.md: only the review window in Revit may approve a plan.
+test("no add-in command approves a plan", async () => {
+  const approving = (await commandSources())
+    .filter(({ source }) => /\.Approve\s*\(|PlanStatus\.Approved\s*\)/.test(source))
+    .map(({ file }) => file);
+  assert.deepEqual(approving, []);
 });
 
 test("tool names and methods are unique", () => {

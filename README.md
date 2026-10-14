@@ -2,10 +2,12 @@
 
 Đây là dự án mới để học và tự phát triển kết nối **Claude Desktop ↔ Revit 2025**. Mã ứng dụng được viết mới trong thư mục này. Repository GitHub ở thư mục cha chỉ dùng tham khảo; dự án này không import mã hoặc DLL của repository đó.
 
-Bản đầu tiên có hai công cụ đọc dữ liệu:
+Các công cụ hiện có:
 
 - `ping_revit`: kiểm tra cầu nối, phiên bản Revit và danh sách command; tham số `message` được trả lại để kiểm tra đường truyền tham số.
 - `get_document_info`: đọc tên, đường dẫn, loại mô hình và view đang mở.
+- `propose_set_parameters`: lập kế hoạch gán một giá trị parameter cho các phần tử đang chọn; **không sửa mô hình**.
+- `get_plan`, `get_plan_status`, `cancel_plan`: đọc và huỷ kế hoạch (xem [04 — Kiến trúc](docs/04-architecture.md)).
 
 ## Bắt đầu đọc từ đâu?
 
@@ -15,6 +17,7 @@ Bản đầu tiên có hai công cụ đọc dữ liệu:
 4. Mở `addin/App.cs`, sau đó `Bridge/TcpBridge.cs`, `Commands/RevitRequestHandler.cs` và `Commands/CommandRegistry.cs`.
 5. Build và chạy thử theo phần bên dưới.
 6. Khi thêm công cụ, làm theo [03 — Thêm một công cụ mới](docs/03-add-a-tool.md).
+7. Trước khi làm công cụ ghi vào mô hình, đọc [04 — Kiến trúc đề xuất và duyệt](docs/04-architecture.md).
 
 ## Cấu trúc
 
@@ -46,20 +49,26 @@ bimtech-revit-mcp/
 │   ├── Protocol/
 │   │   ├── RpcRequest.cs           # Cấu trúc request
 │   │   └── RpcException.cs         # Mã lỗi và exception
-│   └── Commands/
-│       ├── RevitRequestHandler.cs  # Chạy command qua ExternalEvent
-│       ├── CommandRegistry.cs      # Danh sách command theo method
-│       ├── IRevitCommand.cs        # Giao diện một command
-│       ├── CommandContext.cs       # Document, params, cancellation
-│       ├── CommandParams.cs        # Đọc và kiểm tra tham số
-│       ├── RevitJson.cs            # Chuyển đổi Revit → JSON
-│       ├── Diagnostics/PingCommand.cs
-│       └── Documents/GetDocumentInfoCommand.cs
+│   ├── Commands/
+│   │   ├── RevitRequestHandler.cs  # Chạy command qua ExternalEvent
+│   │   ├── CommandRegistry.cs      # Danh sách command theo method
+│   │   ├── IRevitCommand.cs        # Giao diện một command
+│   │   ├── CommandContext.cs       # Document, params, cancellation
+│   │   ├── CommandParams.cs        # Đọc và kiểm tra tham số
+│   │   ├── RevitJson.cs            # Chuyển đổi Revit → JSON
+│   │   ├── Diagnostics/PingCommand.cs
+│   │   ├── Documents/GetDocumentInfoCommand.cs
+│   │   ├── Parameters/             # propose_set_parameters
+│   │   └── Plans/                  # get_plan, get_plan_status, cancel_plan
+│   └── Planning/                   # Kế hoạch: dữ liệu, luật trạng thái, lưu JSON
+├── tests/
+│   └── Bimtech.RevitMcp.Planning.Tests/  # xUnit cho Planning/, chạy không cần Revit
 ├── config/claude-desktop.example.json
 └── docs/
     ├── 01-folder-map.md
     ├── 02-request-flow.md
-    └── 03-add-a-tool.md
+    ├── 03-add-a-tool.md
+    └── 04-architecture.md
 ```
 
 ## Build
@@ -76,7 +85,10 @@ npm.cmd test
 Pop-Location
 
 dotnet build Bimtech.RevitMcp.sln -c Release
+dotnet test Bimtech.RevitMcp.sln -c Release --no-build
 ```
+
+`dotnet test` chạy project `tests/Bimtech.RevitMcp.Planning.Tests`. Project này biên dịch lại các file trong `addin/Planning/` và `addin/Protocol/RpcException.cs` mà không tham chiếu Revit API, nên kiểm thử được luật duyệt kế hoạch mà không cần mở Revit.
 
 TypeScript được biên dịch thành JavaScript trong `server/build/`. C# tạo DLL trong `addin/bin/Release/net8.0-windows/`. Những thư mục này được sinh tự động; hãy chỉnh mã trong `src` và các file `.cs`.
 
@@ -119,13 +131,15 @@ Cổng mặc định của dự án mới là `8081`. Cổng này được khai 
 
 - Build TypeScript thành công.
 - Build add-in Revit 2025 thành công. Có hai cảnh báo `MSB3277` về phiên bản dependency Microsoft.VisualBasic và WindowsBase do tham chiếu DLL cài trên máy; chưa xác minh ảnh hưởng trong Revit thật.
-- 13 kiểm thử thành công: dữ liệu lớn/Unicode chia gói, lỗi JSON-RPC kèm `data`, sai ID, ngắt kết nối, timeout và thời gian chờ thêm, truyền `params`/`timeoutMs`, schema và annotations MCP, từ chối tham số sai trước khi gọi Revit, và đối chiếu method giữa server và add-in.
+- 23 kiểm thử xUnit cho `Planning/` thành công: duyệt/bỏ từng mục, mục Blocked không duyệt được, chỉ duyệt kế hoạch khi mọi mục cần xem đã có quyết định, `approvalId` mất hiệu lực khi sửa lại, huỷ xoá phê duyệt, mã băm các mục đã duyệt giữ nguyên sau khi lưu/đọc tiếng Việt, đọc file kế hoạch phiên bản 1, chặn `planId` dạng đường dẫn.
+- 16 kiểm thử server thành công, gồm một kiểm thử bảo đảm không command nào trong `addin/Commands/` gọi `Approve`. Các mục: dữ liệu lớn/Unicode chia gói, lỗi JSON-RPC kèm `data`, sai ID, ngắt kết nối, timeout và thời gian chờ thêm, truyền `params`/`timeoutMs`, schema và annotations MCP, từ chối tham số sai (kể cả `planId` sai dạng) trước khi gọi Revit, chuyển bộ lọc của `get_plan`, và đối chiếu method giữa server và add-in.
+- Phần `Planning/` không phụ thuộc Revit (`Plan`, `PlanService`, `JsonPlanStore`) đã được biên dịch với .NET 8 và chạy thử ngoài Revit: lưu/đọc JSON giữ tiếng Việt, đếm tóm tắt, huỷ, chặn chuyển trạng thái sai, chặn `planId` dạng đường dẫn. Các command mới (`Commands/Plans/`, `Commands/Parameters/`) và `PlanStorageLocation` dùng Revit API đã build thành công với Revit 2025, chưa thử trên Revit thật.
 - Chưa cài add-in mới, chưa đổi cấu hình Claude, chưa kiểm thử trên Revit thật.
 - Phần C# (`CommandParams`, registry, timeout trong bridge) mới được kiểm chứng bằng build, chưa có kiểm thử tự động vì cần Revit API.
 - Bộ giao tiếp nội bộ chỉ hỗ trợ một request/response mỗi kết nối và ID dạng chuỗi. Đây là nền tảng học tập, chưa phải bản triển khai đầy đủ MCP/Revit cho sản xuất.
 
 ## Mở rộng từng bước
 
-Đã có: tham số và timeout theo request, registry command. Tiếp theo: khung đọc dữ liệu (phân trang, lọc, đơn vị), rồi khung ghi (Transaction, dry-run, giới hạn số phần tử). Xem [03 — Thêm một công cụ mới](docs/03-add-a-tool.md) cho quy trình thêm từng công cụ.
+Đã có: tham số và timeout theo request, registry command. Tiếp theo: khung đọc dữ liệu (phân trang, lọc, đơn vị), rồi khung ghi theo mô hình đề xuất, duyệt, ghi (xem [04 — Kiến trúc](docs/04-architecture.md)). Xem [03 — Thêm một công cụ mới](docs/03-add-a-tool.md) cho quy trình thêm từng công cụ.
 
 Nền tảng API được đối chiếu với tài liệu Autodesk: [Revit 2025 dùng .NET 8](https://help.autodesk.com/cloudhelp/2025/ENU/Revit-WhatsNew/files/GUID-50024FD2-16BE-40BE-96E6-550294D9537D.htm), [ExternalEvent.Raise](https://help.autodesk.com/cloudhelp/2026/ENU/Revit-API-MainReference/files/html/13bf4411-c400-dcd2-458c-7f09357d9ecb.htm).

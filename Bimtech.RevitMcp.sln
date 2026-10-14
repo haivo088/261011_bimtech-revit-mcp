@@ -4,6 +4,8 @@ VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Bimtech.RevitMcp.Addin", "addin\Bimtech.RevitMcp.Addin.csproj", "{831BF355-2A87-465B-A150-077AE1DAEA90}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Bimtech.RevitMcp.Planning.Tests", "tests\Bimtech.RevitMcp.Planning.Tests\Bimtech.RevitMcp.Planning.Tests.csproj", "{A634D666-E429-4166-B8AE-09167AA1FBF8}"
+EndProject
 Global
     GlobalSection(SolutionConfigurationPlatforms) = preSolution
         Debug|Any CPU = Debug|Any CPU
@@ -14,5 +16,9 @@ Global
         {831BF355-2A87-465B-A150-077AE1DAEA90}.Debug|Any CPU.Build.0 = Debug|Any CPU
         {831BF355-2A87-465B-A150-077AE1DAEA90}.Release|Any CPU.ActiveCfg = Release|Any CPU
         {831BF355-2A87-465B-A150-077AE1DAEA90}.Release|Any CPU.Build.0 = Release|Any CPU
+        {A634D666-E429-4166-B8AE-09167AA1FBF8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+        {A634D666-E429-4166-B8AE-09167AA1FBF8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+        {A634D666-E429-4166-B8AE-09167AA1FBF8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+        {A634D666-E429-4166-B8AE-09167AA1FBF8}.Release|Any CPU.Build.0 = Release|Any CPU
     EndGlobalSection
 EndGlobal
