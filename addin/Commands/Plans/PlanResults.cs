@@ -11,8 +11,8 @@ internal static class PlanResults
         kind = plan.Kind,
         title = plan.Title,
         status = plan.Status,
-        // Set by the review window (step 2). commit_plan will require it.
-        approvalId = (string?)null,
+        // Set when the person approves in the review window. commit_plan will require it.
+        approvalId = plan.Approval?.ApprovalId,
         createdAt = plan.CreatedAt,
         updatedAt = plan.UpdatedAt,
         summary = plan.Summarize(),

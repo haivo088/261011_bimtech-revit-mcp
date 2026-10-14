@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -8,7 +9,8 @@ namespace Bimtech.RevitMcp.Planning;
 // without Revit. See docs/04-architecture.md for the full lifecycle.
 public sealed class Plan
 {
-    public const int CurrentSchemaVersion = 1;
+    // 2 added Approval. Version 1 files still load; Approval is then null.
+    public const int CurrentSchemaVersion = 2;
 
     public int SchemaVersion { get; set; } = CurrentSchemaVersion;
     public string PlanId { get; set; } = "";
@@ -23,6 +25,8 @@ public sealed class Plan
     public PlanStatus Status { get; set; } = PlanStatus.InReview;
     public List<PlanItem> Items { get; set; } = [];
     public List<PlanQuestion> Questions { get; set; } = [];
+    // Set only by the review window when the person approves; cleared when they edit again.
+    public PlanApproval? Approval { get; set; }
 
     public PlanSummary Summarize() => new(
         Items.Count,
@@ -52,6 +56,25 @@ public sealed class PlanItem
     public JsonElement? Overrides { get; set; }
     // Filled after commit: created element IDs or the error message.
     public JsonElement? Result { get; set; }
+}
+
+// What the person approved. commit_plan must send ApprovalId, and the executor (step 3)
+// recomputes ItemsHash to make sure the items are still exactly the ones approved.
+public sealed class PlanApproval
+{
+    public string ApprovalId { get; set; } = "";
+    public DateTimeOffset ApprovedAt { get; set; }
+    public List<string> ApprovedItemIds { get; set; } = [];
+    public string ItemsHash { get; set; } = "";
+
+    // SHA-256 over each item's ID, action, params and overrides, in the order given.
+    public static string HashItems(IEnumerable<PlanItem> items)
+    {
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        foreach (var item in items)
+            hash.AppendData(JsonSerializer.SerializeToUtf8Bytes(new { item.ItemId, item.Action, item.Params, item.Overrides }));
+        return Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
+    }
 }
 
 // A question for the designer, raised when the drawings cannot settle an item.

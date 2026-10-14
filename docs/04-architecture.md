@@ -1,6 +1,6 @@
 # 04 — Kiến trúc đề xuất và duyệt (propose / approve / commit)
 
-Tài liệu này mô tả kiến trúc cho các công cụ **ghi** vào mô hình, ví dụ dựng móng, cột, dầm từ CAD. Bước 1 của [Lộ trình](#lộ-trình-triển-khai) đã có mã; các bước sau vẫn là thiết kế.
+Tài liệu này mô tả kiến trúc cho các công cụ **ghi** vào mô hình, ví dụ dựng móng, cột, dầm từ CAD. Bước 1 của [Lộ trình](#lộ-trình-triển-khai) đã có mã; bước 2 đang làm (đã có phần dữ liệu và luật duyệt, chưa có cửa sổ); các bước sau vẫn là thiết kế.
 
 ## Vấn đề cần giải quyết
 
@@ -128,7 +128,7 @@ stateDiagram-v2
     Approved --> Committed: commit_plan
     Approved --> Stale: mô hình đã thay đổi
     InReview --> Stale: mô hình đã thay đổi
-    InReview --> Cancelled: cancel_plan / người dùng đóng
+    InReview --> Cancelled: cancel_plan / nút Huỷ trong cửa sổ
     Approved --> Cancelled: cancel_plan
     Committed --> [*]
     Stale --> [*]
@@ -136,6 +136,14 @@ stateDiagram-v2
 ```
 
 Trạng thái từng mục: `Pending → Approved | Rejected`, sau commit thành `Applied | Failed`. Mục `Rejected` không bao giờ được ghi.
+
+Luật duyệt (trong `PlanService`):
+
+- Người duyệt đặt mục thành `Approved`, `Rejected`, hoặc trả về `Pending` để làm lại. Mục `blocked` không duyệt được.
+- Sửa một mục khi kế hoạch đang `Approved` sẽ đưa kế hoạch về `InReview` và xoá `approval`, nên `approvalId` cũ hết hiệu lực. Đặt lại đúng trạng thái cũ thì không tính là sửa.
+- **Duyệt kế hoạch** chỉ được khi mọi mục không phải `blocked` đã có quyết định và có ít nhất một mục `Approved`. Mục chưa quyết định không bị ngầm coi là bỏ.
+- Khi duyệt, `approval` chứa `approvalId` (dạng `apr_` + 16 ký tự hex), `approvedAt`, `approvedItemIds` và `itemsHash` (SHA-256 của mã, action, params, overrides các mục đã duyệt; bước 3 tính lại để chắc chắn ghi đúng bản đã duyệt).
+- Huỷ hoặc kế hoạch cũ (`Stale`) xoá `approval`; `Committed` giữ lại làm hồ sơ.
 
 ## Bốn nguyên tắc bắt buộc
 
@@ -189,7 +197,8 @@ Annotations theo [03](03-add-a-tool.md#1-phía-server): `commit_plan` có `readO
 - **WPF modeless**: không khoá Revit, người dùng vẫn chọn, zoom, xoay mô hình khi cửa sổ đang mở.
 - Mở và cập nhật cửa sổ trên luồng giao diện của Revit (gọi từ trong `RevitRequestHandler.Execute`). Thao tác cần Revit API từ cửa sổ (chọn và zoom phần tử) đi qua một `ExternalEvent` riêng của cửa sổ.
 - Mỗi dòng là một mục: trạng thái, độ tin cậy, lý do, giá trị chính. Bấm vào dòng thì Revit chọn và zoom tới vị trí tương ứng (phần tử đã có, hoặc vùng toạ độ của phần tử sẽ tạo).
-- Thao tác: Duyệt / Bỏ từng mục, sửa giá trị, chọn nhiều dòng để duyệt hàng loạt, nút **Duyệt kế hoạch**.
+- Thao tác: Duyệt / Bỏ từng mục, chọn nhiều dòng để duyệt hàng loạt, nút **Bỏ các mục còn chờ**, nút **Duyệt kế hoạch**, nút **Huỷ kế hoạch**. Sửa giá trị (`overrides`) để sang bước 2b.
+- Đóng cửa sổ **không** huỷ kế hoạch; mở lại bằng `open_plan_review`. Như vậy lỡ tay đóng thì không mất công duyệt.
 - Mục `blocked` hiển thị riêng ở tab **Câu hỏi cho thiết kế**, không duyệt được.
 
 ## Lưu trữ
@@ -226,7 +235,8 @@ Tiếp nối [bảng mã lỗi](03-add-a-tool.md#mã-lỗi):
 Mỗi bước kết thúc bằng một phiên bản chạy được và kiểm thử được.
 
 1. **Lõi kế hoạch** *(đã làm)*. `Plan`, `PlanItem`, `PlanService` với luật chuyển trạng thái, `PlanStore` JSON; tool `get_plan`, `get_plan_status`, `cancel_plan`; mã lỗi mới. Kèm một lệnh mẫu đơn giản, `propose_set_parameters` (gán giá trị parameter cho các phần tử đang chọn), để thử trọn luồng mà chưa cần CAD. Chưa có `modelStamp`; phát hiện kế hoạch cũ thuộc bước 3.
-2. **Cửa sổ duyệt.** WPF modeless, danh sách mục, chọn và zoom, Duyệt / Bỏ, cấp `approvalId`; tool `open_plan_review`.
+2. **Cửa sổ duyệt** *(đang làm)*. Đã có: `Plan.Approval`, `PlanService.SetItemStatus` / `Approve`, sự kiện `Changed`, kiểm thử xUnit, kiểm thử bảo đảm không command nào gọi `Approve`. Còn lại: WPF modeless, danh sách mục, chọn và zoom, Duyệt / Bỏ; tool `open_plan_review`.
+   2b. Sửa giá trị (`overrides`) trong cửa sổ.
 3. **Ghi vào mô hình.** `PlanExecutor`, `IPlanAction` cho gán parameter, `TransactionGroup`, phát hiện kế hoạch cũ; tool `commit_plan`; nhật ký audit.
 4. **Gắn tool móng, cột, dầm hiện có** vào khung: tách phần tính toán thành `propose_*`, phần tạo phần tử thành `IPlanAction`.
 5. **Độ tin cậy.** CAD preflight, luật chấm điểm theo từng mục, chính sách ngưỡng theo loại việc (để sau; xem phần dưới).

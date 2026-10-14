@@ -49,15 +49,20 @@ bimtech-revit-mcp/
 │   ├── Protocol/
 │   │   ├── RpcRequest.cs           # Cấu trúc request
 │   │   └── RpcException.cs         # Mã lỗi và exception
-│   └── Commands/
-│       ├── RevitRequestHandler.cs  # Chạy command qua ExternalEvent
-│       ├── CommandRegistry.cs      # Danh sách command theo method
-│       ├── IRevitCommand.cs        # Giao diện một command
-│       ├── CommandContext.cs       # Document, params, cancellation
-│       ├── CommandParams.cs        # Đọc và kiểm tra tham số
-│       ├── RevitJson.cs            # Chuyển đổi Revit → JSON
-│       ├── Diagnostics/PingCommand.cs
-│       └── Documents/GetDocumentInfoCommand.cs
+│   ├── Commands/
+│   │   ├── RevitRequestHandler.cs  # Chạy command qua ExternalEvent
+│   │   ├── CommandRegistry.cs      # Danh sách command theo method
+│   │   ├── IRevitCommand.cs        # Giao diện một command
+│   │   ├── CommandContext.cs       # Document, params, cancellation
+│   │   ├── CommandParams.cs        # Đọc và kiểm tra tham số
+│   │   ├── RevitJson.cs            # Chuyển đổi Revit → JSON
+│   │   ├── Diagnostics/PingCommand.cs
+│   │   ├── Documents/GetDocumentInfoCommand.cs
+│   │   ├── Parameters/             # propose_set_parameters
+│   │   └── Plans/                  # get_plan, get_plan_status, cancel_plan
+│   └── Planning/                   # Kế hoạch: dữ liệu, luật trạng thái, lưu JSON
+├── tests/
+│   └── Bimtech.RevitMcp.Planning.Tests/  # xUnit cho Planning/, chạy không cần Revit
 ├── config/claude-desktop.example.json
 └── docs/
     ├── 01-folder-map.md
@@ -80,7 +85,10 @@ npm.cmd test
 Pop-Location
 
 dotnet build Bimtech.RevitMcp.sln -c Release
+dotnet test Bimtech.RevitMcp.sln -c Release --no-build
 ```
+
+`dotnet test` chạy project `tests/Bimtech.RevitMcp.Planning.Tests`. Project này biên dịch lại các file trong `addin/Planning/` và `addin/Protocol/RpcException.cs` mà không tham chiếu Revit API, nên kiểm thử được luật duyệt kế hoạch mà không cần mở Revit.
 
 TypeScript được biên dịch thành JavaScript trong `server/build/`. C# tạo DLL trong `addin/bin/Release/net8.0-windows/`. Những thư mục này được sinh tự động; hãy chỉnh mã trong `src` và các file `.cs`.
 
@@ -123,7 +131,8 @@ Cổng mặc định của dự án mới là `8081`. Cổng này được khai 
 
 - Build TypeScript thành công.
 - Build add-in Revit 2025 thành công. Có hai cảnh báo `MSB3277` về phiên bản dependency Microsoft.VisualBasic và WindowsBase do tham chiếu DLL cài trên máy; chưa xác minh ảnh hưởng trong Revit thật.
-- 15 kiểm thử thành công: dữ liệu lớn/Unicode chia gói, lỗi JSON-RPC kèm `data`, sai ID, ngắt kết nối, timeout và thời gian chờ thêm, truyền `params`/`timeoutMs`, schema và annotations MCP, từ chối tham số sai (kể cả `planId` sai dạng) trước khi gọi Revit, chuyển bộ lọc của `get_plan`, và đối chiếu method giữa server và add-in.
+- 23 kiểm thử xUnit cho `Planning/` thành công: duyệt/bỏ từng mục, mục Blocked không duyệt được, chỉ duyệt kế hoạch khi mọi mục cần xem đã có quyết định, `approvalId` mất hiệu lực khi sửa lại, huỷ xoá phê duyệt, mã băm các mục đã duyệt giữ nguyên sau khi lưu/đọc tiếng Việt, đọc file kế hoạch phiên bản 1, chặn `planId` dạng đường dẫn.
+- 16 kiểm thử server thành công, gồm một kiểm thử bảo đảm không command nào trong `addin/Commands/` gọi `Approve`. Các mục: dữ liệu lớn/Unicode chia gói, lỗi JSON-RPC kèm `data`, sai ID, ngắt kết nối, timeout và thời gian chờ thêm, truyền `params`/`timeoutMs`, schema và annotations MCP, từ chối tham số sai (kể cả `planId` sai dạng) trước khi gọi Revit, chuyển bộ lọc của `get_plan`, và đối chiếu method giữa server và add-in.
 - Phần `Planning/` không phụ thuộc Revit (`Plan`, `PlanService`, `JsonPlanStore`) đã được biên dịch với .NET 8 và chạy thử ngoài Revit: lưu/đọc JSON giữ tiếng Việt, đếm tóm tắt, huỷ, chặn chuyển trạng thái sai, chặn `planId` dạng đường dẫn. Các command mới (`Commands/Plans/`, `Commands/Parameters/`) và `PlanStorageLocation` dùng Revit API đã build thành công với Revit 2025, chưa thử trên Revit thật.
 - Chưa cài add-in mới, chưa đổi cấu hình Claude, chưa kiểm thử trên Revit thật.
 - Phần C# (`CommandParams`, registry, timeout trong bridge) mới được kiểm chứng bằng build, chưa có kiểm thử tự động vì cần Revit API.

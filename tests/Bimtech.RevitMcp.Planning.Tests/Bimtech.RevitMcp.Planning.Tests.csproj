@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <!-- Compiles the add-in's Revit-free sources directly, so the tests run without Revit installed. -->
+  <ItemGroup>
+    <Compile Include="..\..\addin\Planning\Plan.cs" Link="Linked\Plan.cs" />
+    <Compile Include="..\..\addin\Planning\PlanService.cs" Link="Linked\PlanService.cs" />
+    <Compile Include="..\..\addin\Planning\PlanStore.cs" Link="Linked\PlanStore.cs" />
+    <Compile Include="..\..\addin\Protocol\RpcException.cs" Link="Linked\RpcException.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.0" />
+  </ItemGroup>
+</Project>

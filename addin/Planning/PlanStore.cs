@@ -44,6 +44,8 @@ public sealed class JsonPlanStore : IPlanStore
             ?? throw new InvalidDataException($"Plan file is empty: {path}");
         if (plan.SchemaVersion > Plan.CurrentSchemaVersion)
             throw new InvalidDataException($"Plan file {path} was written by a newer add-in (schema {plan.SchemaVersion}).");
+        // Older versions only lack fields that default correctly, so the next save upgrades the file.
+        plan.SchemaVersion = Plan.CurrentSchemaVersion;
         plan.Document.StorageFolder = document.StorageFolder;
         return plan;
     }

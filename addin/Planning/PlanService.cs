@@ -8,12 +8,17 @@ namespace Bimtech.RevitMcp.Planning;
 
 // Creates plans, looks them up and moves them between statuses.
 // Only the transitions in PlanTransitions are allowed, and only the review window
-// (step 2) will move a plan to Approved; no JSON-RPC command can.
+// calls Approve; no JSON-RPC command may (server/tests/contract.test.mjs checks this).
 public sealed class PlanService(IPlanStore store, TimeProvider? clock = null)
 {
     private readonly TimeProvider _clock = clock ?? TimeProvider.System;
-    // Commands run on Revit's API thread, but the review window will run on the UI thread.
+    // Commands and the review window both run on Revit's main thread today;
+    // the lock keeps the service safe if that ever changes.
     private readonly object _lock = new();
+
+    // Raised after every saved change, so an open review window can refresh
+    // when Claude cancels a plan or the person edits it.
+    public event Action<Plan>? Changed;
 
     public Plan Create(PlanDocument document, string kind, string title, JsonElement? scope,
         IEnumerable<PlanItem> items, IEnumerable<PlanQuestion>? questions = null)
@@ -32,6 +37,7 @@ public sealed class PlanService(IPlanStore store, TimeProvider? clock = null)
         };
         Validate(plan);
         lock (_lock) store.Save(plan);
+        Changed?.Invoke(plan);
         return plan;
     }
 
@@ -48,17 +54,93 @@ public sealed class PlanService(IPlanStore store, TimeProvider? clock = null)
 
     public Plan Cancel(PlanDocument document, string planId) => Move(document, planId, PlanStatus.Cancelled);
 
+    // Moves a plan to any status except Approved, which only Approve may set.
     public Plan Move(PlanDocument document, string planId, PlanStatus target)
     {
-        lock (_lock)
+        if (target == PlanStatus.Approved)
+            throw new InvalidOperationException("Only the review window approves plans; call Approve.");
+        return Update(document, planId, plan =>
         {
-            var plan = Get(document, planId);
             PlanTransitions.Ensure(plan, target);
             plan.Status = target;
+            // A committed plan keeps its approval as a record of what was approved.
+            if (target != PlanStatus.Committed) plan.Approval = null;
+            return true;
+        });
+    }
+
+    // Records the reviewer's decision on some items. Pending undoes a decision.
+    // Editing an approved plan sends it back to InReview, so its approvalId stops working.
+    public Plan SetItemStatus(PlanDocument document, string planId, IReadOnlyCollection<string> itemIds, PlanItemStatus status)
+    {
+        if (status is not (PlanItemStatus.Pending or PlanItemStatus.Approved or PlanItemStatus.Rejected))
+            throw new ArgumentOutOfRangeException(nameof(status), status, "Reviewers can only set Pending, Approved or Rejected.");
+        return Update(document, planId, plan =>
+        {
+            var byId = plan.Items.ToDictionary(item => item.ItemId, StringComparer.Ordinal);
+            var unknown = itemIds.Where(id => !byId.ContainsKey(id)).ToList();
+            if (unknown.Count > 0)
+                throw RpcException.InvalidParams("itemIds", $"plan '{planId}' has no items {string.Join(", ", unknown)}.");
+
+            var changing = itemIds.Select(id => byId[id]).Where(item => item.Status != status).ToList();
+            if (changing.Count == 0) return false;
+            if (status == PlanItemStatus.Approved && changing.FirstOrDefault(item => item.Tier == PlanTier.Blocked) is { } blocked)
+                throw new RpcException(RpcErrorCodes.PlanWrongStatus,
+                    $"Item '{blocked.ItemId}' is blocked and cannot be approved: {string.Join(" ", blocked.Reasons)}",
+                    new { planId, itemId = blocked.ItemId });
+
+            if (plan.Status != PlanStatus.InReview)
+            {
+                PlanTransitions.Ensure(plan, PlanStatus.InReview);
+                plan.Status = PlanStatus.InReview;
+                plan.Approval = null;
+            }
+            foreach (var item in changing) item.Status = status;
+            return true;
+        });
+    }
+
+    // Called only by the review window when the person presses "Approve plan".
+    // Every reviewable item must be decided first; blocked items stay out of the plan.
+    public Plan Approve(PlanDocument document, string planId) => Update(document, planId, plan =>
+    {
+        PlanTransitions.Ensure(plan, PlanStatus.Approved);
+        var undecided = plan.Items.Count(item => item.Tier != PlanTier.Blocked && item.Status == PlanItemStatus.Pending);
+        if (undecided > 0)
+            throw new RpcException(RpcErrorCodes.PlanWrongStatus,
+                $"{undecided} item(s) still need a decision. Approve or reject them first.",
+                new { planId, undecided });
+        var approved = plan.Items.Where(item => item.Status == PlanItemStatus.Approved).ToList();
+        if (approved.Count == 0)
+            throw new RpcException(RpcErrorCodes.PlanWrongStatus,
+                "No item is approved. Approve at least one item, or cancel the plan.", new { planId });
+
+        plan.Status = PlanStatus.Approved;
+        plan.Approval = new PlanApproval
+        {
+            ApprovalId = ApprovalIds.New(),
+            ApprovedAt = _clock.GetUtcNow(),
+            ApprovedItemIds = approved.Select(item => item.ItemId).ToList(),
+            ItemsHash = PlanApproval.HashItems(approved),
+        };
+        return true;
+    });
+
+    // Loads, changes and saves a plan under the lock. The change returns false when
+    // nothing changed, so the file and UpdatedAt are left alone.
+    private Plan Update(PlanDocument document, string planId, Func<Plan, bool> change)
+    {
+        Plan plan;
+        lock (_lock)
+        {
+            plan = Get(document, planId);
+            if (!change(plan)) return plan;
             plan.UpdatedAt = _clock.GetUtcNow();
             store.Save(plan);
-            return plan;
         }
+        // Outside the lock, so a listener may call back into the service.
+        Changed?.Invoke(plan);
+        return plan;
     }
 
     private static void Validate(Plan plan)
@@ -112,4 +194,11 @@ public static partial class PlanIds
         if (!IsValid(planId))
             throw RpcException.InvalidParams("planId", "expected an ID such as \"pln_20261014_8f3a2c\".");
     }
+}
+
+// Approval IDs look like "apr_3f9c0e7a1b2d4c68". They are random, so Claude cannot guess one
+// and must read it with get_plan_status after the person approves.
+public static class ApprovalIds
+{
+    public static string New() => "apr_" + Convert.ToHexString(RandomNumberGenerator.GetBytes(8)).ToLowerInvariant();
 }
