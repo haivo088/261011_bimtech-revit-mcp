@@ -133,7 +133,8 @@ test("MCP lists tools with annotations and an input schema", async (t) => {
   const client = await mcpClient(t, options.port);
   const { tools } = await client.listTools();
   assert.deepEqual(tools.map((tool) => tool.name).sort(), [
-    "cancel_plan", "get_document_info", "get_plan", "get_plan_status", "ping_revit", "propose_set_parameters",
+    "cancel_plan", "get_document_info", "get_plan", "get_plan_status", "open_plan_review", "ping_revit",
+    "propose_set_parameters",
   ]);
   // No tool can change the model yet: propose_* only saves a plan, cancel_plan only changes a plan.
   for (const tool of tools) {

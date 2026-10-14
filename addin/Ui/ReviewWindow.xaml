@@ -1,0 +1,102 @@
+<Window x:Class="Bimtech.RevitMcp.Ui.ReviewWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="BIMTECH · Duyệt kế hoạch"
+        Width="760" Height="420" MinWidth="520" MinHeight="260"
+        FontFamily="Segoe UI" FontSize="12"
+        ShowInTaskbar="False" WindowStartupLocation="CenterOwner">
+    <!-- Compact on purpose: small margins, one-line rows, horizontal grid lines only. -->
+    <Window.Resources>
+        <Style TargetType="Button">
+            <Setter Property="Padding" Value="8,1" />
+            <Setter Property="Margin" Value="0,0,4,0" />
+        </Style>
+        <Style TargetType="DataGrid">
+            <Setter Property="AutoGenerateColumns" Value="False" />
+            <Setter Property="IsReadOnly" Value="True" />
+            <Setter Property="SelectionMode" Value="Extended" />
+            <Setter Property="HeadersVisibility" Value="Column" />
+            <Setter Property="GridLinesVisibility" Value="Horizontal" />
+            <Setter Property="HorizontalGridLinesBrush" Value="#E6E6E6" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Background" Value="White" />
+            <Setter Property="RowHeaderWidth" Value="0" />
+        </Style>
+        <Style TargetType="DataGridColumnHeader">
+            <Setter Property="Padding" Value="4,2" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style TargetType="DataGridCell">
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="4,1" />
+            <Setter Property="ToolTip" Value="{Binding RelativeSource={RelativeSource Self}, Path=Content.Text}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="DataGridCell">
+                        <Border Padding="{TemplateBinding Padding}" Background="{TemplateBinding Background}">
+                            <ContentPresenter VerticalAlignment="Center" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style TargetType="TabItem">
+            <Setter Property="Padding" Value="8,2" />
+        </Style>
+    </Window.Resources>
+
+    <DockPanel Margin="6">
+        <StackPanel DockPanel.Dock="Top" Margin="0,0,0,4">
+            <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+            <TextBlock Text="{Binding StatusLine}" Foreground="#666666" TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+
+        <DockPanel DockPanel.Dock="Bottom" Margin="0,4,0,0">
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <Button Content="Huỷ kế hoạch" Click="CancelPlan_Click" IsEnabled="{Binding CanEdit}" />
+                <Button Content="Duyệt kế hoạch" Click="ApprovePlan_Click" IsEnabled="{Binding CanApprovePlan}"
+                        FontWeight="SemiBold" Margin="0" />
+            </StackPanel>
+            <StackPanel Orientation="Horizontal">
+                <Button Content="Duyệt" Click="Approve_Click" IsEnabled="{Binding CanEdit}" />
+                <Button Content="Bỏ" Click="Reject_Click" IsEnabled="{Binding CanEdit}" />
+                <Button Content="Chờ lại" Click="Reset_Click" IsEnabled="{Binding CanEdit}" />
+                <Button Content="Bỏ các mục còn chờ" Click="RejectRemaining_Click" IsEnabled="{Binding CanEdit}" />
+            </StackPanel>
+        </DockPanel>
+
+        <TextBlock DockPanel.Dock="Bottom" Text="{Binding Message}" TextWrapping="Wrap" Margin="0,4,0,0">
+            <TextBlock.Style>
+                <Style TargetType="TextBlock">
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding Message}" Value="">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </TextBlock.Style>
+        </TextBlock>
+
+        <TabControl Padding="0">
+            <TabItem Header="{Binding ItemsHeader}">
+                <DataGrid x:Name="ItemsGrid" ItemsSource="{Binding Items}" SelectionChanged="Grid_SelectionChanged">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Trạng thái" Binding="{Binding StatusText}" Width="64" />
+                        <DataGridTextColumn Header="Phần tử" Binding="{Binding Element}" Width="3*" />
+                        <DataGridTextColumn Header="Thay đổi" Binding="{Binding Change}" Width="3*" />
+                        <DataGridTextColumn Header="Lý do" Binding="{Binding Reasons}" Width="2*" />
+                    </DataGrid.Columns>
+                </DataGrid>
+            </TabItem>
+            <TabItem Header="{Binding BlockedHeader}">
+                <DataGrid ItemsSource="{Binding BlockedItems}" SelectionChanged="Grid_SelectionChanged">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Phần tử" Binding="{Binding Element}" Width="2*" />
+                        <DataGridTextColumn Header="Thay đổi" Binding="{Binding Change}" Width="2*" />
+                        <DataGridTextColumn Header="Lý do" Binding="{Binding Reasons}" Width="3*" />
+                    </DataGrid.Columns>
+                </DataGrid>
+            </TabItem>
+        </TabControl>
+    </DockPanel>
+</Window>
