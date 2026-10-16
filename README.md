@@ -27,7 +27,7 @@ Công cụ dựng model kết cấu từ CAD (xem [05 — Dựng model kết c�
 - `propose_floors`: ô sàn dò từ tim dầm và vách đã có trên một tầng; mỗi ô một mục duyệt; Type mặc định `BTC_SanKC_150`.
 - `list_cad_sources`: các file CAD import/link trong model.
 - `load_default_family`: nạp family chuẩn công ty (`kind`: column, beam, pile); với cọc còn tạo Type đài/lót mặc định.
-- `scan_cad_columns` / `place_columns`: cột theo đường bao chữ nhật.
+- `scan_cad_columns` / `propose_columns`: cột chữ nhật theo ký hiệu và kích thước, mỗi nhóm một mục duyệt; vị trí làm tròn 5 mm theo trục.
 - `scan_cad_beams` / `place_beams`: dầm theo cặp line song song, tên và kích thước đọc từ Text Note.
 - `scan_cad_piles` / `propose_piles`: cọc tròn + đài móng, mỗi đài một mục duyệt; chiều dày đài theo ký hiệu bản vẽ hoặc người dùng; làm tròn 5 mm theo trục; lớp lót; join cọc với đài của nó.
 - Mọi `place_*` mặc định chỉ xem trước (`dryRun`); chạy thật trả `batchId`.

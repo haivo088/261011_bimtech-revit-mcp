@@ -8,7 +8,7 @@ Lưu tại `%APPDATA%\BIMTECH\RevitMcp\settings.json`, dùng chung cho mọi mod
 
 | Mục | Mặc định | Tác dụng |
 | --- | --- | --- |
-| Chế độ chỉ đọc | tắt | Chặn mọi lệnh sửa/xóa model. Lệnh có chế độ xem trước (`place_columns` với `dryRun=true`) vẫn chạy được |
+| Chế độ chỉ đọc | tắt | Chặn mọi lệnh sửa/xóa model. Lệnh có chế độ xem trước (`place_beams` với `dryRun=true`) vẫn chạy được |
 | Cổng TCP | 8081 | Cổng của cầu nối. Server đọc cùng file nên không cần sửa ở nơi khác. Đổi cổng khi cầu nối đang chạy thì cầu nối tự mở lại |
 | Giới hạn phần tử mỗi lần ghi | 5000 | Số phần tử tối đa một lần gọi được tạo (tối đa 20000) |
 | Tự bật cầu nối khi mở Revit | tắt | Không cần bấm nút MCP Bridge mỗi lần |

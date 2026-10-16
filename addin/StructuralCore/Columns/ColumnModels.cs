@@ -22,17 +22,30 @@ internal sealed class RawColumn
     public required List<(XYZ A, XYZ B)> Segments { get; init; }
 }
 
+/// <summary>Hình cỡ cột nhưng không phải chữ nhật (cột chữ L, cột dính vách cùng layer...) — báo cho người dùng, không đặt.</summary>
+internal sealed record RejectedShape(XYZ Center, double LengthMm, double WidthMm, string Reason);
+
 /// <summary>Kết quả quét hình học CAD của 1 ImportInstance, nhóm theo tên layer.</summary>
 internal sealed class ColumnScanResult
 {
     public required IReadOnlyDictionary<string, List<RawColumn>> ColumnsByLayer { get; init; }
 
-    /// <summary>Tên layer kèm số cột, nhiều cột trước.</summary>
-    public List<(string Name, int ColumnCount)> GetLayerSummaries() =>
-        ColumnsByLayer
-            .Select(kv => (kv.Key, kv.Value.Count))
-            .OrderByDescending(e => e.Count)
-            .ThenBy(e => e.Key, StringComparer.CurrentCultureIgnoreCase)
+    public IReadOnlyDictionary<string, List<RejectedShape>> RejectedByLayer { get; init; } = new Dictionary<string, List<RejectedShape>>();
+
+    /// <summary>Tên layer kèm số cột và số hình bị loại, nhiều cột trước.</summary>
+    public List<(string Name, int ColumnCount, int RejectedCount)> GetLayerSummaries() =>
+        ColumnsByLayer.Keys.Union(RejectedByLayer.Keys)
+            .Select(name => (name,
+                ColumnsByLayer.TryGetValue(name, out var columns) ? columns.Count : 0,
+                RejectedByLayer.TryGetValue(name, out var rejected) ? rejected.Count : 0))
+            .OrderByDescending(e => e.Item2)
+            .ThenBy(e => e.name, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+
+    public List<RejectedShape> SelectRejected(IEnumerable<string> layerNames, CadGeometry.PlanRegion? region = null) =>
+        layerNames.Distinct(StringComparer.Ordinal)
+            .SelectMany(name => RejectedByLayer.TryGetValue(name, out var list) ? list : Enumerable.Empty<RejectedShape>())
+            .Where(shape => region is not { } r || r.Contains(shape.Center))
             .ToList();
 
     /// <summary>Cột thuộc các layer cho trước, tuỳ chọn chỉ lấy cột có tâm nằm trong vùng.</summary>
@@ -58,10 +71,19 @@ internal sealed class ColumnSizeGroup
 
     public required List<RawColumn> Columns { get; init; }
 
-    /// <summary>Khoá ổn định của nhóm, vd "500x300" — dùng làm tên nhóm khi trao đổi qua MCP.</summary>
-    public string Key => $"{SizeBMm:0}x{SizeAMm:0}";
+    /// <summary>Kích thước theo quy ước b×h, cạnh nhỏ trước, vd "300x500" — trùng tên Type tạo mới.</summary>
+    public string SizeKey => $"{SizeAMm:0}x{SizeBMm:0}";
 
-    public string SizeLabel => $"{SizeBMm:0}x{SizeAMm:0}mm";
+    /// <summary>Ký hiệu cột đọc từ Text Note (vd "C1") khi cả nhóm cùng ký hiệu — null nếu không có.</summary>
+    public string? TagName { get; init; }
+
+    /// <summary>Đặt khi 1 ký hiệu có nhiều kích thước trong bản vẽ: "C1 300x500", "C1 300x400".</summary>
+    public string? KeyOverride { get; init; }
+
+    /// <summary>Khoá ổn định của nhóm khi trao đổi qua MCP: ký hiệu "C1" nếu có, không thì kích thước "300x500".</summary>
+    public string Key => KeyOverride ?? TagName ?? SizeKey;
+
+    public string SizeLabel => $"{SizeAMm:0}x{SizeBMm:0}mm";
 }
 
 /// <summary>1 nhóm cột kèm Type đã chọn — đầu vào của bước Đặt.</summary>

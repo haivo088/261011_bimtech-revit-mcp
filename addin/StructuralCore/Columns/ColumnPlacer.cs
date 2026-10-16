@@ -30,11 +30,12 @@ internal static class ColumnPlacer
             Math.Min(MaxZ, testMaxZ) - Math.Max(MinZ, testMinZ);
     }
 
-    /// <summary>Gộp cột theo kích thước b×h đã làm tròn bội 5mm, không phân biệt hướng xoay (cặp kích thước không thứ tự).
-    /// Nhóm sắp theo kích thước lớn rồi kích thước nhỏ.</summary>
-    public static List<ColumnSizeGroup> GroupColumns(IEnumerable<RawColumn> columns)
+    /// <summary>Gộp cột theo (ký hiệu, kích thước b×h làm tròn bội 5mm), không phân biệt hướng xoay. <paramref name="tagOf"/>:
+    /// ký hiệu đọc từ Text Note của từng cột (null nếu không có). 1 ký hiệu có nhiều kích thước thì mỗi kích thước 1 nhóm,
+    /// khoá "C1 300x500". Nhóm có ký hiệu trước, rồi theo kích thước.</summary>
+    public static List<ColumnSizeGroup> GroupColumns(IEnumerable<RawColumn> columns, Func<RawColumn, string?>? tagOf = null)
     {
-        var byKey = new Dictionary<(long A, long B), (double SizeAMm, double SizeBMm, List<RawColumn> Columns)>();
+        var byKey = new Dictionary<(string? Tag, long A, long B), (double SizeAMm, double SizeBMm, List<RawColumn> Columns)>();
 
         foreach (var column in columns)
         {
@@ -44,7 +45,7 @@ internal static class ColumnPlacer
             var roundedWidth = RoundTo5(widthMm);
             var sizeA = Math.Min(roundedLength, roundedWidth);
             var sizeB = Math.Max(roundedLength, roundedWidth);
-            var key = ((long)Math.Round(sizeA * 100), (long)Math.Round(sizeB * 100));
+            var key = (tagOf?.Invoke(column), (long)Math.Round(sizeA * 100), (long)Math.Round(sizeB * 100));
 
             if (!byKey.TryGetValue(key, out var entry))
             {
@@ -53,13 +54,54 @@ internal static class ColumnPlacer
             }
 
             entry.Columns.Add(column);
-            byKey[key] = entry;
         }
 
-        return byKey.Values
-            .OrderBy(e => e.SizeBMm).ThenBy(e => e.SizeAMm)
-            .Select(e => new ColumnSizeGroup { SizeAMm = e.SizeAMm, SizeBMm = e.SizeBMm, Columns = e.Columns })
+        var sizesPerTag = byKey.Keys.Where(k => k.Tag is not null).GroupBy(k => k.Tag!).ToDictionary(g => g.Key, g => g.Count());
+        return byKey
+            .OrderBy(e => e.Key.Tag is null).ThenBy(e => e.Key.Tag, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(e => e.Value.SizeAMm).ThenBy(e => e.Value.SizeBMm)
+            .Select(e => new ColumnSizeGroup
+            {
+                SizeAMm = e.Value.SizeAMm,
+                SizeBMm = e.Value.SizeBMm,
+                Columns = e.Value.Columns,
+                TagName = e.Key.Tag,
+                KeyOverride = e.Key.Tag is { } tag && sizesPerTag[tag] > 1 ? $"{tag} {e.Value.SizeAMm:0}x{e.Value.SizeBMm:0}" : null,
+            })
             .ToList();
+    }
+
+    // ------------------------------------------------------------------ Dùng trong Transaction do caller mở sẵn (MCP)
+
+    /// <summary>Đặt 1 cột giữa 2 Level. Ném InvalidOperationException khi Revit không đặt được.</summary>
+    public static ElementId PlaceColumnInTransaction(Document doc, RawColumn column, FamilySymbol symbol, Level baseLevel, Level topLevel)
+    {
+        var result = PlaceOne(doc, column, symbol, baseLevel, topLevel);
+        return result.CreatedId ?? throw new InvalidOperationException(result.ErrorMessage ?? "Không đặt được cột.");
+    }
+
+    /// <summary>Type cột đúng b×h trong Family mẫu, trong Transaction do caller mở sẵn: dùng lại nếu có (kể cả Type vừa tạo ở
+    /// mục trước), không thì duplicate Type gần nhất của Family, tên "b×h", set b/h. Ném InvalidOperationException khi Family
+    /// không có tham số b/h dạng Length.</summary>
+    public static (FamilySymbol Symbol, bool Created) ResolveOrCreateColumnType(Document doc, double sizeAMm, double sizeBMm, Family family)
+    {
+        var symbols = SymbolsOf(doc, family);
+        if (ColumnTypeMatcher.FindExactMatch(sizeAMm, sizeBMm, symbols, s => s) is { } existing)
+            return (existing, false);
+        var template = ColumnTypeMatcher.AutoMatch(sizeAMm, sizeBMm, symbols, s => s)
+            ?? throw new InvalidOperationException($"Family \"{family.Name}\" không có Type chứa tham số b/h dạng Length.");
+
+        var group = new ColumnSizeGroup { SizeAMm = sizeAMm, SizeBMm = sizeBMm, Columns = [] };
+        var name = UniqueTypeName(group, symbols.Select(s => s.Name).ToHashSet(StringComparer.OrdinalIgnoreCase));
+        if (template.Duplicate(name) is not FamilySymbol created)
+            throw new InvalidOperationException("Duplicate không trả về FamilySymbol.");
+        var b = created.LookupParameter(ColumnTypeMatcher.ColumnBParam);
+        var h = created.LookupParameter(ColumnTypeMatcher.ColumnHParam);
+        if (b is not { StorageType: StorageType.Double, IsReadOnly: false } || h is not { StorageType: StorageType.Double, IsReadOnly: false })
+            throw new InvalidOperationException($"Family \"{family.Name}\" không có tham số b/h dạng Length sửa được.");
+        b.Set(UnitUtils.ConvertToInternalUnits(sizeAMm, UnitTypeId.Millimeters));
+        h.Set(UnitUtils.ConvertToInternalUnits(sizeBMm, UnitTypeId.Millimeters));
+        return (created, true);
     }
 
     private static double RoundTo5(double valueMm) =>
@@ -143,34 +185,25 @@ internal static class ColumnPlacer
         return new PlaceSummary(created, failed, skipped, errors, createdIds);
     }
 
-    /// <summary>Chống đặt trùng: hộp bao các cột CÓ SẴN trong model, theo từng Family, đọc 1 lần cho mỗi Family.
-    /// Cột vừa đặt trong cùng lượt không được thêm vào — giống hệt hành vi gốc.</summary>
-    private sealed class DuplicateChecker(Document doc, Level? baseLevel, Level? topLevel)
+    /// <summary>Chống đặt trùng: hộp bao MỌI cột kết cấu có sẵn trong model (mọi Family — cột của family khác ở đúng chỗ đó
+    /// cũng là trùng), đọc 1 lần. Cột vừa đặt trong cùng lượt không được thêm vào.</summary>
+    internal sealed class DuplicateChecker(Document doc, Level? baseLevel, Level? topLevel)
     {
-        private readonly Dictionary<string, List<(PlanBox Box, ElementId Id)>> _boxesByFamily = new(StringComparer.Ordinal);
+        private List<(PlanBox Box, ElementId Id)>? _boxes;
 
         // 1 luot Dat luon dung dung 1 cap Level day/dinh cho moi nhom - dung chung de phan biet cot cung
         // luoi X/Y nhung khac tang (xem PlanBox/FindDuplicate).
         private readonly double _testMinZ = baseLevel?.Elevation ?? 0.0;
         private readonly double _testMaxZ = topLevel?.Elevation ?? 0.0;
 
-        public ElementId? Find(RawColumn column, FamilySymbol symbol) =>
-            FindDuplicate(column.Center, BoxesFor(symbol.Family.Name), _testMinZ, _testMaxZ);
+        public ElementId? Find(RawColumn column, FamilySymbol symbol) => Find(column.Center);
 
-        private List<(PlanBox Box, ElementId Id)> BoxesFor(string familyName)
+        public ElementId? Find(XYZ center)
         {
-            if (!_boxesByFamily.TryGetValue(familyName, out var boxes))
-            {
-                var elements = new FilteredElementCollector(doc)
-                    .OfCategory(BuiltInCategory.OST_StructuralColumns)
-                    .OfClass(typeof(FamilyInstance))
-                    .Cast<FamilyInstance>()
-                    .Where(fi => string.Equals(fi.Symbol?.Family?.Name, familyName, StringComparison.Ordinal));
-                boxes = BuildExistingBoxes(elements, DuplicateExpandMm);
-                _boxesByFamily[familyName] = boxes;
-            }
-
-            return boxes;
+            _boxes ??= BuildExistingBoxes(new FilteredElementCollector(doc)
+                .OfCategory(BuiltInCategory.OST_StructuralColumns)
+                .OfClass(typeof(FamilyInstance)), DuplicateExpandMm);
+            return FindDuplicate(center, _boxes, _testMinZ, _testMaxZ);
         }
     }
 

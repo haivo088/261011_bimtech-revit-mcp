@@ -82,20 +82,28 @@ flowchart LR
     B -->|người dùng chọn layer| C[scan_cad_columns<br/>có layers → scanId]
     C -->|chưa có Type b/h| L[load_default_family]
     L --> D
-    C --> D[place_columns<br/>dryRun=true]
-    D -->|người dùng duyệt| E[place_columns<br/>dryRun=false → batchId]
-    E -.->|nếu cần| U[undo_batch]
+    C --> D[propose_columns]
+    D -->|duyệt trong Revit| E[commit_plan]
 ```
 
 1. `list_cad_sources`: ID các CAD trong model. CAD gắn riêng một view (`viewSpecific`) sẽ được quét trong view đó.
-2. `scan_cad_columns` lần 1 (không `layers`): các layer có đường bao chữ nhật kèm số lượng. Claude hỏi người dùng layer nào là cột.
-3. `scan_cad_columns` lần 2 (có `layers`): nhóm theo kích thước (khóa như `"1400x350"`, cạnh lớn trước), Type khớp đúng (`exactType`) hoặc gần nhất (`nearestType`), và `scanId`. Hình học ở lại trong add-in.
+2. `scan_cad_columns` lần 1 (không `layers`): các layer có đường bao chữ nhật kèm số lượng và số hình bị loại. Claude hỏi người dùng layer nào là cột.
+3. `scan_cad_columns` lần 2 (có `layers`):
+   - **Chỉ nhận hình chữ nhật thật** (PolyLine hoặc line rời), cạnh 100–2000 mm: mọi đầu mút nằm trên biên và bốn cạnh được vẽ đủ ít nhất 90%. Hatch bên trong không ảnh hưởng. Mũi tên, nét ghi chú, **cột chữ L**, **cột vẽ dính vách cùng layer** không thành cột mà nằm trong `notRectangles` để người dùng xem (không đặt).
+   - Line rời được gom bằng lưới không gian, nên layer hàng chục nghìn line (hatch) vẫn quét nhanh.
+   - **Ký hiệu cột** đọc từ Text Note gần nhất trong 1500 mm (`C1 300x500`); mỗi text chỉ gán cho cột gần nó nhất.
+   - Nhóm theo ký hiệu và kích thước: khóa `"C1"`, hoặc `"C1 300x500"` khi một ký hiệu có nhiều kích thước, hoặc kích thước **b×h cạnh nhỏ trước** `"300x500"` khi không có ký hiệu (trùng tên Type tạo mới). Ký hiệu ghi kích thước khác hình vẽ thì có `tagSizeMismatch`.
+   - Type khớp đúng (`exactType`) hoặc gần nhất (`nearestType`), và `scanId`. Hình học ở lại trong add-in.
 4. Nếu model chưa có Type cột nào có tham số b/h: `load_default_family` với `kind=column` nạp `BTC-CotCN_BeTong` và trả `familyId`.
-5. `place_columns` với `dryRun=true` (mặc định): kế hoạch theo nhóm gồm Type dùng, Type sẽ tạo, số cột tạo, số cột trùng. Không sửa model.
-6. Người dùng duyệt → `place_columns` với `dryRun=false`: tạo Type thiếu + đặt cột trong **một TransactionGroup** (một lần Ctrl+Z), trả `batchId`.
-7. `undo_batch`: xóa đúng những gì batch đã tạo.
+5. `propose_columns` với base/top level: **mỗi nhóm là một mục duyệt**.
+   - Khoảng cách từ tâm cột tới trục gần nhất được **làm tròn 5 mm** (`snapMm`), giữ nguyên độ lệch trục.
+   - Cột vẽ lệch dưới 2° so với phương trục được **đặt thẳng theo trục** (chọn hướng trục gần nhất, không đổi chỗ b/h).
+   - Cột vẽ trùng (cùng tâm) chỉ đặt một lần; cột đã có trong model ở đó (**mọi family**, cao độ chồng nhau) bị bỏ qua.
+   - Cột cách mọi trục hơn `gridDistanceMm` (mặc định 1000) theo cả hai phương có ghi chú để kiểm tra.
+   - Ký hiệu được ghi vào tham số **Mark** (`writeMark`, mặc định có).
+6. Duyệt → `commit_plan`: mỗi nhóm một Transaction, cả lượt một Ctrl+Z.
 
-Type cho mỗi nhóm được chọn theo thứ tự: mục trong `types` → Type có sẵn khớp b/h → Type mới tạo trong `templateFamilyId` → chưa có Type. Lần chạy thật **từ chối bắt đầu** khi còn nhóm chưa có Type.
+Type cho mỗi nhóm: mục trong `types` → Type có sẵn khớp b/h → Type `b×h` tạo trong `templateFamilyId` → chưa có Type (mục bị chặn). Cột tròn chưa hỗ trợ.
 
 ## Dầm
 

@@ -40,6 +40,7 @@ public sealed class PlanActions
         new CreateWallsAction(),
         new CreateFloorAction(),
         new CreatePileCapAction(),
+        new CreateColumnsAction(),
     ]);
 
     public bool TryGet(string action, out IPlanAction handler) => _actions.TryGetValue(action, out handler!);

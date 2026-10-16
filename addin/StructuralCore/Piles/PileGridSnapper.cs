@@ -74,6 +74,22 @@ internal static class PileGridSnapper
         };
     }
 
+    /// <summary>Khoảng cách (feet) từ 1 điểm tới Grid gần nhất theo từng phương của hệ Grid — null cho phương không có Grid.
+    /// Dùng kiểm tra quan hệ không gian: cột cách mọi trục quá xa là đáng ngờ. Null khi view không có Grid.</summary>
+    public static Func<XYZ, (double? U, double? V)>? PlanGridDistance(Document doc, View view)
+    {
+        var lineGrids = LineGridsOf(doc, view);
+        if (DetectGridAxes(lineGrids) is not { } axes) return null;
+        var (uAxis, vAxis) = axes;
+        var uGroup = lineGrids.Where(g => IsParallel(GridDirection(g), uAxis)).ToList();
+        var vGroup = lineGrids.Where(g => IsParallel(GridDirection(g), vAxis)).ToList();
+        double? Nearest(double coordinate, List<Grid> group, XYZ axis) =>
+            group.Count == 0 ? null : group.Min(g => Math.Abs(coordinate - Project(((Line)g.Curve!).GetEndPoint(0), axis)));
+        return point => (Nearest(Project(point, uAxis), vGroup, uAxis), Nearest(Project(point, vAxis), uGroup, vAxis));
+    }
+
+    private static double Project(XYZ point, XYZ axis) => point.X * axis.X + point.Y * axis.Y;
+
     /// <summary>Góc nghiêng θ (độ, [0,90)) của cả hệ Grid trong view — dùng lại cho Job R (regularize đường bao đài). Null nếu không có Grid Line nào.</summary>
     public static double? DetectThetaDeg(Document doc, View view)
     {

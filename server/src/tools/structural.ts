@@ -201,10 +201,13 @@ export const scanCadColumns = defineTool({
   method: "scan_cad_columns",
   title: "Scan CAD for columns",
   description:
-    "Read rectangular column outlines from a CAD drawing as shown in a plan view."
-    + " Call first without layers to see which layers contain outlines and ask the user which are columns."
-    + " Call again with layers to group columns by size (key like \"500x300\" in mm), get type suggestions"
-    + " (exactType or nearestType), and a scanId for place_columns. Changes nothing in the model.",
+    "Read rectangular column outlines (100-2000 mm, possibly rotated) from a CAD drawing as shown in a plan view,"
+    + " drawn as polylines or loose lines. Call first without layers to see which layers contain outlines and ask the"
+    + " user which are columns. Call again with layers to group columns by mark and size: each column's mark is read"
+    + " from the nearest Text Note (\"C1 300x500\"), key \"C1\", or the size b×h small side first (\"300x500\") when"
+    + " unmarked. Shapes of column size that are not rectangles (L-shaped columns, columns drawn touching a wall) are"
+    + " listed in notRectangles and never placed; tell the user. Returns type suggestions (exactType or nearestType),"
+    + " mark/size mismatches, and a scanId for propose_columns. Round columns are not supported. Changes nothing.",
   inputSchema: {
     cadId: elementId.describe("CAD import or link ID from list_cad_sources."),
     viewId,
@@ -223,7 +226,7 @@ export const loadDefaultFamily = defineTool({
     "Load a company structural family packaged with the add-in: column BTC-CotCN_BeTong (b/h), beam BTC-DamCN_BeTong"
     + " (b/h), or pile BTC-CocTron_BeTong (Diameter). For piles it also creates the default cap (BTC-DaiMong_1500)"
     + " and lean-concrete (BTC-BeTongLot_100) Foundation Slab types when missing. Use when a scan reports no suitable"
-    + " type; its familyId is the templateFamilyId for place_columns/place_beams. Does nothing if already loaded."
+    + " type; its familyId is the templateFamilyId for propose_columns/place_beams. Does nothing if already loaded."
     + " Confirm with the user first.",
   inputSchema: {
     kind: z.enum(["column", "beam", "pile"]).describe("Which family to load."),
@@ -232,27 +235,32 @@ export const loadDefaultFamily = defineTool({
   timeoutMs: 60000,
 });
 
-export const placeColumns = defineTool({
-  name: "place_columns",
-  method: "place_columns",
-  title: "Place columns from scan",
+export const proposeColumns = defineTool({
+  name: "propose_columns",
+  method: "propose_columns",
+  title: "Propose columns from scan",
   description:
-    "Place structural columns from a scan between two levels, rotated as in the CAD; positions that already"
-    + " have a column of the same family are skipped."
-    + " dryRun defaults to true and only reports the plan: always show it to the user and get confirmation"
-    + " before calling again with dryRun=false. A real run is one undo step in Revit and returns a batchId"
-    + " for undo_batch. Each size group uses: its entry in 'types', else an existing type with matching b/h,"
-    + " else a new type created in templateFamilyId.",
+    "Plan structural columns from a scan between two levels, without changing the model. One review item per group"
+    + " (mark and size). Each column's offset from the nearest grid is rounded to snapMm (default 5); a column drawn"
+    + " within 2° of the grid direction is set straight; columns drawn twice are placed once; columns already in the"
+    + " model at that spot (any family) are skipped; columns further than gridDistanceMm (default 1000) from every grid"
+    + " are flagged. Type per group: its entry in 'types', else an existing type with matching b/h, else a b×h type"
+    + " created in templateFamilyId. The mark goes to the Mark parameter (writeMark, default true). Opens the review"
+    + " window and returns a planId at once; then get_plan_status and commit_plan.",
   inputSchema: {
     scanId: z.string().min(1).max(64).describe("scanId from scan_cad_columns."),
     baseLevelId: elementId.describe("Bottom level of the columns."),
     topLevelId: elementId.describe("Top level of the columns; must be higher than the base level."),
-    types: typeMap("500x300"),
+    types: typeMap("C1"),
     templateFamilyId: elementId.optional()
       .describe("Column family (familyId from a scan type or load_default_family) in which to create types for groups with no matching type."),
-    dryRun,
+    snapMm: z.number().min(0).max(100).optional()
+      .describe("Round each column's offset from the nearest grid to this (default 5); 0 keeps the drawing's position."),
+    gridDistanceMm: z.number().min(0).max(100000).optional()
+      .describe("Flag columns further than this from every grid in both directions (default 1000)."),
+    writeMark: z.boolean().optional().describe("Write the column mark to the Mark parameter (default true)."),
   },
-  annotations: write,
+  annotations: propose,
   timeoutMs: 120000,
 });
 

@@ -58,7 +58,7 @@ public sealed class CommandRegistry
         new ProposeFloorsCommand(plans, review, changes),
         new LoadDefaultFamilyCommand(),
         new ScanCadColumnsCommand(),
-        new PlaceColumnsCommand(),
+        new ProposeColumnsCommand(plans, review, changes),
         new ScanCadBeamsCommand(),
         new PlaceBeamsCommand(),
         new ScanCadPilesCommand(),

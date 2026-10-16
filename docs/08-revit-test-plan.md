@@ -63,11 +63,18 @@ Kết quả này quyết định mốc cao độ cho bản nâng cấp U2 (nhậ
 - Bản vẽ có layer trục tên lạ: nếu tự nhận sai thì gọi lại với `gridLayer`. Ghi lại style được chọn và điểm (`styleScores`) để bổ sung quy tắc.
 - Bản vẽ có trục xiên: kết quả có cảnh báo "đường dài xiên".
 
-## 4. Cột (đã từng chạy, thử lại để chắc không hỏng)
+## 4. Cột: `scan_cad_columns` / `propose_columns`
 
-> Quét cột từ CAD tầng 1 bằng scan_cad_columns, đặt từ Tầng 1 lên Tầng 2. Xem trước rồi mới đặt.
+> Quét cột từ CAD tầng 1 bằng scan_cad_columns, rồi propose_columns từ Tầng 1 lên Tầng 2.
 
-Đạt khi: `place_columns dryRun=true` báo đúng số cột; chạy thật trả `batchId`; cột nằm đúng giao trục; `undo_batch` xoá đúng những gì vừa tạo.
+Đạt khi:
+- Nhóm theo ký hiệu (`C1`, `C2`) nếu ký hiệu là Text Note, không thì theo `300x500` (cạnh nhỏ trước). Nhóm có ký hiệu ghi kích thước khác hình vẽ thì có `tagSizeMismatch`.
+- `notRectangles` liệt kê cột chữ L, cột dính vách cùng layer, nét hở; không có "cột" nào từ mũi tên hay nét ghi chú.
+- Cửa sổ duyệt: mỗi nhóm một mục, mô tả như `C1 · 300x500 · 12 cột · Type 300x500 (BTC-CotCN_BeTong)`.
+- Sau commit: cột đúng tâm, khoảng cách tới trục là bội 5 mm (đo bằng Dimension); cột vẽ lệch nhẹ được đặt thẳng theo trục; **cột chữ nhật đúng hướng b/h** (không bị xoay 90°); tham số Mark có ký hiệu.
+- Đặt sẵn một cột của **family khác** ở một vị trí rồi propose: vị trí đó bị bỏ qua (không thành cột chồng cột).
+- Layer cột rất nhiều hatch: quét xong nhanh, không timeout.
+- Kiểm chứng tên tham số tiết diện của family `BTC-CotCN_BeTong` đúng là `b`/`h`.
 
 ## 5. Dầm: `scan_cad_beams` / `place_beams`
 

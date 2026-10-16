@@ -37,10 +37,10 @@ async function waitFor(check, timeoutMs = 3000) {
 
 test("tools switched off in Revit are hidden at startup", async (t) => {
   const options = await bridge(t, (socket, request) =>
-    reply(socket, request, { result: pingResult(["place_columns", "undo_batch"]) }));
+    reply(socket, request, { result: pingResult(["propose_columns", "undo_batch"]) }));
   const client = await mcpClient(t, options.port, { REVIT_MCP_AVAILABILITY_POLL_MS: "60000" });
-  const hidden = await waitFor(async () => !(await visibleTools(client)).includes("place_columns"));
-  assert.ok(hidden, "place_columns should be hidden");
+  const hidden = await waitFor(async () => !(await visibleTools(client)).includes("propose_columns"));
+  assert.ok(hidden, "propose_columns should be hidden");
   const tools = await visibleTools(client);
   assert.ok(!tools.includes("undo_batch"));
   assert.ok(tools.includes("get_elements"));
