@@ -95,11 +95,18 @@ Cần có dầm (phần 5) hoặc vách trên tầng đó.
 - Sau commit: sàn kết cấu đúng biên tim dầm, Type `BTC_SanKC_150` (tự tạo nếu thiếu).
 - Gọi lại `propose_floors` → mục có ghi chú "có thể trùng"; commit lần hai → `result.skipped`, không tạo sàn chồng.
 
-## 8. Cọc và đài: `scan_cad_piles` / `place_piles`
+## 8. Cọc và đài: `scan_cad_piles` / `propose_piles`
 
-> Quét cọc và đài từ CAD móng bằng scan_cad_piles, rồi place_piles với capLevelId là Tầng 1. Xem trước rồi đặt.
+> Quét cọc và đài từ CAD móng bằng scan_cad_piles, rồi propose_piles với capLevelId là Tầng 1 (hoặc level đỉnh đài).
 
-Đạt khi: cọc đúng vị trí và đường kính, đài là Foundation Slab, có lớp lót, cọc join với đài.
+Đạt khi:
+- `scan_cad_piles` lượt hai có `capGroups`: mỗi nhóm có ký hiệu (`Đ1`) và `thicknessMm` nếu bản vẽ ghi (Text Note). Nhóm thiếu chiều dày thì Claude **hỏi bạn**, không tự chọn.
+- Bản vẽ đài vẽ bằng line rời (đã explode): vẫn ra đủ đài.
+- Cửa sổ duyệt: mỗi đài một mục `C1`, `C2`..., mô tả như `Đài Đ1 2000x2000 · BTC-DaiMong_1200 · cọc 4×D600 · lót`; đài thiếu chiều dày bị chặn với lý do. Cọc lạc ngoài đài nằm trong mục `P-NOCAP` (bị chặn).
+- Sau commit: đài đúng chiều dày theo từng loại; đỉnh cọc = đáy đài của **chính đài đó**; cạnh đài là số tròn 5 mm; khoảng cách tâm cọc và tâm đài tới trục là bội 5 mm (đo bằng Dimension).
+- Có lớp lót; cọc join với đài và lớp lót của nó; join của các đài khác có sẵn trong model **không bị đổi**.
+- Với `pileLengthMm`: cọc đúng chiều dài, hoặc có cảnh báo nếu family không có tham số chiều dài. Ghi lại **gốc chèn** của family `BTC-CocTron_BeTong`: đỉnh cọc có trùng đáy đài không.
+- Gọi lại `propose_piles` cùng scan → đài đã dựng nằm trong `alreadyModeledCaps`.
 
 ## 9. An toàn khi ghi
 

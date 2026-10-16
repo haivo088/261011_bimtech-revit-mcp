@@ -60,6 +60,41 @@ internal static class PileDefaults
         return CollectFoundationSlabTypes(doc);
     }
 
+    /// <summary>Type Foundation Slab có tổng chiều dày đúng thicknessMm (sai số 1mm), ưu tiên Type tên "BTC-DaiMong...".</summary>
+    public static FloorType? FindByThickness(IEnumerable<FloorType> types, double thicknessMm) =>
+        types.Where(t => PileFoundationPlacer.CapThicknessFeet(t) is { } feet
+                && Math.Abs(UnitUtils.ConvertFromInternalUnits(feet, UnitTypeId.Millimeters) - thicknessMm) <= 1)
+            .OrderByDescending(t => t.Name.StartsWith("BTC-DaiMong", StringComparison.OrdinalIgnoreCase))
+            .FirstOrDefault();
+
+    /// <summary>Type đài đúng chiều dày, trong Transaction do caller mở sẵn: dùng lại Type có sẵn (kể cả Type vừa tạo ở mục
+    /// trước), không thì duplicate <paramref name="template"/> thành "BTC-DaiMong_h" và chỉnh lớp Structure dày nhất cho đủ
+    /// tổng chiều dày. Ném InvalidOperationException khi không chỉnh được.</summary>
+    public static (FloorType Type, bool Created) ResolveOrCreateCapType(Document doc, double thicknessMm, FloorType template)
+    {
+        var types = CollectFoundationSlabTypes(doc);
+        if (FindByThickness(types, thicknessMm) is { } existing)
+            return (existing, false);
+
+        var name = SymbolParameters.UniqueName($"BTC-DaiMong_{Math.Round(thicknessMm):0}", types.Select(t => t.Name).ToHashSet(StringComparer.OrdinalIgnoreCase));
+        var created = (FloorType)template.Duplicate(name);
+        var structure = created.GetCompoundStructure()
+            ?? throw new InvalidOperationException($"Type đài mẫu \"{template.Name}\" không có cấu tạo lớp.");
+        var layers = structure.GetLayers();
+        if (layers.Count == 0) throw new InvalidOperationException($"Type đài mẫu \"{template.Name}\" không có lớp nào.");
+        var index = Enumerable.Range(0, layers.Count)
+            .Where(i => layers[i].Function == MaterialFunctionAssignment.Structure)
+            .OrderByDescending(i => layers[i].Width).Cast<int?>().FirstOrDefault()
+            ?? Enumerable.Range(0, layers.Count).OrderByDescending(i => layers[i].Width).First();
+        var others = layers.Where((_, i) => i != index).Sum(layer => layer.Width);
+        var width = UnitUtils.ConvertToInternalUnits(thicknessMm, UnitTypeId.Millimeters) - others;
+        if (width <= UnitUtils.ConvertToInternalUnits(1, UnitTypeId.Millimeters))
+            throw new InvalidOperationException($"Các lớp còn lại của Type đài mẫu \"{template.Name}\" đã dày hơn {thicknessMm:0} mm.");
+        structure.SetLayerWidth(index, width);
+        created.SetCompoundStructure(structure);
+        return (created, true);
+    }
+
     /// <summary>Duplicate 1 Type Foundation Slab, đặt tên mới + chỉnh độ dày (chỉ áp dụng khi Type gốc có đúng 1 lớp — cấu tạo nhiều lớp thì giữ nguyên, không đoán lớp nào là lớp chính).</summary>
     private static void DuplicateFoundationSlabType(FloorType seed, string name, double thicknessMm)
     {

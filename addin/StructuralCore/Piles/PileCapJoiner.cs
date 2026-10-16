@@ -50,12 +50,20 @@ internal static class PileCapJoiner
         if (cuttingIds.Count == 0 || otherIds.Count == 0)
             return new JoinSummary(0, 0, 0);
 
+        using var tx = new Transaction(doc, transactionName);
+        tx.Start();
+        var summary = JoinInTransaction(doc, view, cuttingIds, otherIds);
+        tx.Commit();
+        return summary;
+    }
+
+    /// <summary>Join cọc (cắt) với các slab cho trước, trong Transaction do caller mở sẵn. MCP chỉ truyền cọc, đài và lớp lót
+    /// vừa dựng của 1 đài, không đụng tới join có sẵn trong model.</summary>
+    public static JoinSummary JoinInTransaction(Document doc, View? view, IReadOnlyList<ElementId> cuttingIds, IReadOnlyList<ElementId> otherIds)
+    {
         var joined = 0;
         var alreadyJoined = 0;
         var failed = 0;
-
-        using var tx = new Transaction(doc, transactionName);
-        tx.Start();
 
         foreach (var cuttingId in cuttingIds)
         {
@@ -97,12 +105,11 @@ internal static class PileCapJoiner
             }
         }
 
-        tx.Commit();
         return new JoinSummary(joined, alreadyJoined, failed);
     }
 
     /// <summary>So bounding box (dung sai ~30mm) — copy nguyên từ AutoJoin để chỉ join cặp thực sự chồng nhau.</summary>
-    private static bool BoundingBoxesOverlap(Element a, Element b, View view)
+    private static bool BoundingBoxesOverlap(Element a, Element b, View? view)
     {
         var boxA = a.get_BoundingBox(view);
         var boxB = b.get_BoundingBox(view);

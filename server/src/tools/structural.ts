@@ -317,9 +317,12 @@ export const scanCadPiles = defineTool({
   title: "Scan CAD for piles and caps",
   description:
     "Read pile circles and pile cap outlines from a CAD drawing as shown in a plan view. Call first without layers"
-    + " to list layers with their circle and outline counts and ask the user which are piles and which are caps;"
-    + " then call again with pileLayers and capLayers. Piles are grouped by diameter (key like \"D600\") and"
-    + " assigned to the cap containing them. Changes nothing in the model.",
+    + " to list layers with their circle, closed outline and loose line counts and ask the user which are piles and"
+    + " which are caps; then call again with pileLayers and capLayers. Caps drawn as loose lines are joined into loops."
+    + " Piles are grouped by diameter (key like \"D600\") and assigned to the cap containing them; piles further than"
+    + " 300 mm from every cap belong to none. Each cap's mark is read from a Text Note in or beside it, e.g."
+    + " \"Đ1 (2000x2000x1200)\" gives its thickness; caps are grouped by mark, else by size (capGroups). Round piles only."
+    + " Changes nothing in the model.",
   inputSchema: {
     cadId: elementId.describe("CAD import or link ID from list_cad_sources."),
     viewId,
@@ -331,30 +334,43 @@ export const scanCadPiles = defineTool({
   timeoutMs: 120000,
 });
 
-export const placePiles = defineTool({
-  name: "place_piles",
-  method: "place_piles",
-  title: "Place piles and caps from scan",
+export const proposePiles = defineTool({
+  name: "propose_piles",
+  method: "propose_piles",
+  title: "Propose piles and caps from scan",
   description:
-    "Place piles and pile caps from a scan, like the BIMTECH pile tool: caps are Foundation Slabs on capLevelId"
-    + " (default type BTC-DaiMong_1500), pile tops sit at cap level minus cap thickness, then lean concrete under"
-    + " each cap (default BTC-BeTongLot_100, withLot=false to skip), dimensions rounded to the grid, and piles"
-    + " joined with caps. dryRun defaults to true and only reports the plan: always show it to the user and get"
-    + " confirmation before calling again with dryRun=false. A real run is one undo step and returns a batchId.",
+    "Plan piles and pile caps from a scan, without changing the model. One review item per cap: the cap (Foundation"
+    + " Slab on capLevelId), its piles (top = cap level − that cap's thickness) and lean concrete under it (withLot)."
+    + " Cap thickness per cap group (key from capGroups of the scan): capTypes entry, else capThicknessMm entry, else the"
+    + " thickness in the cap mark, else capFloorTypeId for all caps; otherwise the cap is Blocked: ask the user, never"
+    + " guess. A thickness with no type of it creates BTC-DaiMong_<h> at commit. Cap edges are squared to the grid and"
+    + " rounded to snapMm (default 5), and caps and piles are shifted so their offsets from the grids are multiples of"
+    + " snapMm. Piles join only their own cap and lean concrete. Piles in no cap get one Blocked item. Opens the review"
+    + " window and returns a planId at once; then get_plan_status and commit_plan.",
   inputSchema: {
     scanId: z.string().min(1).max(64).describe("scanId from scan_cad_piles."),
     capLevelId: elementId.describe("Level at the top of the pile caps."),
-    capFloorTypeId: elementId.optional().describe("Foundation Slab type for caps. Default BTC-DaiMong_1500."),
+    capTypes: typeMap("Đ1")
+      .describe("Foundation Slab type per cap group key, e.g. {\"Đ1\": \"12345\", \"2000x2000\": \"12346\"}."),
+    capThicknessMm: z.record(z.string(), z.number().min(100).max(5000)).optional()
+      .describe("Cap thickness per cap group key in mm, e.g. {\"Đ1\": 1200}, when the drawing does not give it."),
+    capFloorTypeId: elementId.optional().describe("Foundation Slab type for every cap without other information."),
+    capTemplateTypeId: elementId.optional()
+      .describe("Foundation Slab type duplicated to make cap types of a new thickness. Default BTC-DaiMong_1500."),
     withLot: z.boolean().optional().describe("Place lean concrete under caps. Default true."),
     lotFloorTypeId: elementId.optional().describe("Foundation Slab type for lean concrete. Default BTC-BeTongLot_100."),
-    embedmentMm: z.number().min(0).max(5000).optional().describe("Pile embedment into the cap (default 100)."),
     lotOffsetMm: z.number().min(0).max(5000).optional().describe("Lean concrete extends this far beyond the cap (default 50)."),
+    embedmentMm: z.number().min(0).max(5000).optional().describe("Pile embedment into the cap (default 100)."),
+    pileLengthMm: z.number().min(1000).max(150000).optional()
+      .describe("Pile length, set on the pile's Length parameter when the family has one."),
     types: typeMap("D600"),
     createMissingTypes: z.boolean().optional()
       .describe("Create a pile type for each diameter without one, duplicated from the nearest type. Default false."),
-    dryRun,
+    snapMm: z.number().min(0).max(100).optional()
+      .describe("Round cap sizes and offsets from grids to this (default 5); 0 keeps the drawing's values."),
+    join: z.boolean().optional().describe("Join each pile with its cap and lean concrete (default true)."),
   },
-  annotations: write,
+  annotations: propose,
   timeoutMs: 120000,
 });
 

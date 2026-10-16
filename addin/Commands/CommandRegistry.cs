@@ -62,7 +62,7 @@ public sealed class CommandRegistry
         new ScanCadBeamsCommand(),
         new PlaceBeamsCommand(),
         new ScanCadPilesCommand(),
-        new PlacePilesCommand(),
+        new ProposePilesCommand(plans, review, changes),
         new UndoBatchCommand(),
     ]);
 

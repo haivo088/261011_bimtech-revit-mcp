@@ -109,14 +109,24 @@ Type cho mỗi nhóm được chọn theo thứ tự: mục trong `types` → Ty
 
 ## Cọc và đài
 
-`scan_cad_piles` → `place_piles`, chạy đúng chuỗi của nút "Đặt" trong tool WPF (`PileWorkflow.PlaceAll`):
+`scan_cad_piles` → `propose_piles` → duyệt → `commit_plan`. Chỉ hỗ trợ **cọc tròn**; cọc vuông chưa hỗ trợ.
 
-1. Đặt cọc + đài. Đài là Foundation Slab trên `capLevelId`; đỉnh cọc = cao độ level − chiều dày đài; cọc ngoài mọi đài không đặt được.
-2. Lớp lót dưới mỗi đài (`withLot`, mặc định có, lệch `lotOffsetMm` = 50).
-3. Bắt tròn kích thước theo lưới trục trong view của CAD.
-4. Join cọc với đài.
+**Quét** (`scan_cad_piles`, hai lượt như cột):
+- Cọc là hình tròn trên layer cọc; hai vòng đồng tâm (vẽ lồng) gộp thành một. Nhóm theo đường kính (`D600`).
+- Đài là PolyLine khép kín trên layer đài, **hoặc line rời** (bản vẽ đã explode) được ghép thành vòng kín. Hai đường bao vẽ trùng (ván khuôn và bê tông) gộp thành một.
+- **Cọc thuộc đài** chứa nó; cọc ngoài biên trong 300 mm vẫn thuộc đài gần nhất (vẽ lệch nhẹ); **xa hơn thì không thuộc đài nào** và được báo ra, không bị gán bừa cho một đài ở xa.
+- **Ký hiệu đài** đọc từ Text Note trong hoặc cạnh đài: `Đ1 (2000x2000x1200)`, `ĐM2 h=1500`, `ĐC3 - 1500X2400 - H=1000`. Đài gom thành nhóm (`capGroups`) theo ký hiệu, không có ký hiệu thì theo kích thước (`2000x2000`), kèm chiều dày đọc được.
 
-`load_default_family kind=pile` nạp `BTC-CocTron_BeTong` và tạo `BTC-DaiMong_1500` / `BTC-BeTongLot_100` khi chưa có (cần sẵn ít nhất 1 Type Foundation Slab làm mẫu). Type cọc thiếu chỉ được tạo khi `createMissingTypes=true`, nhân bản từ Type gần nhất, tên theo đường kính.
+**Đề xuất** (`propose_piles`): **mỗi đài là một mục** gồm đài, các cọc của nó và lớp lót.
+- **Chiều dày đài theo từng nhóm**, theo thứ tự: `capTypes` → `capThicknessMm` → chiều dày ghi trong ký hiệu bản vẽ → `capFloorTypeId` (chung) → **chặn**, để Claude hỏi người dùng, không đoán. Có chiều dày mà chưa có Type thì lúc commit tạo `BTC-DaiMong_<h>` từ `capTemplateTypeId` (mặc định `BTC-DaiMong_1500`). Đỉnh cọc = cao độ level − chiều dày **của đài chứa nó**.
+- **Làm tròn 5 mm** (`snapMm`): cạnh đài được làm vuông theo phương hệ trục rồi làm tròn bội 5 mm (1498,7 → 1500); đài và cọc được dời để khoảng cách tới trục gần nhất là bội 5 mm. Tính trước khi dựng nên đài (là Floor) cũng được làm tròn, không chỉ cọc.
+- Lớp lót dưới mỗi đài (`withLot`, mặc định có, rộng thêm `lotOffsetMm` = 50).
+- **Join chỉ giữa cọc với đài và lớp lót của chính nó**, không đụng join có sẵn trong model.
+- `pileLengthMm`: đặt chiều dài cọc vào tham số `Length` (hoặc `Pile Length`, `Chiều dài`, `L`) nếu family có; không có thì kết quả có cảnh báo.
+- Đài đã có ở vị trí đó thì bỏ qua (`alreadyModeledCaps`); cọc đã có thì bỏ qua từng cọc.
+- Cọc không thuộc đài nào gom thành một mục `P-NOCAP` bị chặn, liệt kê vị trí để kiểm tra.
+
+`load_default_family kind=pile` nạp `BTC-CocTron_BeTong` và tạo `BTC-DaiMong_1500` / `BTC-BeTongLot_100` khi chưa có (cần sẵn ít nhất 1 Type Foundation Slab làm mẫu). Type cọc thiếu chỉ được tạo khi `createMissingTypes=true`, nhân bản từ Type gần nhất, tên theo đường kính. Gốc chèn của family cọc (đỉnh hay mũi cọc) cần kiểm chứng trong Revit.
 
 ## An toàn khi ghi
 

@@ -32,7 +32,12 @@ internal sealed class BoundaryRow
     public required int Index { get; init; }
     public required RawBoundary Boundary { get; init; }
 
-    public string Label => $"Đài #{Index}";
+    /// <summary>Ký hiệu đài đọc từ Text Note trong/cạnh đài, vd "Đ1"; chiều dày ghi kèm, vd "(2000x2000x1200)" hay "h=1200".</summary>
+    public string? TagName { get; set; }
+    public string? TagText { get; set; }
+    public double? TagThicknessMm { get; set; }
+
+    public string Label => TagName is null ? $"Đài #{Index}" : $"Đài {TagName} #{Index}";
 }
 
 /// <summary>Kết quả quét hình học CAD của 1 ImportInstance, nhóm theo tên layer.</summary>
@@ -41,27 +46,43 @@ internal sealed class CadPileScanResult
     public required IReadOnlyDictionary<string, List<RawCircle>> CirclesByLayer { get; init; }
     public required IReadOnlyDictionary<string, List<RawBoundary>> BoundariesByLayer { get; init; }
 
-    /// <summary>Tên layer kèm số circle và số đường bao, nhiều hình nhất trước.</summary>
-    public List<(string Name, int CircleCount, int BoundaryCount)> GetLayerSummaries()
+    /// <summary>Line rời theo layer: đài vẽ bằng line đã explode thay vì PolyLine. Chỉ ghép thành vòng kín cho layer được chọn làm đài.</summary>
+    public IReadOnlyDictionary<string, List<Line>> LinesByLayer { get; init; } = new Dictionary<string, List<Line>>();
+
+    /// <summary>Tên layer kèm số circle, số đường bao PolyLine và số line rời, nhiều hình nhất trước.</summary>
+    public List<(string Name, int CircleCount, int BoundaryCount, int LineCount)> GetLayerSummaries()
     {
         var names = new HashSet<string>(CirclesByLayer.Keys);
         names.UnionWith(BoundariesByLayer.Keys);
+        names.UnionWith(LinesByLayer.Keys);
 
         return names
             .Select(name => (
                 name,
                 CirclesByLayer.TryGetValue(name, out var c) ? c.Count : 0,
-                BoundariesByLayer.TryGetValue(name, out var b) ? b.Count : 0))
+                BoundariesByLayer.TryGetValue(name, out var b) ? b.Count : 0,
+                LinesByLayer.TryGetValue(name, out var l) ? l.Count : 0))
             .OrderByDescending(e => e.Item2 + e.Item3)
+            .ThenByDescending(e => e.Item4)
             .ThenBy(e => e.name, StringComparer.CurrentCultureIgnoreCase)
             .ToList();
     }
 
+    public bool HasLayer(string name) =>
+        CirclesByLayer.ContainsKey(name) || BoundariesByLayer.ContainsKey(name) || LinesByLayer.ContainsKey(name);
+
     public List<RawCircle> SelectCircles(IEnumerable<string> layerNames, CadGeometry.PlanRegion? region = null) =>
         Select(CirclesByLayer, layerNames, c => c.Center, region);
 
-    public List<RawBoundary> SelectBoundaries(IEnumerable<string> layerNames, CadGeometry.PlanRegion? region = null) =>
-        Select(BoundariesByLayer, layerNames, b => b.Center, region);
+    /// <summary>Đường bao PolyLine khép kín, cộng các vòng kín ghép từ line rời trên cùng layer (đài vẽ bằng line đã explode).</summary>
+    public List<RawBoundary> SelectBoundaries(IEnumerable<string> layerNames, CadGeometry.PlanRegion? region = null)
+    {
+        var names = layerNames.Distinct(StringComparer.Ordinal).ToList();
+        var fromLines = names
+            .SelectMany(name => LinesByLayer.TryGetValue(name, out var lines) ? CadPileScanner.LoopsFromLines(lines) : [])
+            .Where(boundary => region is not { } r || r.Contains(boundary.Center));
+        return Select(BoundariesByLayer, names, b => b.Center, region).Concat(fromLines).ToList();
+    }
 
     private static List<T> Select<T>(
         IReadOnlyDictionary<string, List<T>> byLayer, IEnumerable<string> layerNames, Func<T, XYZ> centerOf, CadGeometry.PlanRegion? region)

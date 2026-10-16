@@ -88,6 +88,29 @@ internal static class PileLotFloorPlacer
         return new LotFloorSummary(created, skipped, failed, createdIds);
     }
 
+    /// <summary>Lớp lót dưới 1 đài, trong Transaction do caller mở sẵn. Null khi đã có lớp lót cùng Type ở đó.</summary>
+    public static Floor? PlaceUnderCapInTransaction(
+        Document doc, Floor cap, CurveLoop? capProfile, FloorType lotType, double offsetMm, Level capLevel)
+    {
+        doc.Regenerate();
+        var bb = cap.get_BoundingBox(null) ?? throw new InvalidOperationException("Không đọc được kích thước đài vừa dựng.");
+        var center = new XYZ((bb.Min.X + bb.Max.X) / 2, (bb.Min.Y + bb.Max.Y) / 2, 0);
+        var existingLots = new FilteredElementCollector(doc)
+            .OfCategory(BuiltInCategory.OST_StructuralFoundation)
+            .OfClass(typeof(Floor))
+            .Cast<Floor>()
+            .Where(f => f.FloorType.Id == lotType.Id);
+        if (PileFoundationPlacer.FindDuplicate(center, PileFoundationPlacer.BuildExistingBoxes(existingLots, DuplicateExpandMm)) is not null)
+            return null;
+
+        var known = capProfile is null ? new Dictionary<ElementId, CurveLoop>() : new Dictionary<ElementId, CurveLoop> { [cap.Id] = capProfile };
+        var offsetFeet = UnitUtils.ConvertToInternalUnits(offsetMm, UnitTypeId.Millimeters);
+        var loop = BuildLoop(doc, cap.Id, cap, bb, offsetFeet, bb.Min.Z, known);
+        var floor = Floor.Create(doc, new List<CurveLoop> { loop }, lotType.Id, capLevel.Id, true, null, 0.0);
+        floor.get_Parameter(BuiltInParameter.FLOOR_HEIGHTABOVELEVEL_PARAM)?.Set(bb.Min.Z - capLevel.Elevation);
+        return floor;
+    }
+
     /// <summary>Offset đúng theo biên dạng thật của đài (kể cả xoay/không chữ nhật). Ưu tiên loop sạch đã biết (đài mới tạo cùng lượt, knownCapProfiles) — chỉ đọc qua Sketch.Profile cho đài có sẵn từ trước, fallback hình chữ nhật bbox nếu cả 2 đều không có/không đọc được.</summary>
     private static CurveLoop BuildLoop(
         Document doc, ElementId capId, Element capElement, BoundingBoxXYZ bb, double offsetFeet, double topZ,

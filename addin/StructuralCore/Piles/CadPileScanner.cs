@@ -16,6 +16,7 @@ internal static class CadPileScanner
     {
         var circlesByLayer = new Dictionary<string, List<RawCircle>>(StringComparer.Ordinal);
         var boundariesByLayer = new Dictionary<string, List<RawBoundary>>(StringComparer.Ordinal);
+        var linesByLayer = new Dictionary<string, List<Line>>(StringComparer.Ordinal);
 
         var options = new Options { View = view, IncludeNonVisibleObjects = false };
         GeometryElement? geometryElement;
@@ -29,15 +30,35 @@ internal static class CadPileScanner
         }
 
         if (geometryElement is not null)
-            Walk(doc, geometryElement, circlesByLayer, boundariesByLayer, 0);
+            Walk(doc, geometryElement, circlesByLayer, boundariesByLayer, linesByLayer, 0);
 
-        return new CadPileScanResult { CirclesByLayer = circlesByLayer, BoundariesByLayer = boundariesByLayer };
+        return new CadPileScanResult
+        {
+            CirclesByLayer = circlesByLayer, BoundariesByLayer = boundariesByLayer, LinesByLayer = linesByLayer,
+        };
+    }
+
+    /// <summary>Đài vẽ bằng line rời (đã explode): ghép line thành các vòng kín bằng thuật toán dò ô của sàn
+    /// (BeamLoopScanner). Hai đường bao lồng nhau cho ra cả hai vòng; BuildCapRows gộp chúng như đường bao vẽ trùng.</summary>
+    public static List<RawBoundary> LoopsFromLines(IReadOnlyList<Line> lines)
+    {
+        if (lines.Count < 3) return [];
+        return Floors.BeamLoopScanner.TraceClosedLoops(lines.Cast<Curve>().ToList())
+            .Select(loop => Floors.PolygonMath.Tessellate(loop).Select(p => new XYZ(p.X, p.Y, 0)).ToList())
+            .Where(points => points.Count >= 3)
+            .Select(points =>
+            {
+                if (points[0].DistanceTo(points[^1]) > CloseTolFeet) points.Add(points[0]);
+                var (length, width) = BoundingBoxExtents(points);
+                return new RawBoundary { Center = PolygonCentroid(points), LengthFeet = length, WidthFeet = width, Points = points };
+            })
+            .ToList();
     }
 
     private static void Walk(
         Document doc, GeometryElement geometryElement,
         Dictionary<string, List<RawCircle>> circlesByLayer, Dictionary<string, List<RawBoundary>> boundariesByLayer,
-        int depth)
+        Dictionary<string, List<Line>> linesByLayer, int depth)
     {
         if (depth > MaxRecursionDepth)
             return;
@@ -51,11 +72,17 @@ internal static class CadPileScanner
                     case GeometryInstance instance:
                         var nested = instance.GetInstanceGeometry();
                         if (nested is not null)
-                            Walk(doc, nested, circlesByLayer, boundariesByLayer, depth + 1);
+                            Walk(doc, nested, circlesByLayer, boundariesByLayer, linesByLayer, depth + 1);
                         break;
 
                     case PolyLine polyLine:
                         AddPolyLineIfClosed(doc, polyLine, boundariesByLayer);
+                        break;
+
+                    case Line line:
+                        var layer = ResolveLayerName(doc, line.GraphicsStyleId);
+                        if (!linesByLayer.TryGetValue(layer, out var lines)) linesByLayer[layer] = lines = [];
+                        lines.Add(Line.CreateBound(Flat(line.GetEndPoint(0)), Flat(line.GetEndPoint(1))));
                         break;
 
                     case Arc arc:
@@ -149,6 +176,8 @@ internal static class CadPileScanner
         var maxY = pts.Max(p => p.Y);
         return new XYZ((minX + maxX) / 2, (minY + maxY) / 2, 0);
     }
+
+    private static XYZ Flat(XYZ point) => new(point.X, point.Y, 0);
 
     private static string ResolveLayerName(Document doc, ElementId styleId)
     {

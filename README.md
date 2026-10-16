@@ -29,7 +29,7 @@ Công cụ dựng model kết cấu từ CAD (xem [05 — Dựng model kết c�
 - `load_default_family`: nạp family chuẩn công ty (`kind`: column, beam, pile); với cọc còn tạo Type đài/lót mặc định.
 - `scan_cad_columns` / `place_columns`: cột theo đường bao chữ nhật.
 - `scan_cad_beams` / `place_beams`: dầm theo cặp line song song, tên và kích thước đọc từ Text Note.
-- `scan_cad_piles` / `place_piles`: cọc tròn + đài móng, kèm lớp lót, bắt tròn theo lưới và join cọc với đài.
+- `scan_cad_piles` / `propose_piles`: cọc tròn + đài móng, mỗi đài một mục duyệt; chiều dày đài theo ký hiệu bản vẽ hoặc người dùng; làm tròn 5 mm theo trục; lớp lót; join cọc với đài của nó.
 - Mọi `place_*` mặc định chỉ xem trước (`dryRun`); chạy thật trả `batchId`.
 - `undo_batch`: xóa đúng những gì một lần ghi đã tạo.
 

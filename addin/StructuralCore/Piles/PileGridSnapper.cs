@@ -52,6 +52,28 @@ internal static class PileGridSnapper
         return new SnapSummary(snapped, alreadyRound, skippedNoGrid);
     }
 
+    /// <summary>Tính trước, không dời gì: hàm trả độ dời (X/Y, feet) đưa 1 điểm về khoảng cách tới Grid gần nhất mỗi phương
+    /// là bội snapMm. Dùng khi lập kế hoạch đặt cọc/đài, để cọc và đài (kể cả đài là Floor, không có LocationPoint) được
+    /// dựng đúng chỗ ngay từ đầu. Null khi view không có Grid hoặc snapMm = 0.</summary>
+    public static Func<XYZ, XYZ>? PlanSnap(Document doc, View view, double snapMm)
+    {
+        if (snapMm <= 0) return null;
+        var lineGrids = LineGridsOf(doc, view);
+        if (DetectGridAxes(lineGrids) is not { } axes) return null;
+
+        var (uAxis, vAxis) = axes;
+        var uGroup = lineGrids.Where(g => IsParallel(GridDirection(g), uAxis)).ToList();
+        var vGroup = lineGrids.Where(g => IsParallel(GridDirection(g), vAxis)).ToList();
+        return point =>
+        {
+            var u = point.X * uAxis.X + point.Y * uAxis.Y;
+            var v = point.X * vAxis.X + point.Y * vAxis.Y;
+            var dv = FindAxisDelta(v, uGroup, uAxis, vAxis, useV: true, snapMm) ?? 0;
+            var du = FindAxisDelta(u, vGroup, uAxis, vAxis, useV: false, snapMm) ?? 0;
+            return new XYZ(du * uAxis.X + dv * vAxis.X, du * uAxis.Y + dv * vAxis.Y, 0);
+        };
+    }
+
     /// <summary>Góc nghiêng θ (độ, [0,90)) của cả hệ Grid trong view — dùng lại cho Job R (regularize đường bao đài). Null nếu không có Grid Line nào.</summary>
     public static double? DetectThetaDeg(Document doc, View view)
     {
@@ -89,8 +111,8 @@ internal static class PileGridSnapper
         var v = point.X * vAxis.X + point.Y * vAxis.Y;
 
         // Grid song song Uaxis co toa do v khong doi doc chieu dai - dung de snap phuong V, va nguoc lai.
-        var deltaV = FindAxisDelta(v, uGroup, uAxis, vAxis, useV: true);
-        var deltaU = FindAxisDelta(u, vGroup, uAxis, vAxis, useV: false);
+        var deltaV = FindAxisDelta(v, uGroup, uAxis, vAxis, useV: true, SnapUnitMm);
+        var deltaU = FindAxisDelta(u, vGroup, uAxis, vAxis, useV: false, SnapUnitMm);
 
         if (deltaU is null && deltaV is null)
             return Outcome.SkippedNoGrid;
@@ -108,8 +130,8 @@ internal static class PileGridSnapper
         return Outcome.Snapped;
     }
 
-    /// <summary>Tìm Grid trong nhóm gần toạ độ u/v nhất, trả về delta (feet) làm tròn bội 1mm — null nếu nhóm rỗng.</summary>
-    private static double? FindAxisDelta(double coordinate, List<Grid> group, XYZ uAxis, XYZ vAxis, bool useV)
+    /// <summary>Tìm Grid trong nhóm gần toạ độ u/v nhất, trả về delta (feet) làm tròn bội snapMm — null nếu nhóm rỗng.</summary>
+    private static double? FindAxisDelta(double coordinate, List<Grid> group, XYZ uAxis, XYZ vAxis, bool useV, double snapMm)
     {
         double? bestGridCoord = null;
         var bestDistance = double.MaxValue;
@@ -130,7 +152,7 @@ internal static class PileGridSnapper
             return null;
 
         var gapMm = UnitUtils.ConvertFromInternalUnits(coordinate - bestGridCoord.Value, UnitTypeId.Millimeters);
-        var roundedMm = Math.Round(gapMm / SnapUnitMm, MidpointRounding.AwayFromZero) * SnapUnitMm;
+        var roundedMm = Math.Round(gapMm / snapMm, MidpointRounding.AwayFromZero) * snapMm;
         var deltaMm = roundedMm - gapMm;
         return UnitUtils.ConvertToInternalUnits(deltaMm, UnitTypeId.Millimeters);
     }

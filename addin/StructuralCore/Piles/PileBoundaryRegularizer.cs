@@ -6,10 +6,11 @@ namespace Bimtech.StructuralCore.Piles;
 internal static class PileBoundaryRegularizer
 {
     private const double AngleToleranceDegrees = 2.0;
-    private const double SnapUnitMm = 1.0;
+    public const double DefaultSnapMm = 5.0;
 
-    /// <summary>Regularize 1 đường bao — gridThetaDeg (nếu có, [0,90)) khoá cứng phương đài theo đúng hệ Grid công trình khi đủ gần; topZ là cao độ đặt toàn bộ đỉnh kết quả (đỉnh Foundation Slab = capLevel).</summary>
-    public static RegularizeResult Regularize(RawBoundary boundary, double? gridThetaDeg, double topZ)
+    /// <summary>Regularize 1 đường bao — gridThetaDeg (nếu có, [0,90)) khoá cứng phương đài theo đúng hệ Grid công trình khi đủ gần; topZ là cao độ đặt toàn bộ đỉnh kết quả (đỉnh Foundation Slab = capLevel).
+    /// snapMm: cạnh ngang/đứng làm tròn về bội số này (5mm: 1498,7 → 1500); 0 thì giữ nguyên.</summary>
+    public static RegularizeResult Regularize(RawBoundary boundary, double? gridThetaDeg, double topZ, double snapMm = DefaultSnapMm)
     {
         var vertices = ClosedPolygonVertices(boundary.Points);
         var n = vertices.Count;
@@ -83,7 +84,7 @@ internal static class PileBoundaryRegularizer
             if (isAxisEdge[i])
             {
                 var lengthMm = UnitUtils.ConvertFromInternalUnits(lengthFeet, UnitTypeId.Millimeters);
-                var roundedMm = Math.Round(lengthMm / SnapUnitMm, MidpointRounding.AwayFromZero) * SnapUnitMm;
+                var roundedMm = snapMm <= 0 ? lengthMm : Math.Round(lengthMm / snapMm, MidpointRounding.AwayFromZero) * snapMm;
                 lengthFeet = UnitUtils.ConvertToInternalUnits(roundedMm, UnitTypeId.Millimeters);
             }
 

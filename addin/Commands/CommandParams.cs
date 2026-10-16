@@ -93,6 +93,25 @@ public sealed class CommandParams
         return map;
     }
 
+    // An object whose values are all numbers in [min, max], e.g. {"Đ1": 1200}.
+    public IReadOnlyDictionary<string, double> GetNumberMap(string name, double min, double max, int maxCount = 1000)
+    {
+        if (!TryGet(name, out var value)) return new Dictionary<string, double>();
+        if (value.ValueKind != JsonValueKind.Object)
+            throw Invalid(name, "expected an object whose values are numbers.");
+        var map = new Dictionary<string, double>(StringComparer.Ordinal);
+        foreach (var property in value.EnumerateObject())
+        {
+            if (map.Count >= maxCount)
+                throw Invalid(name, $"must contain at most {maxCount} entries.");
+            if (property.Value.ValueKind != JsonValueKind.Number || !property.Value.TryGetDouble(out var number)
+                || !double.IsFinite(number) || number < min || number > max)
+                throw Invalid($"{name}.{property.Name}", $"expected a number between {min} and {max}.");
+            map[property.Name] = number;
+        }
+        return map;
+    }
+
     public bool GetBool(string name, bool defaultValue)
     {
         if (!TryGet(name, out var value)) return defaultValue;

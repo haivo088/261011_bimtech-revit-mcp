@@ -377,6 +377,47 @@ internal static class PileFoundationPlacer
             createdPileIds, createdCapIds, resolvedCapIds, createdCapProfiles);
     }
 
+    // ------------------------------------------------------------------ Dùng trong Transaction do caller mở sẵn (MCP)
+
+    /// <summary>Đặt 1 cọc, đỉnh cọc tại topZ. Ném InvalidOperationException khi Revit không đặt được.</summary>
+    public static ElementId PlacePileInTransaction(Document doc, XYZ centerXY, FamilySymbol symbol, Level level, double topZ, double embedmentFeet)
+    {
+        var result = PlaceOne(doc, centerXY, symbol, level, topZ, embedmentFeet);
+        return result.CreatedId ?? throw new InvalidOperationException(result.ErrorMessage ?? "Không đặt được cọc.");
+    }
+
+    /// <summary>Box của cọc có sẵn cùng Family, để chống đặt trùng (FindDuplicate).</summary>
+    public static List<(PlanBox Box, ElementId Id)> ExistingPileBoxes(Document doc, string familyName) =>
+        BuildExistingBoxes(ExistingInstancesOf(doc, familyName), DuplicateExpandMm);
+
+    /// <summary>Box của mọi đài (Foundation Slab) có sẵn, trừ lớp lót, để chống dựng đài trùng chỗ.</summary>
+    public static List<(PlanBox Box, ElementId Id)> ExistingCapBoxes(Document doc, ElementId? lotTypeId) =>
+        BuildExistingBoxes(new FilteredElementCollector(doc)
+            .OfCategory(BuiltInCategory.OST_StructuralFoundation)
+            .OfClass(typeof(Floor))
+            .Cast<Floor>()
+            .Where(f => f.FloorType.Id != lotTypeId), DuplicateExpandMm);
+
+    /// <summary>Type cọc đúng đường kính trong family của <paramref name="template"/>: dùng lại nếu có (kể cả Type vừa tạo ở
+    /// mục trước), không thì duplicate Type mẫu, đặt tên theo đường kính và set Diameter. Ném InvalidOperationException khi
+    /// family không có tham số Diameter dạng Length.</summary>
+    public static (FamilySymbol Symbol, bool Created) ResolveOrCreatePileType(Document doc, double diameterMm, FamilySymbol template)
+    {
+        var family = template.Family;
+        var inFamily = family.GetFamilySymbolIds().Select(doc.GetElement).OfType<FamilySymbol>().ToList();
+        if (inFamily.FirstOrDefault(symbol => PileTypeMatcher.IsMatch(symbol, diameterMm)) is { } existing)
+            return (existing, false);
+
+        var name = SymbolParameters.UniqueName($"{(long)Math.Round(diameterMm)}", inFamily.Select(s => s.Name).ToHashSet(StringComparer.OrdinalIgnoreCase));
+        if (template.Duplicate(name) is not FamilySymbol created)
+            throw new InvalidOperationException("Duplicate không trả về FamilySymbol.");
+        var diameter = created.LookupParameter(PileTypeMatcher.PileDiameterParam);
+        if (diameter is null || diameter.StorageType != StorageType.Double || diameter.IsReadOnly)
+            throw new InvalidOperationException($"Family \"{family.Name}\" không có tham số \"{PileTypeMatcher.PileDiameterParam}\" dạng Length sửa được.");
+        diameter.Set(UnitUtils.ConvertToInternalUnits(diameterMm, UnitTypeId.Millimeters));
+        return (created, true);
+    }
+
     private static IEnumerable<Element> ExistingInstancesOf(Document doc, string familyName) =>
         new FilteredElementCollector(doc)
             .OfClass(typeof(FamilyInstance))

@@ -48,7 +48,7 @@ test("structural tools reject malformed input before contacting Revit", async (t
   assert.equal(contacted, false);
 });
 
-test("beam and pile placement default to a dry run and forward their options", async (t) => {
+test("beam placement and pile proposals forward their options", async (t) => {
   const requests = [];
   const options = await bridge(t, (socket, request) => {
     requests.push(request);
@@ -57,9 +57,12 @@ test("beam and pile placement default to a dry run and forward their options", a
   const client = await mcpClient(t, options.port);
   const beamArgs = { scanId: "scan-2", levelId: "694", include: ["220x600"], exclude: ["D9"], tagParameterName: "Mark" };
   assert.equal((await client.callTool({ name: "place_beams", arguments: beamArgs })).isError, false);
-  const pileArgs = { scanId: "scan-3", capLevelId: "311", withLot: false, createMissingTypes: true, embedmentMm: 150 };
-  assert.equal((await client.callTool({ name: "place_piles", arguments: pileArgs })).isError, false);
-  assert.deepEqual(requests.map((request) => request.method), ["place_beams", "place_piles"]);
+  const pileArgs = {
+    scanId: "scan-3", capLevelId: "311", withLot: false, createMissingTypes: true, embedmentMm: 150,
+    capTypes: { "Đ1": "12345" }, capThicknessMm: { "2000x2000": 1200 }, pileLengthMm: 32000, snapMm: 5, join: false,
+  };
+  assert.equal((await client.callTool({ name: "propose_piles", arguments: pileArgs })).isError, false);
+  assert.deepEqual(requests.map((request) => request.method), ["place_beams", "propose_piles"]);
   assert.deepEqual(requests[0].params, beamArgs);
   assert.deepEqual(requests[1].params, pileArgs);
 });
@@ -74,7 +77,9 @@ test("beam, pile and family tools reject malformed input before contacting Revit
     { name: "scan_cad_beams", arguments: { cadId: "1", textSearchMm: 0 } },
     { name: "place_beams", arguments: { scanId: "scan-1" } },
     { name: "scan_cad_piles", arguments: { cadId: "1", pileLayers: [""] } },
-    { name: "place_piles", arguments: { scanId: "scan-1", capLevelId: "311", embedmentMm: -1 } },
+    { name: "propose_piles", arguments: { scanId: "scan-1", capLevelId: "311", embedmentMm: -1 } },
+    { name: "propose_piles", arguments: { scanId: "scan-1", capLevelId: "311", capThicknessMm: { "Đ1": 20 } } },
+    { name: "propose_piles", arguments: { scanId: "scan-1", capLevelId: "311", capTypes: { "Đ1": 12345 } } },
   ];
   for (const call of invalidCalls) {
     const result = await client.callTool(call);
