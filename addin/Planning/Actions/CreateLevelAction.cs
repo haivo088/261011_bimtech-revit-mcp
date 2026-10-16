@@ -7,8 +7,9 @@ namespace Bimtech.RevitMcp.Planning.Actions;
 
 // Writes the items of propose_levels: one storey per item.
 //   { "levelName": "Tầng 2", "elevationMm": 3600, "cadFile": "D:\\...\\S-201.dwg" | null, "mode": "Import" | "Link", ... }
-// Creates the level if missing, its structural plan "KC - <name>" if missing, and imports or links the
-// CAD into that plan at the origin (LevelSetup, the same steps as the WPF tool, without grids).
+// Creates the level if missing (or renames the level of another name at that elevation, renameLevelId), its
+// structural plan "KC - <name>" if missing, and imports or links the CAD into that plan at the origin
+// (LevelSetup, the same steps as the WPF tool, without grids).
 public sealed class CreateLevelAction : IPlanAction
 {
     public string Action => "create_level";
@@ -32,7 +33,10 @@ public sealed class CreateLevelAction : IPlanAction
         LevelSetup.RowResult result;
         try
         {
-            result = LevelSetup.ApplyRowInTransaction(document, planType, row, existingAlignment: null);
+            var renameLevelId = ActionParams.OptionalText(parameters, "renameLevelId") is null
+                ? null
+                : ActionParams.Id(parameters, "renameLevelId");
+            result = LevelSetup.ApplyRowInTransaction(document, planType, row, existingAlignment: null, renameLevelId);
         }
         catch (InvalidOperationException exception)
         {

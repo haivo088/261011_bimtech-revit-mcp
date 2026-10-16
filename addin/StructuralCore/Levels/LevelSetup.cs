@@ -17,11 +17,15 @@ internal sealed record LevelSetupRow(string FilePath, string LevelName, double E
     public bool HasCad => !string.IsNullOrWhiteSpace(FilePath);
 }
 
-/// <summary>Xem trước 1 tầng, không sửa model. Problem khác null nghĩa là ApplyRow sẽ báo lỗi cho tầng này.</summary>
+/// <summary>Xem trước 1 tầng, không sửa model. Problem khác null nghĩa là ApplyRow sẽ báo lỗi cho tầng này.
+/// ExistingLevel: Level cùng tên. RenameFrom: không có Level cùng tên nhưng có đúng 1 Level khác tên ở cùng cao độ (thường
+/// là "Level 1" của template) — sẽ đổi tên Level đó thay vì tạo Level trùng cao độ. PlanName: tên plan sẽ dùng (plan có sẵn
+/// hoặc tên mới không trùng view nào); RenamesPlan: plan có sẵn đang mang tên cũ của Level (tên Revit tự đặt) sẽ đổi theo.</summary>
 internal sealed record LevelRowPreview(
-    LevelSetupRow Row, Level? ExistingLevel, ViewPlan? ExistingPlan, string PlanName, string? Problem)
+    LevelSetupRow Row, Level? ExistingLevel, Level? RenameFrom, ViewPlan? ExistingPlan, string PlanName, bool RenamesPlan,
+    string? Problem)
 {
-    public bool CreatesLevel => ExistingLevel is null;
+    public bool CreatesLevel => ExistingLevel is null && RenameFrom is null;
     public bool CreatesPlan => ExistingPlan is null;
 }
 
@@ -30,6 +34,9 @@ internal sealed record LevelRowPreview(
 internal static class LevelSetup
 {
     private static readonly double ElevationToleranceFeet = UnitUtils.ConvertToInternalUnits(1, UnitTypeId.Millimeters);
+
+    /// <summary>Ký tự Revit không cho dùng trong tên Level và tên view.</summary>
+    public const string ForbiddenNameChars = "\\:{}[]|;<>?`~";
 
     internal sealed record RowResult(int GridCount, XYZ? AlignmentTranslation, ElementId LevelId, ElementId PlanId, ElementId? CadId);
 
@@ -49,18 +56,38 @@ internal static class LevelSetup
     {
         var levels = new FilteredElementCollector(doc).OfClass(typeof(Level)).Cast<Level>().ToList();
         var plans = new FilteredElementCollector(doc).OfClass(typeof(ViewPlan)).Cast<ViewPlan>().ToList();
+        var viewNames = ViewNames(doc);
+        var requestedNames = rows.Select(r => r.LevelName.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var gridRows = rows.Count(r => r.CreateGrids);
         var previews = new List<LevelRowPreview>();
 
         foreach (var row in rows)
         {
             var name = row.LevelName.Trim();
+            var elevation = ToFeet(row.ElevationMm);
             var level = FindLevel(levels, name);
-            var plan = level is null ? null : FindStructuralPlan(plans, level);
+            // Không có Level cùng tên: Level khác tên ở cùng cao độ (và không bị dòng khác giành theo tên) được đổi tên.
+            List<Level> sameElevation = level is not null ? [] : levels
+                .Where(l => Math.Abs(l.Elevation - elevation) <= ElevationToleranceFeet && !requestedNames.Contains(l.Name))
+                .ToList();
+            var renameFrom = sameElevation.Count == 1 ? sameElevation[0] : null;
+            var target = level ?? renameFrom;
+            var plan = target is null ? null : FindStructuralPlan(plans, target);
+            // Plan mang đúng tên cũ của Level là tên Revit tự đặt: đổi theo tên mới cho khớp.
+            var renamesPlan = renameFrom is not null && plan is not null
+                && string.Equals(plan.Name, renameFrom.Name, StringComparison.OrdinalIgnoreCase);
+            var planName = plan is not null && !renamesPlan ? plan.Name : UniqueName(PlanNameFor(name), viewNames);
             string? problem = null;
 
             if (string.IsNullOrWhiteSpace(name))
                 problem = "Tên Level trống.";
+            else if (ForbiddenIn(name) is { } forbidden)
+                problem = $"Tên Level có ký tự Revit không cho dùng: {forbidden}. Các ký tự cấm: {ForbiddenNameChars}";
+            else if (sameElevation.Count > 1)
+                problem = $"Đã có {sameElevation.Count} Level ở cùng cao độ ({string.Join(", ", sameElevation.Select(l => l.Name))}); "
+                    + "đặt tên tầng trùng với một trong số đó để dùng lại.";
+            else if (rows.Count(r => Math.Abs(ToFeet(r.ElevationMm) - elevation) <= ElevationToleranceFeet) > 1)
+                problem = $"Có nhiều tầng trong danh sách cùng cao độ {row.ElevationMm:0.##} mm.";
             else if (row.HasCad && !File.Exists(row.FilePath))
                 problem = "Không tìm thấy file DWG.";
             else if (!row.HasCad && row.CreateGrids)
@@ -72,7 +99,8 @@ internal static class LevelSetup
             else if (row.CreateGrids && gridRows > 1)
                 problem = "Chỉ dựng Grid được từ 1 tầng: tầng dựng sau sẽ báo trùng tên Grid. Các tầng khác tự căn theo tầng đó.";
 
-            previews.Add(new LevelRowPreview(row, level, plan, PlanNameFor(name), problem));
+            if (problem is null && (plan is null || renamesPlan)) viewNames.Add(planName);
+            previews.Add(new LevelRowPreview(row, level, renameFrom, plan, planName, renamesPlan, problem));
         }
 
         return previews;
@@ -93,17 +121,31 @@ internal static class LevelSetup
     }
 
     /// <summary>Như ApplyRow nhưng chạy trong Transaction do caller mở sẵn (khung plan của MCP: mỗi mục 1 Transaction).
-    /// Ném InvalidOperationException khi lỗi; caller rollback.</summary>
-    public static RowResult ApplyRowInTransaction(Document doc, ViewFamilyType structuralType, LevelSetupRow row, XYZ? existingAlignment)
+    /// <paramref name="renameLevelId"/>: Level khác tên ở cùng cao độ mà Preview đã chọn để đổi tên (RenameFrom), thay vì
+    /// tạo Level trùng cao độ. Ném InvalidOperationException khi lỗi; caller rollback.</summary>
+    public static RowResult ApplyRowInTransaction(
+        Document doc, ViewFamilyType structuralType, LevelSetupRow row, XYZ? existingAlignment, ElementId? renameLevelId = null)
     {
         if (row.HasCad && !File.Exists(row.FilePath)) throw new InvalidOperationException("Không tìm thấy file DWG.");
         if (!row.HasCad && row.CreateGrids) throw new InvalidOperationException("Cần file DWG để dựng Grid.");
 
         var name = row.LevelName.Trim();
+        if (ForbiddenIn(name) is { } forbidden)
+            throw new InvalidOperationException($"Tên Level có ký tự Revit không cho dùng: {forbidden}.");
         var elevation = ToFeet(row.ElevationMm);
         var level = FindLevel(new FilteredElementCollector(doc).OfClass(typeof(Level)).Cast<Level>(), name);
+        string? oldLevelName = null;
 
-        if (level == null)
+        if (level == null && renameLevelId is not null)
+        {
+            level = doc.GetElement(renameLevelId) as Level
+                ?? throw new InvalidOperationException("Level cần đổi tên không còn trong model.");
+            if (Math.Abs(level.Elevation - elevation) > ElevationToleranceFeet)
+                throw new InvalidOperationException($"Level \"{level.Name}\" không còn ở cao độ {row.ElevationMm:0.##} mm.");
+            oldLevelName = level.Name;
+            level.Name = name;
+        }
+        else if (level == null)
         {
             level = Level.Create(doc, elevation);
             level.Name = name;
@@ -113,12 +155,16 @@ internal static class LevelSetup
             throw new InvalidOperationException($"Level đã có nhưng cao độ khác {row.ElevationMm:0.##} mm.");
         }
 
+        // Tên plan luôn là tên Preview đã báo: "KC - tên", thêm " (2)", " (3)"... khi một view khác đã dùng tên đó.
         var plan = FindStructuralPlan(new FilteredElementCollector(doc).OfClass(typeof(ViewPlan)).Cast<ViewPlan>(), level);
         if (plan == null)
         {
             plan = ViewPlan.Create(doc, structuralType.Id, level.Id);
-            var desiredName = PlanNameFor(name);
-            if (!ViewNameExists(doc, desiredName, plan.Id)) plan.Name = desiredName;
+            plan.Name = UniqueName(PlanNameFor(name), ViewNames(doc, except: plan.Id));
+        }
+        else if (oldLevelName is not null && string.Equals(plan.Name, oldLevelName, StringComparison.OrdinalIgnoreCase))
+        {
+            plan.Name = UniqueName(PlanNameFor(name), ViewNames(doc, except: plan.Id));
         }
 
         if (!row.HasCad) return new RowResult(0, null, level.Id, plan.Id, null);
@@ -178,7 +224,24 @@ internal static class LevelSetup
     private static ViewPlan? FindStructuralPlan(IEnumerable<ViewPlan> plans, Level level) =>
         plans.FirstOrDefault(v => v.GenLevel?.Id == level.Id && v.ViewType == ViewType.EngineeringPlan);
 
-    private static bool ViewNameExists(Document doc, string name, ElementId exceptId) =>
-        new FilteredElementCollector(doc).OfClass(typeof(Autodesk.Revit.DB.View)).Cast<Autodesk.Revit.DB.View>()
-            .Any(v => v.Id != exceptId && string.Equals(v.Name, name, StringComparison.OrdinalIgnoreCase));
+    private static HashSet<string> ViewNames(Document doc, ElementId? except = null) =>
+        new FilteredElementCollector(doc).OfClass(typeof(View)).Cast<View>()
+            .Where(v => v.Id != except)
+            .Select(v => v.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+    // "KC - Tầng 2", else "KC - Tầng 2 (2)", "KC - Tầng 2 (3)"...
+    private static string UniqueName(string name, ISet<string> taken)
+    {
+        var candidate = name;
+        for (var suffix = 2; taken.Contains(candidate); suffix++) candidate = $"{name} ({suffix})";
+        return candidate;
+    }
+
+    // The forbidden characters found in a name, e.g. "':', '?'"; null when the name is fine.
+    private static string? ForbiddenIn(string name)
+    {
+        var found = name.Where(ForbiddenNameChars.Contains).Distinct().Select(c => $"'{c}'").ToList();
+        return found.Count == 0 ? null : string.Join(", ", found);
+    }
 }

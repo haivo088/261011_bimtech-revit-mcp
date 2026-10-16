@@ -32,8 +32,10 @@ flowchart LR
 ```
 
 1. `propose_levels` với danh sách `{ name, elevationMm, cadFile?, mode? }`. Mỗi tầng là một mục `create_level`: tạo Level (hoặc dùng lại Level cùng tên, cùng cao độ), tạo Structural Plan `KC - <tên>` nếu chưa có, nhập hoặc link DWG vào plan đó tại gốc toạ độ. Không có `cadFile` thì chỉ tạo Level + plan. Tầng đã đủ và không có `cadFile` bị bỏ qua.
-   - Thành `blocked`: thiếu file DWG, Level cùng tên nhưng khác cao độ, tên lặp trong danh sách, model không có loại view Structural Plan.
-   - Chỉ ghi chú (vẫn duyệt được): Level đã có; plan đã có CAD cùng tên file (nhập nữa sẽ thành 2 bản).
+   - **Đối chiếu theo cao độ:** không có Level cùng tên nhưng có đúng một Level khác tên ở cùng cao độ (thường là `Level 1` của template) thì **đổi tên** Level đó thay vì tạo Level trùng cao độ; plan của nó mang tên cũ của Level (tên Revit tự đặt) cũng đổi theo thành `KC - <tên>`. Muốn giữ tên cũ thì bỏ mục đó trong cửa sổ duyệt.
+   - Thành `blocked`: tên có ký tự Revit cấm (`\ : { } [ ] | ; < > ? ` ~`), thiếu file DWG, Level cùng tên nhưng khác cao độ, nhiều Level khác tên ở cùng cao độ, nhiều tầng trong danh sách cùng tên hoặc cùng cao độ, model không có loại view Structural Plan.
+   - Chỉ ghi chú (vẫn duyệt được): Level đã có; Level sẽ được đổi tên; tên `KC - <tên>` đã bị view khác dùng nên plan mới thành `KC - <tên> (2)`; plan đã có CAD cùng tên file (nhập nữa sẽ thành 2 bản).
+   - Tên plan hiện trong cửa sổ duyệt là đúng tên sẽ tạo.
 2. Người dùng duyệt trong Revit → `get_plan_status` → `commit_plan`. Mỗi tầng một Transaction, cả lượt một Ctrl+Z.
 3. `list_cad_sources` lấy ID các CAD vừa nhập.
 4. `propose_grids` với `cadId` là CAD có layer trục (tên chứa GRID, TRUC/TRỤC hoặc AXIS) và `alignCadIds` là CAD các tầng còn lại. Lõi `GridBuilder.Plan` gộp nét theo toạ độ, đặt tên trục đứng 1, 2, 3… và trục ngang A, B, C… từ dưới trái, làm tròn khoảng cách theo mm.

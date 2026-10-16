@@ -38,7 +38,7 @@ public sealed class ProposeLevelsCommand(PlanService plans, ReviewWindowHost rev
         foreach (var (preview, index) in LevelSetup.Preview(document, rows).Select((preview, index) => (preview, index)))
         {
             context.Cancellation.ThrowIfCancellationRequested();
-            if (preview.Problem is null && !preview.CreatesLevel && !preview.CreatesPlan && !preview.Row.HasCad)
+            if (preview.Problem is null && preview.ExistingLevel is not null && !preview.CreatesPlan && !preview.Row.HasCad)
                 unchanged.Add(preview.Row.LevelName.Trim());
             else
                 items.Add(ToItem(document, preview, index, hasPlanType));
@@ -99,7 +99,11 @@ public sealed class ProposeLevelsCommand(PlanService plans, ReviewWindowHost rev
         var problem = preview.Problem
             ?? (preview.CreatesPlan && !hasPlanType ? "Model chưa có loại view Structural Plan." : null);
         if (problem is not null) reasons.Add(problem);
-        if (!preview.CreatesLevel) reasons.Add("Level đã có, dùng lại.");
+        if (preview.ExistingLevel is not null) reasons.Add("Level đã có, dùng lại.");
+        if (preview.RenameFrom is { } old)
+            reasons.Add($"Level \"{old.Name}\" đã có ở cùng cao độ: đổi tên thay vì tạo Level trùng cao độ. Bỏ mục này nếu muốn giữ tên cũ.");
+        if (preview.CreatesPlan && preview.PlanName != LevelSetup.PlanNameFor(name))
+            reasons.Add($"Tên \"{LevelSetup.PlanNameFor(name)}\" đã có view khác dùng; plan mới tên \"{preview.PlanName}\".");
         if (row.HasCad && preview.ExistingPlan is { } plan && LevelSetup.PlanHasCadFile(document, plan, row.FilePath))
             reasons.Add("Plan này đã có CAD cùng tên file; nhập nữa sẽ thành 2 bản.");
 
@@ -115,15 +119,17 @@ public sealed class ProposeLevelsCommand(PlanService plans, ReviewWindowHost rev
                 elevationMm = row.ElevationMm,
                 cadFile,
                 mode = row.Mode.ToString(),
-                planName = preview.ExistingPlan?.Name ?? preview.PlanName,
+                planName = preview.PlanName,
                 createsLevel = preview.CreatesLevel,
+                // The level with another name at this elevation that is renamed instead of creating a duplicate.
+                renameLevelId = preview.RenameFrom is null ? null : RevitJson.Id(preview.RenameFrom.Id),
                 createsPlan = preview.CreatesPlan,
             }),
             Tier = problem is null ? PlanTier.Review : PlanTier.Blocked,
             Reasons = reasons,
             Source = JsonSerializer.SerializeToElement(new
             {
-                elementId = preview.ExistingLevel is null ? null : RevitJson.Id(preview.ExistingLevel.Id),
+                elementId = (preview.ExistingLevel ?? preview.RenameFrom) is { } existing ? RevitJson.Id(existing.Id) : null,
                 name,
                 category = "Levels",
                 cadFile,
@@ -131,15 +137,20 @@ public sealed class ProposeLevelsCommand(PlanService plans, ReviewWindowHost rev
         };
     }
 
-    // e.g. "Tạo Level +3600 mm · tạo plan "KC - Tầng 2" · import S-201.dwg".
+    // e.g. "Tạo Level +3600 mm · tạo plan "KC - Tầng 2" · import S-201.dwg",
+    //      "Đổi tên Level "Level 1" → "Tầng 1" (+0 mm) · đổi tên plan "Level 1" → "KC - Tầng 1"".
     private static string Summary(LevelRowPreview preview)
     {
         var row = preview.Row;
+        var elevation = row.ElevationMm.ToString("+0.##;-0.##;0", CultureInfo.InvariantCulture) + " mm";
         var parts = new List<string>
         {
-            (preview.CreatesLevel ? "Tạo Level " : "Level có sẵn ")
-                + row.ElevationMm.ToString("+0.##;-0.##;0", CultureInfo.InvariantCulture) + " mm",
-            preview.CreatesPlan ? $"tạo plan \"{preview.PlanName}\"" : $"plan có sẵn \"{preview.ExistingPlan!.Name}\"",
+            preview.RenameFrom is { } old ? $"Đổi tên Level \"{old.Name}\" → \"{row.LevelName.Trim()}\" ({elevation})"
+                : preview.CreatesLevel ? $"Tạo Level {elevation}"
+                : $"Level có sẵn {elevation}",
+            preview.CreatesPlan ? $"tạo plan \"{preview.PlanName}\""
+                : preview.RenamesPlan ? $"đổi tên plan \"{preview.ExistingPlan!.Name}\" → \"{preview.PlanName}\""
+                : $"plan có sẵn \"{preview.PlanName}\"",
         };
         if (row.HasCad) parts.Add($"{row.Mode.ToString().ToLowerInvariant()} {Path.GetFileName(row.FilePath)}");
         return string.Join(" · ", parts);
