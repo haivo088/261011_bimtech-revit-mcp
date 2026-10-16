@@ -50,6 +50,22 @@ public sealed class ReviewViewModelTests : IDisposable
     }
 
     [Fact]
+    public void Rows_show_the_summary_of_items_that_have_one()
+    {
+        var row = new PlanItemRow(new PlanItem
+        {
+            ItemId = "G-B",
+            Action = "create_grid",
+            Params = JsonSerializer.SerializeToElement(new { summary = "Trục B (ngang): y = 6000 mm, dài 25 m", name = "B" }),
+            Source = JsonSerializer.SerializeToElement(new { name = "B", category = "Grids" }),
+        });
+
+        Assert.Equal("Grids · B", row.Element);
+        Assert.Equal("Trục B (ngang): y = 6000 mm, dài 25 m", row.Change);
+        Assert.Empty(row.ElementIds);
+    }
+
+    [Fact]
     public void Plan_can_be_approved_only_after_every_item_is_decided()
     {
         Assert.False(_model.CanApprovePlan);

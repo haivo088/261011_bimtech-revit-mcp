@@ -10,8 +10,12 @@ internal enum CadPlacementMode
     Link
 }
 
-/// <summary>1 tầng cần dựng: file DWG mặt bằng kết cấu, tên + cao độ Level, Import hay Link, có dựng Grid từ CAD này không.</summary>
-internal sealed record LevelSetupRow(string FilePath, string LevelName, double ElevationMm, CadPlacementMode Mode, bool CreateGrids);
+/// <summary>1 tầng cần dựng: file DWG mặt bằng kết cấu, tên + cao độ Level, Import hay Link, có dựng Grid từ CAD này không.
+/// FilePath trống: chỉ tạo Level + Structural Plan, không nhập CAD.</summary>
+internal sealed record LevelSetupRow(string FilePath, string LevelName, double ElevationMm, CadPlacementMode Mode, bool CreateGrids)
+{
+    public bool HasCad => !string.IsNullOrWhiteSpace(FilePath);
+}
 
 /// <summary>Xem trước 1 tầng, không sửa model. Problem khác null nghĩa là ApplyRow sẽ báo lỗi cho tầng này.</summary>
 internal sealed record LevelRowPreview(
@@ -27,7 +31,7 @@ internal static class LevelSetup
 {
     private static readonly double ElevationToleranceFeet = UnitUtils.ConvertToInternalUnits(1, UnitTypeId.Millimeters);
 
-    internal sealed record RowResult(int GridCount, XYZ? AlignmentTranslation);
+    internal sealed record RowResult(int GridCount, XYZ? AlignmentTranslation, ElementId LevelId, ElementId PlanId, ElementId? CadId);
 
     public static ViewFamilyType? FindStructuralPlanType(Document doc) =>
         new FilteredElementCollector(doc)
@@ -57,8 +61,10 @@ internal static class LevelSetup
 
             if (string.IsNullOrWhiteSpace(name))
                 problem = "Tên Level trống.";
-            else if (!File.Exists(row.FilePath))
+            else if (row.HasCad && !File.Exists(row.FilePath))
                 problem = "Không tìm thấy file DWG.";
+            else if (!row.HasCad && row.CreateGrids)
+                problem = "Cần file DWG để dựng Grid.";
             else if (level is not null && Math.Abs(level.Elevation - ToFeet(row.ElevationMm)) > ElevationToleranceFeet)
                 problem = $"Level đã có nhưng cao độ khác {row.ElevationMm:0.##} mm.";
             else if (rows.Count(r => string.Equals(r.LevelName.Trim(), name, StringComparison.OrdinalIgnoreCase)) > 1)
@@ -77,10 +83,21 @@ internal static class LevelSetup
     /// (null nếu chưa có) — tầng không dựng Grid được dời theo vector này để chung hệ Grid.</summary>
     public static RowResult ApplyRow(Document doc, ViewFamilyType structuralType, LevelSetupRow row, XYZ? existingAlignment)
     {
-        if (!File.Exists(row.FilePath)) throw new InvalidOperationException("Không tìm thấy file DWG.");
+        if (row.HasCad && !File.Exists(row.FilePath)) throw new InvalidOperationException("Không tìm thấy file DWG.");
 
         using var tx = new Transaction(doc, $"CAD tầng {row.LevelName}");
         tx.Start();
+        var result = ApplyRowInTransaction(doc, structuralType, row, existingAlignment);
+        tx.Commit();
+        return result;
+    }
+
+    /// <summary>Như ApplyRow nhưng chạy trong Transaction do caller mở sẵn (khung plan của MCP: mỗi mục 1 Transaction).
+    /// Ném InvalidOperationException khi lỗi; caller rollback.</summary>
+    public static RowResult ApplyRowInTransaction(Document doc, ViewFamilyType structuralType, LevelSetupRow row, XYZ? existingAlignment)
+    {
+        if (row.HasCad && !File.Exists(row.FilePath)) throw new InvalidOperationException("Không tìm thấy file DWG.");
+        if (!row.HasCad && row.CreateGrids) throw new InvalidOperationException("Cần file DWG để dựng Grid.");
 
         var name = row.LevelName.Trim();
         var elevation = ToFeet(row.ElevationMm);
@@ -103,6 +120,8 @@ internal static class LevelSetup
             var desiredName = PlanNameFor(name);
             if (!ViewNameExists(doc, desiredName, plan.Id)) plan.Name = desiredName;
         }
+
+        if (!row.HasCad) return new RowResult(0, null, level.Id, plan.Id, null);
 
         var options = new DWGImportOptions
         {
@@ -140,8 +159,15 @@ internal static class LevelSetup
             GridBuilder.MoveCad(doc, cadInstance, existingAlignment);
         }
 
-        tx.Commit();
-        return new RowResult(gridCount, newAlignment);
+        return new RowResult(gridCount, newAlignment, level.Id, plan.Id, cadId);
+    }
+
+    /// <summary>CAD đã nằm trong view này có cùng tên file (tên Type của ImportInstance) — nhập lại sẽ thành 2 bản.</summary>
+    public static bool PlanHasCadFile(Document doc, ViewPlan plan, string filePath)
+    {
+        var fileName = Path.GetFileName(filePath);
+        return new FilteredElementCollector(doc, plan.Id).OfClass(typeof(ImportInstance)).Cast<ImportInstance>()
+            .Any(cad => string.Equals(doc.GetElement(cad.GetTypeId())?.Name, fileName, StringComparison.OrdinalIgnoreCase));
     }
 
     private static double ToFeet(double mm) => UnitUtils.ConvertToInternalUnits(mm, UnitTypeId.Millimeters);

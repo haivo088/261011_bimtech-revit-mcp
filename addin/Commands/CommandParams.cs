@@ -66,6 +66,17 @@ public sealed class CommandParams
         return new CommandParams(value, name + ".");
     }
 
+    // An array of objects, each read with the same validation. Errors name the item, e.g. "levels[2].name".
+    public IReadOnlyList<CommandParams> GetObjectList(string name, int maxCount = 1000)
+    {
+        if (!TryGet(name, out var value)) return [];
+        return ReadArray(name, value, maxCount)
+            .Select((item, index) => item.ValueKind == JsonValueKind.Object
+                ? new CommandParams(item, $"{_prefix}{name}[{index}].")
+                : throw Invalid($"{name}[{index}]", "expected an object."))
+            .ToList();
+    }
+
     // An object whose values are all strings, e.g. {"500x300": "12345"}.
     public IReadOnlyDictionary<string, string> GetStringMap(string name, int maxCount = 1000, int maxLength = 4096)
     {

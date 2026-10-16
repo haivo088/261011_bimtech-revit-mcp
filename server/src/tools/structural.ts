@@ -31,6 +31,55 @@ export const listCadSources = defineTool({
   annotations: readOnly,
 });
 
+// Saves a plan file and opens the review window, but never changes the model.
+const propose = { readOnlyHint: true, destructiveHint: false, idempotentHint: false };
+
+export const proposeLevels = defineTool({
+  name: "propose_levels",
+  method: "propose_levels",
+  title: "Propose levels with their CAD",
+  description:
+    "Plan setting up storeys, without changing the model. Each storey becomes one review item that creates the level"
+    + " (or reuses one with the same name and elevation), its structural plan \"KC - <name>\", and imports or links"
+    + " that storey's DWG into the plan at the origin. Storeys that are already complete and have no cadFile are skipped;"
+    + " problems (missing file, existing level at another elevation, duplicate names) become Blocked items."
+    + " Opens the review window in Revit and returns a planId at once. Tell the user the counts, ask them to review in"
+    + " Revit and say when they are done, then call get_plan_status and commit_plan."
+    + " After the commit, call list_cad_sources and propose_grids to build grids and align the CAD.",
+  inputSchema: {
+    levels: z.array(z.object({
+      name: z.string().min(1).max(255).describe("Level name, e.g. \"Tầng 2\"."),
+      elevationMm: z.number().min(-100000).max(1000000).describe("Elevation in millimeters."),
+      cadFile: z.string().min(1).max(1024).regex(/\.dwg$/i).optional()
+        .describe("Full path of the storey's structural plan DWG. Omit to create only the level and plan."),
+      mode: z.enum(["import", "link"]).optional().describe("Import (default) or link the DWG."),
+    })).min(1).max(100).describe("Storeys to set up."),
+  },
+  annotations: propose,
+  timeoutMs: 60000,
+});
+
+export const proposeGrids = defineTool({
+  name: "propose_grids",
+  method: "propose_grids",
+  title: "Propose grids from CAD",
+  description:
+    "Plan grids read from one CAD drawing, without changing the model. Uses the CAD layer whose name contains GRID,"
+    + " TRUC/TRỤC or AXIS; vertical axes are named 1, 2, 3... and horizontal ones A, B, C... from the bottom left."
+    + " Grids are placed so grid 1-A sits on the Project Base Point, and the plan also moves this CAD (and every CAD"
+    + " in alignCadIds, usually the other storeys' CAD from propose_levels) by the same vector so drawings stay on"
+    + " the grids. One review item per grid and per CAD move; grids whose name already exists are Blocked."
+    + " Opens the review window in Revit and returns a planId at once; then get_plan_status and commit_plan.",
+  inputSchema: {
+    cadId: elementId.describe("CAD import or link with the grid layer, from list_cad_sources."),
+    viewId,
+    alignCadIds: z.array(elementId).max(200).optional()
+      .describe("Other CAD imports or links to move with it, e.g. every storey's CAD."),
+  },
+  annotations: propose,
+  timeoutMs: 120000,
+});
+
 export const scanCadColumns = defineTool({
   name: "scan_cad_columns",
   method: "scan_cad_columns",

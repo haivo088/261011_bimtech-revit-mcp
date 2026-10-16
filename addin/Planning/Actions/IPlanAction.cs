@@ -30,7 +30,13 @@ public sealed class PlanActions
                 throw new InvalidOperationException($"Duplicate plan action: {action.Action}");
     }
 
-    public static PlanActions CreateDefault() => new([new SetParameterAction()]);
+    public static PlanActions CreateDefault() => new(
+    [
+        new SetParameterAction(),
+        new CreateLevelAction(),
+        new CreateGridAction(),
+        new MoveCadAction(),
+    ]);
 
     public bool TryGet(string action, out IPlanAction handler) => _actions.TryGetValue(action, out handler!);
 }

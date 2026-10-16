@@ -59,9 +59,11 @@ public sealed class PlanItemRow : INotifyPropertyChanged
         return id is null ? label : $"{label} ({id})".TrimStart();
     }
 
+    // Items with a "summary" param show it (e.g. "Trục B (ngang): y = 6000 mm, dài 25 m");
     // set_parameter items read "Comments: (trống) → Kiểm tra"; other actions show their params.
     private static string DescribeChange(JsonElement parameters)
     {
+        if (ReadString(parameters, "summary") is { } summary) return summary;
         if (ReadString(parameters, "value") is { } value)
         {
             var current = ReadString(parameters, "currentValue");

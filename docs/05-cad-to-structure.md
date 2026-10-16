@@ -1,6 +1,6 @@
 # 05 — Dựng model kết cấu từ CAD
 
-Mục tiêu: Claude dựng cột, dầm, vách, sàn, cọc từ bản vẽ CAD đã import/link vào Revit, có người duyệt trước mỗi lần ghi. Đã có **cột, dầm, cọc + đài**; vách và sàn theo cùng khuôn.
+Mục tiêu: Claude dựng cột, dầm, vách, sàn, cọc từ bản vẽ CAD đã import/link vào Revit, có người duyệt trước mỗi lần ghi. Đã có **tầng + trục, cột, dầm, cọc + đài**; vách và sàn theo cùng khuôn. Tầng, trục, dầm, cọc chưa được thử trong Revit thật.
 
 ## Lõi kết cấu
 
@@ -19,6 +19,27 @@ Thuật toán quét CAD và đặt phần tử nằm trong `addin/StructuralCore
 | `Piles/` | Quét circle/đường bao, gán cọc vào đài, gom nhóm đường kính, xem trước + đặt cọc/đài, lớp lót, bắt tròn theo lưới, join (`PileWorkflow`) |
 | `Common/PlacementModels` | Kết quả đặt dùng chung, đọc tham số kích thước của Type |
 | `Families/DefaultFamilies` | Nạp family chuẩn công ty (cột, dầm, cọc) từ tài nguyên nhúng |
+
+## Tầng và trục (đi qua cửa sổ duyệt)
+
+Khác với cột, dầm, cọc (`dryRun` rồi ghi thẳng), tầng và trục dùng khuôn propose / duyệt / commit của [04](04-architecture.md). Việc chia làm hai vòng vì trục được đọc từ CAD, mà propose không được ghi nên không thể nhập CAD trước để đọc thử.
+
+```mermaid
+flowchart LR
+    A[propose_levels] -->|duyệt + commit_plan| B[list_cad_sources]
+    B --> C[propose_grids<br/>cadId + alignCadIds]
+    C -->|duyệt + commit_plan| D[scan_cad_*]
+```
+
+1. `propose_levels` với danh sách `{ name, elevationMm, cadFile?, mode? }`. Mỗi tầng là một mục `create_level`: tạo Level (hoặc dùng lại Level cùng tên, cùng cao độ), tạo Structural Plan `KC - <tên>` nếu chưa có, nhập hoặc link DWG vào plan đó tại gốc toạ độ. Không có `cadFile` thì chỉ tạo Level + plan. Tầng đã đủ và không có `cadFile` bị bỏ qua.
+   - Thành `blocked`: thiếu file DWG, Level cùng tên nhưng khác cao độ, tên lặp trong danh sách, model không có loại view Structural Plan.
+   - Chỉ ghi chú (vẫn duyệt được): Level đã có; plan đã có CAD cùng tên file (nhập nữa sẽ thành 2 bản).
+2. Người dùng duyệt trong Revit → `get_plan_status` → `commit_plan`. Mỗi tầng một Transaction, cả lượt một Ctrl+Z.
+3. `list_cad_sources` lấy ID các CAD vừa nhập.
+4. `propose_grids` với `cadId` là CAD có layer trục (tên chứa GRID, TRUC/TRỤC hoặc AXIS) và `alignCadIds` là CAD các tầng còn lại. Lõi `GridBuilder.Plan` gộp nét theo toạ độ, đặt tên trục đứng 1, 2, 3… và trục ngang A, B, C… từ dưới trái, làm tròn khoảng cách theo mm.
+   - Mục `move_cad` (M1, M2…): dời từng CAD để giao điểm 1-A trùng Project Base Point. CAD đang ghim được bỏ ghim rồi ghim lại. Không có mục này khi CAD đã đúng chỗ.
+   - Mục `create_grid` (G-1, G-A…): một trục mỗi mục. Trục trùng tên Grid đã có thành `blocked`.
+5. Duyệt → `commit_plan`. Bỏ mục `move_cad` thì trục vẫn dựng tại Project Base Point nhưng CAD đó lệch khỏi trục.
 
 ## Quy trình (cột)
 
@@ -81,7 +102,7 @@ Type cho mỗi nhóm được chọn theo thứ tự: mục trong `types` → Ty
 
 ## Thêm loại phần tử mới
 
-Lõi đã có sẵn level/lưới (`Levels/`), vách (`Walls/`) và sàn (`Floors/`); chưa có command MCP cho chúng.
+Lõi đã có sẵn vách (`Walls/`) và sàn (`Floors/`); chưa có command MCP cho chúng. Loại mới nên theo khuôn của tầng và trục: lệnh `propose_*` chỉ đọc, phần ghi là các `IPlanAction` trong `addin/Planning/Actions/` (đăng ký ở `PlanActions.CreateDefault`), mỗi mục có `params.summary` để cửa sổ duyệt hiện một câu dễ đọc.
 
 1. Nếu lõi chưa có loại đó: viết scanner/placer trong `addin/StructuralCore/<Loại>/`, không phụ thuộc UI (có thể tham khảo tool WPF bên `RevitAddinManager` nhưng không sửa repo đó). Thêm hàm `Plan*` xem trước cho mỗi thao tác ghi.
 2. Thêm `Scan<Loại>Command` và `Place<Loại>Command` trong `addin/Commands/Structural/` theo mẫu cột/dầm: kết quả quét lưu bằng `context.Sessions.Add`, lần chạy thật bọc trong `WriteSession`.

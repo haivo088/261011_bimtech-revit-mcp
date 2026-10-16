@@ -82,3 +82,46 @@ test("beam, pile and family tools reject malformed input before contacting Revit
   }
   assert.equal(contacted, false);
 });
+
+test("level and grid proposals forward their input unchanged", async (t) => {
+  const requests = [];
+  const options = await bridge(t, (socket, request) => {
+    requests.push(request);
+    socket.end(JSON.stringify({ jsonrpc: "2.0", id: request.id, result: { plan: null } }) + "\n");
+  });
+  const client = await mcpClient(t, options.port);
+  const levelArgs = {
+    levels: [
+      { name: "Tầng 1", elevationMm: 0, cadFile: "D:\DuAn\S-101.DWG" },
+      { name: "Tầng 2", elevationMm: 3600, cadFile: "D:\DuAn\S-201.dwg", mode: "link" },
+      { name: "Mái", elevationMm: 7200 },
+    ],
+  };
+  assert.equal((await client.callTool({ name: "propose_levels", arguments: levelArgs })).isError, false);
+  const gridArgs = { cadId: "501", alignCadIds: ["502", "503"] };
+  assert.equal((await client.callTool({ name: "propose_grids", arguments: gridArgs })).isError, false);
+  assert.deepEqual(requests.map((request) => request.method), ["propose_levels", "propose_grids"]);
+  assert.deepEqual(requests[0].params, levelArgs);
+  assert.deepEqual(requests[1].params, gridArgs);
+});
+
+test("level and grid proposals reject malformed input before contacting Revit", async (t) => {
+  let contacted = false;
+  const options = await bridge(t, (socket) => { contacted = true; socket.destroy(); });
+  const client = await mcpClient(t, options.port);
+  const invalidCalls = [
+    { name: "propose_levels", arguments: {} },
+    { name: "propose_levels", arguments: { levels: [] } },
+    { name: "propose_levels", arguments: { levels: [{ name: "", elevationMm: 0 }] } },
+    { name: "propose_levels", arguments: { levels: [{ name: "Tầng 1" }] } },
+    { name: "propose_levels", arguments: { levels: [{ name: "Tầng 1", elevationMm: 0, cadFile: "D:\S-101.pdf" }] } },
+    { name: "propose_levels", arguments: { levels: [{ name: "Tầng 1", elevationMm: 0, mode: "copy" }] } },
+    { name: "propose_grids", arguments: {} },
+    { name: "propose_grids", arguments: { cadId: "501", alignCadIds: ["CAD-2"] } },
+  ];
+  for (const call of invalidCalls) {
+    const result = await client.callTool(call);
+    assert.equal(result.isError, true, JSON.stringify(call));
+  }
+  assert.equal(contacted, false);
+});

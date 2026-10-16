@@ -47,6 +47,8 @@ public sealed class CommandRegistry
         new GetSelectedElementsCommand(),
         new GetElementParametersCommand(),
         new ListCadSourcesCommand(),
+        new ProposeLevelsCommand(plans, review, changes),
+        new ProposeGridsCommand(plans, review, changes),
         new LoadDefaultFamilyCommand(),
         new ScanCadColumnsCommand(),
         new PlaceColumnsCommand(),

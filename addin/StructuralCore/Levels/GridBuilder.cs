@@ -109,7 +109,8 @@ internal static class GridBuilder
             .Select(g => g.Name)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-    private static void CreateNamedGrid(Document doc, Line line, string name)
+    /// <summary>Dựng 1 Grid trong Transaction đang mở. Ném InvalidOperationException khi đã có Grid cùng tên.</summary>
+    public static Grid CreateNamedGrid(Document doc, Line line, string name)
     {
         if (new FilteredElementCollector(doc).OfClass(typeof(Grid)).Cast<Grid>()
             .Any(g => string.Equals(g.Name, name, StringComparison.OrdinalIgnoreCase)))
@@ -117,6 +118,7 @@ internal static class GridBuilder
 
         var grid = Grid.Create(doc, line);
         grid.Name = name;
+        return grid;
     }
 
     private static List<Segment> MergeByCoordinate(IEnumerable<Segment> source)

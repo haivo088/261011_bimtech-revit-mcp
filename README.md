@@ -20,6 +20,8 @@ Công cụ đề xuất, duyệt và ghi (xem [04 — Kiến trúc đề xuất 
 
 Công cụ dựng model kết cấu từ CAD (xem [05 — Dựng model kết cấu từ CAD](docs/05-cad-to-structure.md)):
 
+- `propose_levels`: kế hoạch tạo Level + Structural Plan `KC - <tên>` cho từng tầng và nhập CAD tầng đó vào plan; duyệt rồi `commit_plan`.
+- `propose_grids`: kế hoạch dựng trục từ layer Grid/Trục/Axis của một CAD và dời CAD các tầng để trục 1-A trùng Project Base Point; duyệt rồi `commit_plan`.
 - `list_cad_sources`: các file CAD import/link trong model.
 - `load_default_family`: nạp family chuẩn công ty (`kind`: column, beam, pile); với cọc còn tạo Type đài/lót mặc định.
 - `scan_cad_columns` / `place_columns`: cột theo đường bao chữ nhật.
