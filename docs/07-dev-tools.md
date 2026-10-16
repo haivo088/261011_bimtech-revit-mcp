@@ -6,7 +6,7 @@ Mục đích: mỗi bản vẽ thật được thử là một lần làm cho b�
 
 ```mermaid
 flowchart LR
-    A[analyze_cad<br/>run_revit_query] -->|tìm quy tắc| B[addin/Recognition<br/>lõi không dùng Revit]
+    A[analyze_cad<br/>send_code] -->|tìm quy tắc| B[addin/Recognition<br/>lõi không dùng Revit]
     B --> C[run_recognition<br/>thử trên CAD thật]
     C -->|dựng + duyệt grid| D[export_cad_case<br/>lưu case + đáp án]
     D --> E[CaseLibraryTests<br/>test hồi quy]
@@ -17,12 +17,13 @@ flowchart LR
 
 | Tool | Làm gì |
 | --- | --- |
-| `run_revit_query` | Biên dịch (Roslyn) và chạy một đoạn C# trên model đang mở. Chạy trong một `TransactionGroup` **luôn bị rollback**, nên model không bao giờ bị đổi; `FailureGuard` chặn hộp thoại. Có chốt chặn treo và sập (xem bên dưới). Không chặn đọc/ghi file. |
+| `send_code` | Biên dịch (Roslyn) và chạy C# trên model đang mở: một đoạn code mới (`code`) hoặc một script trong command set (`script` + `args`). `write=false` (mặc định): chạy trong `TransactionGroup` **luôn bị rollback**, model không bao giờ bị đổi. `write=true`: chạy thử rồi huỷ, sau đó mở **cửa sổ duyệt** với mục đích, kết quả chạy thử và toàn bộ code; chỉ `commit_plan` sau khi duyệt mới chạy thật (xem mục Send code). `FailureGuard` chặn hộp thoại; có chốt chặn treo và sập (xem bên dưới). Không chặn đọc/ghi file. |
+| `command_set` | `list`: các bộ script trong `commandsets/`. `save`: lưu một đoạn code đã chạy tốt thành script có tên và tham số (phải biên dịch được). `history`: các lần `send_code` gần nhất, để nhận ra việc lặp lại. |
 | `analyze_cad` | Dấu vân tay của một CAD: mỗi layer có gì (line pattern, màu, số line, tỉ lệ line đứng/ngang, đường kính tròn, kích thước chữ nhật, bề rộng cặp line song song), text hay gặp, ứng viên trục tốt nhất. Đủ gọn để Claude đọc cả bản vẽ trong một lần. |
 | `run_recognition` | Chạy lõi nhận diện trục trên CAD thật; nếu model đã có grid thì coi đó là đáp án và so sánh (khớp, sai tên, thiếu, thừa). |
 | `export_cad_case` | Lưu CAD thành `cases/<caseId>/case.json` (dữ liệu thuần: line, arc, tròn, polyline kèm layer/pattern/màu, text của view). Mặc định lưu kèm grid trong model làm **đáp án**: xuất sau khi đã dựng và duyệt grid của bản vẽ. |
 
-Đoạn code của `run_revit_query` là thân của `static object Run(QueryContext ctx)`: có sẵn `doc`, `uidoc`, `view`, `ctx`; đã `using` System.Linq và Autodesk.Revit.DB. Trả về object ẩn danh hoặc danh sách số/chuỗi, không trả phần tử Revit. `ctx.Print(x)` ghi log; `ctx.Mm(feet)`, `ctx.Feet(mm)` đổi đơn vị.
+Đoạn code của `send_code` là thân của `static object Run(QueryContext ctx)`: có sẵn `doc`, `uidoc`, `view`, `ctx`; đã `using` System.Linq, Autodesk.Revit.DB và DB.Structure. Trả về object ẩn danh hoặc danh sách số/chuỗi, không trả phần tử Revit. `ctx.Print(x)` ghi log; `ctx.Mm(feet)`, `ctx.Feet(mm)` đổi đơn vị; tham số đọc bằng `ctx.Str("x")`, `ctx.Num`, `ctx.Bool`, `ctx.Id`, `ctx.Strs`, `ctx.Ids`, `ctx.Has`.
 
 ```csharp
 var cad = new FilteredElementCollector(doc).OfClass(typeof(ImportInstance)).First();
@@ -36,6 +37,42 @@ foreach (var item in cad.get_Geometry(new Options { View = view }))
         }
 return styles.OrderByDescending(s => s.Value);
 ```
+
+## Send code và command set
+
+Nơi giải quyết **trường hợp đặc biệt** mà chưa tool nào làm được, và nơi **đóng gói** những việc lặp lại.
+
+```mermaid
+flowchart LR
+    A["send_code<br/>code mới"] -->|ghi lịch sử| H[logs/code-runs.jsonl]
+    H -->|việc lặp lại 2–3 lần| S["command_set save<br/>commandsets/&lt;bộ&gt;/&lt;script&gt;"]
+    S --> R["send_code script=bộ/script<br/>+ args"]
+    R -->|ổn định, nhiều người cần| C["lệnh C# thật<br/>propose_* + test"]
+```
+
+**Ghi vào model (`write=true`)**, theo khuôn propose → duyệt → commit như các tool kết cấu:
+
+1. Code chạy thử trong **một Transaction đang mở sẵn** (nên code không tự mở Transaction; SubTransaction thì được), Revit kiểm tra thay đổi, rồi toàn bộ bị **huỷ**. Kết quả: số phần tử tạo / sửa / xoá theo category, giá trị trả về, log.
+2. Lỗi biên dịch, lỗi chạy, Revit từ chối thay đổi → trả lỗi, **không tạo kế hoạch**.
+3. Chạy thử thành công → kế hoạch một mục `run_code` mở trong cửa sổ duyệt. Chọn dòng đó để xem **mục đích, kết quả chạy thử và toàn bộ code** ở khung dưới.
+4. Duyệt → `commit_plan` chạy **đúng đoạn code đã duyệt** (kiểm bằng SHA-256; file kế hoạch bị sửa thì từ chối), trong một bước Ctrl+Z. Model đổi sau lúc chạy thử thì `commit_plan` từ chối, chạy thử lại.
+
+**Command set** nằm ở `commandsets/` tại gốc repo (**được commit**, có lịch sử git). Mỗi bộ là một thư mục:
+
+```
+commandsets/family-tcvn/
+  set.json               { "description": "Chuẩn hoá family theo TCVN" }
+  rename-params.cs       code, đọc tham số bằng ctx.Str("prefix")...
+  rename-params.json     { "description", "write": true,
+                           "params": [{ "name": "prefix", "type": "string", "default": "BTC_" },
+                                      { "name": "ids", "type": "elementId[]", "required": true }],
+                           "notes": ["Dùng cho family cột 2026-10"] }
+```
+
+- Kiểu tham số: `string`, `number`, `boolean`, `elementId`, `string[]`, `elementId[]`. Tham số được kiểm tra trước khi chạy (thiếu, sai kiểu, tên lạ → lỗi), mặc định được điền sẵn.
+- Script có `write: true` luôn đi qua cửa sổ duyệt; script chỉ đọc (ví dụ kiểm tra model) chạy ngay.
+- Claude xem `command_set list` trước khi viết code mới; khi thấy cùng loại việc trong `command_set history` 2–3 lần, Claude **đề xuất** đóng gói (tên, tham số, mô tả) và chỉ lưu khi bạn đồng ý. Sau đó commit file bằng git như code thường.
+- Lịch sử `logs/code-runs.jsonl` (gitignore; có thể chứa tên model): mỗi lần chạy thử, đọc, commit một dòng. Đổi chỗ bằng `BIMTECH_CODE_HISTORY`; thư mục command set bằng `BIMTECH_COMMANDSETS_DIR`.
 
 ### Chốt chặn treo và sập Revit
 
@@ -74,15 +111,15 @@ Chuẩn bị: một model thử (ví dụ `TEST.rvt`) và một bản vẽ mặt
 
 Phải thấy `loaded`. Nếu là `failed to load`, gửi nguyên thông báo lỗi để sửa.
 
-**Bước 2: Thử `run_revit_query` với một câu đơn giản.**
+**Bước 2: Thử `send_code` với một câu đơn giản.**
 
-> Dùng run_revit_query đếm số Level và số Grid trong model.
+> Dùng send_code đếm số Level và số Grid trong model.
 
 Nếu lỗi biên dịch, Claude sẽ thấy số dòng và tự sửa. Nếu lỗi nạp Roslyn, đây là chỗ cần báo lại.
 
 **Bước 3: Trả lời các câu hỏi còn nghi vấn bằng chính bản vẽ của bạn.** Đưa CAD vào model (`propose_levels` với `cadFile`, hoặc import tay), rồi:
 
-> Dùng list_cad_sources, sau đó dùng run_revit_query kiểm tra CAD đó: liệt kê các GraphicsStyle mà geometry dùng, mỗi cái thuộc layer nào, line pattern gì, bao nhiêu line. Các line của layer trục có dùng cùng một GraphicsStyle không?
+> Dùng list_cad_sources, sau đó dùng send_code kiểm tra CAD đó: liệt kê các GraphicsStyle mà geometry dùng, mỗi cái thuộc layer nào, line pattern gì, bao nhiêu line. Các line của layer trục có dùng cùng một GraphicsStyle không?
 
 > Trong view của CAD có Text Note nào không? Tên trục trong vòng tròn đầu trục có đọc được không?
 
@@ -142,5 +179,6 @@ Mỗi bản vẽ mới đi qua bước 3–7 là thêm một case vào thư vi�
 Tất cả mới được build và test ngoài Revit. Cần thử trên Revit thật:
 
 - Roslyn chạy được trong tiến trình Revit 2025 và nạp đúng trong `AssemblyLoadContext` riêng.
+- `send_code write=true`: đếm thay đổi qua `DocumentChanged` khi chạy thử bên trong `TransactionGroup` rồi rollback; khung code trong cửa sổ duyệt; `commit_plan` chạy code không có `uidoc` (null) trong Transaction của bộ ghi.
 - Line pattern của layer DWG đọc được qua subcategory; **linetype gán riêng cho từng đối tượng** (không theo layer) có được Revit giữ lại không.
 - Text trong DWG import không đọc được qua API: tên trong vòng tròn đầu trục chỉ có khi text đã thành Text Note trong view.

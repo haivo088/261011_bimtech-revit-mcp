@@ -1,5 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- Developer-only commands (run_revit_query, export_cad_case, analyze_cad, run_recognition).
+  <!-- Developer-only commands (send_code, command_set, export_cad_case, analyze_cad, run_recognition).
        Copy the output next to Bimtech.RevitMcp.Addin.dll on the developer's machine only; the add-in loads it
        when present (addin/DevToolsLoader.cs). Users never receive this DLL or its Roslyn dependencies. -->
   <PropertyGroup>

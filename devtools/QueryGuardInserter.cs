@@ -4,7 +4,7 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace Bimtech.RevitMcp.DevTools;
 
-// Rewrites a run_revit_query snippet so it can stop itself (see QueryGuard):
+// Rewrites a send_code snippet so it can stop itself (see QueryGuard):
 //   - every loop body starts with QueryGuard.Tick();
 //   - every local function, lambda and anonymous method becomes { Enter(); try { <body> } finally { Exit(); } }.
 // Expression bodies become blocks; the semantic model tells whether the body returns a value. Lambdas converted to

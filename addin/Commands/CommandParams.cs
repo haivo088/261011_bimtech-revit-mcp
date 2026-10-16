@@ -57,6 +57,19 @@ public sealed class CommandParams
     public double RequireDouble(string name, double min = double.MinValue, double max = double.MaxValue) =>
         Has(name) ? GetDouble(name, 0, min, max) : throw Missing(name);
 
+    // A nested object as raw JSON (cloned), for values whose shape the command checks itself, e.g. script args.
+    public JsonElement? GetJsonObject(string name)
+    {
+        if (!TryGet(name, out var value)) return null;
+        if (value.ValueKind != JsonValueKind.Object)
+            throw Invalid(name, "expected an object.");
+        return value.Clone();
+    }
+
+    // Any JSON value as given (cloned), or null when absent or null.
+    public JsonElement? GetJsonValue(string name) =>
+        TryGet(name, out var value) && value.ValueKind != JsonValueKind.Null ? value.Clone() : null;
+
     // A nested object, read with the same validation. Parameter names in errors stay prefixed, e.g. "region.minX".
     public CommandParams? GetObject(string name)
     {

@@ -85,7 +85,7 @@ test("developer tools are listed only when BIMTECH_DEV=1", async (t) => {
   const developer = await mcpClient(t, options.port, { BIMTECH_DEV: "1" });
   const names = (await developer.listTools()).tools.map((tool) => tool.name).sort();
   assert.deepEqual(names, [...allTools, ...devTools].map((tool) => tool.name).sort());
-  assert.ok(names.includes("run_revit_query"));
+  assert.ok(names.includes("send_code"));
 });
 
 test("MCP lists tools with annotations and an input schema", async (t) => {

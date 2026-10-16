@@ -3,7 +3,7 @@ using Bimtech.RevitMcp.Planning;
 namespace Bimtech.RevitMcp.Commands.Plans;
 
 // Shared result shape for plan commands, so Claude always sees the same fields.
-internal static class PlanResults
+public static class PlanResults
 {
     public static object Status(Plan plan) => new
     {

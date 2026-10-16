@@ -15,6 +15,7 @@ public sealed class PlanItemRow : INotifyPropertyChanged
         Element = DescribeElement(item);
         Change = DescribeChange(item.Params);
         Reasons = string.Join(" ", item.Reasons);
+        Detail = ReadString(item.Params, "detail") ?? "";
         ElementIds = (ReadString(item.Params, "elementId") ?? ReadString(item.Source, "elementId")) is { } id ? [id] : [];
         _status = item.Status;
     }
@@ -25,6 +26,8 @@ public sealed class PlanItemRow : INotifyPropertyChanged
     public string Element { get; }
     public string Change { get; }
     public string Reasons { get; }
+    // Long text shown below the list when the row is selected, e.g. the code of a send_code item. Empty for most items.
+    public string Detail { get; }
     // Revit elements to select and zoom to when the row is selected.
     public IReadOnlyList<string> ElementIds { get; }
 

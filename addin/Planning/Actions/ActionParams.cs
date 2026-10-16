@@ -6,7 +6,7 @@ namespace Bimtech.RevitMcp.Planning.Actions;
 
 // Reads a plan item's params. A missing or wrong field means the plan file was not written by
 // the matching propose command (or was edited by hand), so it fails the item, not the commit.
-internal static class ActionParams
+public static class ActionParams
 {
     public static string Text(JsonElement parameters, string name) =>
         OptionalText(parameters, name) ?? throw new PlanActionException($"The plan item has no '{name}'.");

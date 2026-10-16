@@ -8,7 +8,7 @@ using Xunit;
 
 namespace Bimtech.RevitMcp.DevTools.Tests;
 
-// Compiles snippets the way run_revit_query does (guards inserted), runs them for real, and checks that endless
+// Compiles snippets the way send_code does (guards inserted), runs them for real, and checks that endless
 // code stops at the time budget while normal code still gives the same answer.
 public sealed class QueryGuardTests
 {

@@ -6,29 +6,86 @@ import { elementId } from "./schemas.js";
 // Developer-only tools, backed by Bimtech.RevitMcp.DevTools.dll (devtools/). The server registers them only
 // when BIMTECH_DEV=1, and the add-in only knows them when that DLL is installed next to it.
 
-export const runRevitQuery = defineTool({
-  name: "run_revit_query",
-  method: "run_revit_query",
-  title: "Run a C# query in Revit (developer)",
+// commandsets/ at the repository root (committed); BIMTECH_COMMANDSETS_DIR overrides it.
+export const commandSetRoot = process.env.BIMTECH_COMMANDSETS_DIR
+  ?? fileURLToPath(new URL("../../../commandsets/", import.meta.url));
+// Every send_code run, one JSON line each, in logs/ at the repository root (gitignored).
+export const historyFile = process.env.BIMTECH_CODE_HISTORY
+  ?? fileURLToPath(new URL("../../../logs/code-runs.jsonl", import.meta.url));
+
+const scriptName = z.string().regex(/^[a-z0-9][a-z0-9-]*\/[a-z0-9][a-z0-9-]*$/).max(120);
+
+export const sendCode = defineTool({
+  name: "send_code",
+  method: "send_code",
+  title: "Send C# code to Revit (developer)",
   description:
-    "Developer tool. Compile and run a C# snippet against the open Revit model to explore data, e.g. what a CAD"
-    + " import contains. The snippet is the body of `static object Run(QueryContext ctx)`: `doc`, `uidoc`, `view` and"
-    + " `ctx` are in scope, System.Linq and Autodesk.Revit.DB are imported, and it should end with `return <value>;`."
-    + " Return anonymous objects or lists of numbers and strings, not Revit elements. ctx.Print(x) adds a log line;"
-    + " ctx.Mm(feet) and ctx.Feet(mm) convert lengths."
-    + " Everything runs inside a transaction group that is always rolled back, so the model is never changed."
-    + " Loops are stopped after timeoutSeconds (stage \"timeout\") and recursion deeper than 1000 calls (stage"
-    + " \"recursion\"), so a mistake cannot freeze or crash Revit; one slow Revit API call still runs to its end."
-    + " Compile errors come back with line numbers of the snippet.",
+    "Developer tool. Compile and run C# in the open Revit model: a new snippet (code) or a saved command-set script"
+    + " (script \"set/name\" + args; check command_set list before writing new code). The snippet is the body of"
+    + " `static object Run(QueryContext ctx)`: `doc`, `uidoc`, `view` and `ctx` are in scope, System.Linq,"
+    + " Autodesk.Revit.DB and DB.Structure are imported, and it ends with `return <value>;`. Return anonymous objects"
+    + " or lists, not Revit elements. ctx.Print(x) logs; ctx.Mm(feet)/ctx.Feet(mm) convert; arguments are read with"
+    + " ctx.Str/Num/Bool/Id/Strs/Ids(\"name\") and ctx.Has(\"name\")."
+    + " write=false (default): runs inside a transaction group that is always rolled back, so the model never"
+    + " changes; use it to explore and check. write=true (needs purpose): the code runs inside a Transaction that is"
+    + " already open, so it must not start its own (SubTransaction is fine); it is previewed and rolled back, the"
+    + " counts of elements it would create, change and delete come back, and a plan opens in the review window with"
+    + " the whole code. Nothing changes until the user approves and you call commit_plan, which runs exactly that code"
+    + " as one undo step. Loops stop after timeoutSeconds and recursion after 1000 calls, so a mistake cannot freeze"
+    + " or crash Revit. Every run is logged; when the same kind of job comes back, propose saving it with command_set.",
   inputSchema: {
-    code: z.string().min(1).max(100000).describe("C# statements ending with a return."),
+    code: z.string().min(1).max(100000).optional().describe("C# statements ending with a return. Not with script."),
+    script: scriptName.optional().describe("Command-set script \"set/name\" to run instead of code."),
+    args: z.record(z.string(), z.unknown()).optional()
+      .describe("Arguments: checked against the script's parameters; new code reads them with ctx.Str(\"x\")..."),
+    write: z.boolean().optional()
+      .describe("true: preview and propose a plan that changes the model. Default false, or the script's own setting."),
+    purpose: z.string().min(1).max(300).optional()
+      .describe("One sentence the reviewer reads: what the code changes. Required with write=true for new code."),
     timeoutSeconds: z.number().int().min(1).max(110).optional()
-      .describe("Stop the snippet's loops after this many seconds (default 30)."),
+      .describe("Stop the code's loops after this many seconds (default 30)."),
     maxResultChars: z.number().int().min(1000).max(1000000).optional()
       .describe("Cut the result JSON after this many characters (default 50000)."),
   },
-  annotations: readOnly,
+  // write=false never changes the model, and write=true only proposes a plan the user reviews.
+  annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: false },
   timeoutMs: 120000,
+  toParams: (input) => ({ ...input, commandSetRoot, historyFile }),
+});
+
+export const commandSet = defineTool({
+  name: "command_set",
+  method: "command_set",
+  title: "Command sets of saved code (developer)",
+  description:
+    "Developer tool. Command sets are send_code snippets that proved useful, saved with a name and typed parameters"
+    + " in the repository's commandsets/ folder. action \"list\": every set and script with description, write flag"
+    + " and parameters. action \"save\": keep a snippet as script \"set/name\" (it must compile), only after the user"
+    + " agreed to its name, parameters and description; an existing script is replaced only with overwrite=true."
+    + " action \"history\": the latest send_code runs, newest first, to spot jobs that keep coming back and propose"
+    + " packaging them.",
+  inputSchema: {
+    action: z.enum(["list", "save", "history"]),
+    script: scriptName.optional().describe("save: \"set/name\", lowercase letters, digits and '-'."),
+    description: z.string().min(1).max(500).optional().describe("save: what the script does, in one sentence."),
+    setDescription: z.string().min(1).max(500).optional().describe("save: description of the set, when it is new."),
+    code: z.string().min(1).max(100000).optional().describe("save: the snippet, reading its parameters with ctx.Str(...)."),
+    write: z.boolean().optional().describe("save: true when the script changes the model (it then runs through review)."),
+    params: z.array(z.object({
+      name: z.string().regex(/^[A-Za-z][A-Za-z0-9]*$/).max(40),
+      type: z.enum(["string", "number", "boolean", "elementId", "string[]", "elementId[]"]),
+      description: z.string().max(500).optional(),
+      default: z.unknown().optional(),
+      required: z.boolean().optional(),
+    })).max(40).optional().describe("save: the script's parameters."),
+    notes: z.array(z.string().max(500)).max(50).optional().describe("save: where and why it was used."),
+    overwrite: z.boolean().optional().describe("save: replace an existing script."),
+    count: z.number().int().min(1).max(500).optional().describe("history: how many runs (default 30)."),
+  },
+  // Never touches the model; save only writes files in the repository (like export_cad_case writes cases/).
+  annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: false },
+  timeoutMs: 60000,
+  toParams: (input) => ({ ...input, commandSetRoot, historyFile }),
 });
 
 // cases/ at the repository root (gitignored); BIMTECH_CASES_DIR overrides it.
@@ -97,7 +154,8 @@ export const analyzeCad = defineTool({
 });
 
 export const devTools: readonly RevitTool[] = [
-  runRevitQuery,
+  sendCode,
+  commandSet,
   exportCadCase,
   runRecognition,
   analyzeCad,

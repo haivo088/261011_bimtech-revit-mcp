@@ -33,7 +33,7 @@ Công cụ dựng model kết cấu từ CAD (xem [05 — Dựng model kết c�
 - Mọi `propose_*` chỉ đọc; model chỉ thay đổi qua `commit_plan` sau khi duyệt trong Revit.
 - `undo_batch`: xóa đúng những gì một lần ghi đã tạo.
 
-Công cụ cho người phát triển (`run_revit_query`, `analyze_cad`, `run_recognition`, `export_cad_case`) nằm trong DLL riêng, chỉ cài trên máy người phát triển và chỉ hiện khi `BIMTECH_DEV=1`; xem [07 — Bộ công cụ cho người phát triển](docs/07-dev-tools.md).
+Công cụ cho người phát triển (`send_code` và command set, `analyze_cad`, `run_recognition`, `export_cad_case`) nằm trong DLL riêng, chỉ cài trên máy người phát triển và chỉ hiện khi `BIMTECH_DEV=1`; xem [07 — Bộ công cụ cho người phát triển](docs/07-dev-tools.md).
 
 Phần thuật toán CAD nằm trong lõi `addin/StructuralCore/`, chép từ repo `RevitAddinManager` và từ nay được duy trì riêng trong repo này; build không cần repo nào khác.
 

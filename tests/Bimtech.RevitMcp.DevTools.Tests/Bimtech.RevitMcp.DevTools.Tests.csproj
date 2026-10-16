@@ -6,11 +6,13 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
 
-  <!-- The run_revit_query time guard uses only Roslyn, so it is compiled here and checked on real endless loops
-       without Revit. -->
+  <!-- The send_code time guard uses only Roslyn, so it is compiled here and checked on real endless loops
+       without Revit. The command-set store and the run history are plain files and JSON. -->
   <ItemGroup>
     <Compile Include="..\..\devtools\QueryGuard.cs" Link="Linked\QueryGuard.cs" />
     <Compile Include="..\..\devtools\QueryGuardInserter.cs" Link="Linked\QueryGuardInserter.cs" />
+    <Compile Include="..\..\devtools\CommandSetStore.cs" Link="Linked\CommandSetStore.cs" />
+    <Compile Include="..\..\devtools\CodeHistory.cs" Link="Linked\CodeHistory.cs" />
   </ItemGroup>
 
   <ItemGroup>

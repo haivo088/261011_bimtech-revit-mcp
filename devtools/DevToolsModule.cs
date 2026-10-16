@@ -1,4 +1,5 @@
 using Bimtech.RevitMcp.Commands;
+using Bimtech.RevitMcp.Planning.Actions;
 
 namespace Bimtech.RevitMcp.DevTools;
 
@@ -6,11 +7,14 @@ namespace Bimtech.RevitMcp.DevTools;
 // only registers when BIMTECH_DEV=1.
 public sealed class DevToolsModule : IDevToolsModule
 {
-    public IEnumerable<IRevitCommand> CreateCommands() =>
+    public IEnumerable<IRevitCommand> CreateCommands(DevToolsHost host) =>
     [
-        new RunRevitQueryCommand(),
+        new SendCodeCommand(host),
+        new CommandSetCommand(),
         new ExportCadCaseCommand(),
         new RunRecognitionCommand(),
         new AnalyzeCadCommand(),
     ];
+
+    public IEnumerable<IPlanAction> CreateActions() => [new RunCodeAction()];
 }

@@ -8,3 +8,6 @@ server/build/
 
 # Developer CAD cases (export_cad_case): client drawings stay on this machine.
 cases/
+
+# send_code history (devtools): one line per run, may hold model names.
+logs/

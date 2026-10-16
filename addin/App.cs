@@ -62,7 +62,8 @@ public class App : IExternalApplication
     internal static CommandRegistry CreateRegistry()
     {
         Review ??= new ReviewWindowHost(Plans);
-        return CommandRegistry.CreateDefault(Plans, Review, Changes!, DevToolsLoader.CreateCommands());
+        return CommandRegistry.CreateDefault(Plans, Review, Changes!,
+            DevToolsLoader.CreateCommands(new DevToolsHost(Plans, Review, Changes!)), DevToolsLoader.CreateActions());
     }
 
     // Must run in a Revit API context (OnStartup or an IExternalCommand).

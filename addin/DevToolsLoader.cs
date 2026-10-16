@@ -2,6 +2,7 @@ using System.IO;
 using System.Reflection;
 using System.Runtime.Loader;
 using Bimtech.RevitMcp.Commands;
+using Bimtech.RevitMcp.Planning.Actions;
 
 namespace Bimtech.RevitMcp;
 
@@ -21,7 +22,12 @@ internal static class DevToolsLoader
     // Shown by ping, so the developer sees why the tools are missing.
     public static string Status { get; private set; } = "not installed";
 
-    public static IReadOnlyList<IRevitCommand> CreateCommands()
+    public static IReadOnlyList<IRevitCommand> CreateCommands(DevToolsHost host) =>
+        Module()?.CreateCommands(host).ToList() ?? [];
+
+    public static IReadOnlyList<IPlanAction> CreateActions() => Module()?.CreateActions().ToList() ?? [];
+
+    private static IDevToolsModule? Module()
     {
         lock (Lock)
         {
@@ -30,7 +36,7 @@ internal static class DevToolsLoader
                 _attempted = true;
                 _module = TryLoad();
             }
-            return _module?.CreateCommands().ToList() ?? [];
+            return _module;
         }
     }
 

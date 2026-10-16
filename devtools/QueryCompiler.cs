@@ -9,7 +9,7 @@ using Microsoft.CodeAnalysis.CSharp;
 
 namespace Bimtech.RevitMcp.DevTools;
 
-// Compiles a run_revit_query script into an in-memory assembly. The assembly loads into the dev tools'
+// Compiles a send_code snippet into an in-memory assembly. The assembly loads into the dev tools'
 // AssemblyLoadContext, so it sees the same Revit and add-in types. Each run leaves a small assembly in memory
 // until Revit closes; acceptable for a developer tool.
 internal static class QueryCompiler

@@ -79,14 +79,34 @@
 
         <TabControl Padding="0">
             <TabItem Header="{Binding ItemsHeader}">
-                <DataGrid x:Name="ItemsGrid" ItemsSource="{Binding Items}" SelectionChanged="Grid_SelectionChanged">
-                    <DataGrid.Columns>
-                        <DataGridTextColumn Header="Trạng thái" Binding="{Binding StatusText}" Width="64" />
-                        <DataGridTextColumn Header="Phần tử" Binding="{Binding Element}" Width="3*" />
-                        <DataGridTextColumn Header="Thay đổi" Binding="{Binding Change}" Width="3*" />
-                        <DataGridTextColumn Header="Lý do" Binding="{Binding Reasons}" Width="2*" />
-                    </DataGrid.Columns>
-                </DataGrid>
+                <DockPanel>
+                    <!-- The selected item's detail, e.g. the code a send_code item will run. Hidden when empty. -->
+                    <TextBox DockPanel.Dock="Bottom" Height="180" Margin="0,4,0,0" IsReadOnly="True"
+                             FontFamily="Consolas" FontSize="11" TextWrapping="NoWrap"
+                             HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
+                             Text="{Binding SelectedItem.Detail, ElementName=ItemsGrid, Mode=OneWay}">
+                        <TextBox.Style>
+                            <Style TargetType="TextBox">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding SelectedItem.Detail, ElementName=ItemsGrid}" Value="">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding SelectedItem, ElementName=ItemsGrid}" Value="{x:Null}">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBox.Style>
+                    </TextBox>
+                    <DataGrid x:Name="ItemsGrid" ItemsSource="{Binding Items}" SelectionChanged="Grid_SelectionChanged">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Trạng thái" Binding="{Binding StatusText}" Width="64" />
+                            <DataGridTextColumn Header="Phần tử" Binding="{Binding Element}" Width="3*" />
+                            <DataGridTextColumn Header="Thay đổi" Binding="{Binding Change}" Width="3*" />
+                            <DataGridTextColumn Header="Lý do" Binding="{Binding Reasons}" Width="2*" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
             </TabItem>
             <TabItem Header="{Binding BlockedHeader}">
                 <DataGrid ItemsSource="{Binding BlockedItems}" SelectionChanged="Grid_SelectionChanged">

@@ -2,7 +2,7 @@ using System.Diagnostics;
 
 namespace Bimtech.RevitMcp.DevTools;
 
-// Stops a run_revit_query snippet that runs too long or recurses too deep. Revit runs the snippet on its only API
+// Stops a send_code snippet that runs too long or recurses too deep. Revit runs the snippet on its only API
 // thread and .NET cannot abort a thread, so the snippet must stop itself: QueryGuardInserter puts Tick() first in
 // every loop body and wraps every local function and lambda in Enter()/Exit().
 //   - Tick throws once the time budget is spent or the client gave up waiting.

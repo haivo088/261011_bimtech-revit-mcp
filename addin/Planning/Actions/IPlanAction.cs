@@ -30,8 +30,10 @@ public sealed class PlanActions
                 throw new InvalidOperationException($"Duplicate plan action: {action.Action}");
     }
 
-    public static PlanActions CreateDefault() => new(
+    // extra: actions from the developer tools (DevToolsLoader), none for users.
+    public static PlanActions CreateDefault(IEnumerable<IPlanAction>? extra = null) => new(
     [
+        .. extra ?? [],
         new SetParameterAction(),
         new CreateLevelAction(),
         new DeleteLevelAction(),
