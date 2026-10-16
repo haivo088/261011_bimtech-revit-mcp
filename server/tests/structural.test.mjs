@@ -125,3 +125,45 @@ test("level and grid proposals reject malformed input before contacting Revit", 
   }
   assert.equal(contacted, false);
 });
+
+test("wall and floor tools forward their input unchanged", async (t) => {
+  const requests = [];
+  const options = await bridge(t, (socket, request) => {
+    requests.push(request);
+    socket.end(JSON.stringify({ jsonrpc: "2.0", id: request.id, result: { plan: null } }) + "\n");
+  });
+  const client = await mcpClient(t, options.port);
+  const calls = [
+    { name: "scan_cad_walls", arguments: { cadId: "501", layers: ["S-VACH"], textSearchMm: 800 } },
+    {
+      name: "propose_walls",
+      arguments: {
+        scanId: "scan-4", baseLevelId: "311", topLevelId: "694", topOffsetMm: -100, include: ["w200"],
+        exclude: ["V9|300"], types: { "V1|200": "12345" }, onlySupported: true, extendToColumns: true,
+      },
+    },
+    { name: "propose_floors", arguments: { levelId: "694", floorTypeId: "777", offsetMm: -50 } },
+  ];
+  for (const call of calls) assert.equal((await client.callTool(call)).isError, false, call.name);
+  assert.deepEqual(requests.map((request) => request.method), calls.map((call) => call.name));
+  calls.forEach((call, index) => assert.deepEqual(requests[index].params, call.arguments));
+});
+
+test("wall and floor tools reject malformed input before contacting Revit", async (t) => {
+  let contacted = false;
+  const options = await bridge(t, (socket) => { contacted = true; socket.destroy(); });
+  const client = await mcpClient(t, options.port);
+  const invalidCalls = [
+    { name: "scan_cad_walls", arguments: {} },
+    { name: "scan_cad_walls", arguments: { cadId: "1", textSearchMm: 0 } },
+    { name: "propose_walls", arguments: { scanId: "scan-1", baseLevelId: "311" } },
+    { name: "propose_walls", arguments: { scanId: "scan-1", baseLevelId: "311", topLevelId: "694", types: { w200: 1 } } },
+    { name: "propose_floors", arguments: {} },
+    { name: "propose_floors", arguments: { levelId: "L2" } },
+  ];
+  for (const call of invalidCalls) {
+    const result = await client.callTool(call);
+    assert.equal(result.isError, true, JSON.stringify(call));
+  }
+  assert.equal(contacted, false);
+});

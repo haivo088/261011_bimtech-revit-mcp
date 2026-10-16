@@ -57,13 +57,7 @@ internal static class FloorDefaults
     /// (rollback) như tool WPF.</summary>
     public static void EnsureDefaultFloorType(Document doc)
     {
-        var types = CollectFloorTypes(doc);
-
-        if (types.Any(t => string.Equals(t.Name, DefaultFloorTypeName, StringComparison.OrdinalIgnoreCase)))
-            return;
-
-        var seed = types.FirstOrDefault(t => t.GetCompoundStructure() is not null);
-        if (seed is null)
+        if (FindDefaultFloorType(doc) is not null || FindSeedType(doc) is null)
             return;
 
         using var tx = new Transaction(doc, "Tạo Floor Type mặc định");
@@ -71,38 +65,58 @@ internal static class FloorDefaults
 
         try
         {
-            var newType = (FloorType)seed.Duplicate(DefaultFloorTypeName);
-            var structure = newType.GetCompoundStructure();
-            if (structure is null)
-                throw new InvalidOperationException("Floor Type gốc không có cấu tạo lớp.");
-
-            var layers = structure.GetLayers();
-            var structuralIndex = -1;
-            for (var index = 0; index < layers.Count; index++)
-            {
-                if (layers[index].Function != MaterialFunctionAssignment.Structure)
-                    continue;
-
-                structuralIndex = index;
-                break;
-            }
-            if (structuralIndex < 0 && layers.Count == 1)
-                structuralIndex = 0;
-            if (structuralIndex < 0)
-                throw new InvalidOperationException("Floor Type gốc không có lớp Structure.");
-
-            var otherWidth = layers.Where((_, index) => index != structuralIndex).Sum(layer => layer.Width);
-            var targetWidth = UnitUtils.ConvertToInternalUnits(DefaultFloorThicknessMm, UnitTypeId.Millimeters);
-            if (targetWidth <= otherWidth)
-                throw new InvalidOperationException("Các lớp khác của Floor Type gốc đã dày quá 150mm.");
-
-            structure.SetLayerWidth(structuralIndex, targetWidth - otherWidth);
-            newType.SetCompoundStructure(structure);
+            CreateDefaultFloorTypeInTransaction(doc);
             tx.Commit();
         }
         catch
         {
             tx.RollBack();
         }
+    }
+
+    public static FloorType? FindDefaultFloorType(Document doc) =>
+        CollectFloorTypes(doc).FirstOrDefault(t => string.Equals(t.Name, DefaultFloorTypeName, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>Type có cấu tạo lớp để nhân bản thành BTC_SanKC_150; null nghĩa là không tạo được Type mặc định.</summary>
+    public static FloorType? FindSeedType(Document doc) =>
+        CollectFloorTypes(doc).FirstOrDefault(t => t.GetCompoundStructure() is not null);
+
+    /// <summary>Trả BTC_SanKC_150, tạo nếu chưa có, trong Transaction do caller mở sẵn. Ném InvalidOperationException khi
+    /// không tạo được.</summary>
+    public static FloorType CreateDefaultFloorTypeInTransaction(Document doc)
+    {
+        if (FindDefaultFloorType(doc) is { } existing)
+            return existing;
+        var seed = FindSeedType(doc)
+            ?? throw new InvalidOperationException("Project không có Floor Type có cấu tạo lớp để làm mẫu.");
+
+        var newType = (FloorType)seed.Duplicate(DefaultFloorTypeName);
+        var structure = newType.GetCompoundStructure();
+        if (structure is null)
+            throw new InvalidOperationException("Floor Type gốc không có cấu tạo lớp.");
+
+        var layers = structure.GetLayers();
+        var structuralIndex = -1;
+        for (var index = 0; index < layers.Count; index++)
+        {
+            if (layers[index].Function != MaterialFunctionAssignment.Structure)
+                continue;
+
+            structuralIndex = index;
+            break;
+        }
+        if (structuralIndex < 0 && layers.Count == 1)
+            structuralIndex = 0;
+        if (structuralIndex < 0)
+            throw new InvalidOperationException("Floor Type gốc không có lớp Structure.");
+
+        var otherWidth = layers.Where((_, index) => index != structuralIndex).Sum(layer => layer.Width);
+        var targetWidth = UnitUtils.ConvertToInternalUnits(DefaultFloorThicknessMm, UnitTypeId.Millimeters);
+        if (targetWidth <= otherWidth)
+            throw new InvalidOperationException("Các lớp khác của Floor Type gốc đã dày quá 150mm.");
+
+        structure.SetLayerWidth(structuralIndex, targetWidth - otherWidth);
+        newType.SetCompoundStructure(structure);
+        return newType;
     }
 }

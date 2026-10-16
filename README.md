@@ -22,6 +22,8 @@ Công cụ dựng model kết cấu từ CAD (xem [05 — Dựng model kết c�
 
 - `propose_levels`: kế hoạch tạo Level + Structural Plan `KC - <tên>` cho từng tầng và nhập CAD tầng đó vào plan; duyệt rồi `commit_plan`.
 - `propose_grids`: kế hoạch dựng trục từ layer Grid/Trục/Axis của một CAD và dời CAD các tầng để trục 1-A trùng Project Base Point; duyệt rồi `commit_plan`.
+- `scan_cad_walls` / `propose_walls`: vách theo cặp line song song, nhóm theo tên Text + bề dày; mỗi nhóm một mục duyệt; tự tạo Type `BTC-VachKC_<b>` khi thiếu.
+- `propose_floors`: ô sàn dò từ tim dầm và vách đã có trên một tầng; mỗi ô một mục duyệt; Type mặc định `BTC_SanKC_150`.
 - `list_cad_sources`: các file CAD import/link trong model.
 - `load_default_family`: nạp family chuẩn công ty (`kind`: column, beam, pile); với cọc còn tạo Type đài/lót mặc định.
 - `scan_cad_columns` / `place_columns`: cột theo đường bao chữ nhật.

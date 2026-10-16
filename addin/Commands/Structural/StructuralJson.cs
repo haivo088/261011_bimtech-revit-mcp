@@ -69,6 +69,13 @@ internal static class StructuralJson
         diameterMm = Round(PileTypeMatcher.DiameterMm(symbol)),
     };
 
+    public static object WallTypeRef(WallType type) => new
+    {
+        id = RevitJson.Id(type.Id),
+        name = type.Name,
+        thicknessMm = Round(UnitUtils.ConvertFromInternalUnits(type.Width, UnitTypeId.Millimeters)),
+    };
+
     public static object SlabType(FloorType type) => new
     {
         id = RevitJson.Id(type.Id),

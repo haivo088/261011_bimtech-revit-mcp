@@ -291,11 +291,21 @@ internal static class WallPlacer
         Document doc, IReadOnlyList<WallAssignment> assignments, Level? baseLevel, Level? topLevel,
         double baseOffsetFeet, double topOffsetFeet, string? tagParameterName)
     {
+        using var tx = new Transaction(doc, "Đặt Tường theo CAD"); tx.Start();
+        var summary = PlaceInTransaction(doc, assignments, baseLevel, topLevel, baseOffsetFeet, topOffsetFeet, tagParameterName);
+        tx.Commit();
+        return summary;
+    }
+
+    /// <summary>Như Place nhưng chạy trong Transaction do caller mở sẵn (khung plan của MCP: mỗi mục 1 Transaction).</summary>
+    public static PlaceSummary PlaceInTransaction(
+        Document doc, IReadOnlyList<WallAssignment> assignments, Level? baseLevel, Level? topLevel,
+        double baseOffsetFeet, double topOffsetFeet, string? tagParameterName)
+    {
         var created = 0; var failed = 0; var skipped = 0;
         var errors = new List<string>(); var ids = new List<ElementId>();
         var existing = CollectExistingWallLines(doc);
         var height = HeightFeet(baseLevel, topLevel, baseOffsetFeet, topOffsetFeet);
-        using var tx = new Transaction(doc, "Đặt Tường theo CAD"); tx.Start();
         foreach (var (group, type) in assignments)
         foreach (var raw in group.Walls)
         {
@@ -327,8 +337,27 @@ internal static class WallPlacer
                 catch (Exception ex) { failed++; if (errors.Count < 20) errors.Add(ex.Message); }
             }
         }
-        tx.Commit();
         return new(created, failed, skipped, errors, ids);
+    }
+
+    /// <summary>Type mẫu mặc định để tạo Type còn thiếu: Basic Wall có cấu tạo lớp, bề dày gần <paramref name="widthMm"/> nhất.</summary>
+    public static WallType? NearestTemplateType(IReadOnlyList<WallType> pool, double widthMm) =>
+        pool.Where(type => type.GetCompoundStructure() is not null)
+            .OrderBy(type => Math.Abs(UnitUtils.ConvertFromInternalUnits(type.Width, UnitTypeId.Millimeters) - widthMm))
+            .FirstOrDefault();
+
+    /// <summary>Type cho 1 nhóm trong Transaction đang mở: dùng lại Basic Wall Type cùng bề dày (kể cả Type vừa tạo ở mục
+    /// trước), không thì duplicate <paramref name="templateType"/> thành "BTC-VachKC_b". Created = true khi vừa tạo.</summary>
+    public static (WallType Type, bool Created) ResolveOrCreateType(Document doc, double widthMm, WallType templateType)
+    {
+        var pool = CollectBasicWallTypes(doc);
+        var reuse = pool.FirstOrDefault(type => IsMatch(type, widthMm));
+        if (reuse is not null) return (reuse, false);
+
+        var names = pool.Select(type => type.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var newType = (WallType)templateType.Duplicate(SymbolParameters.UniqueName($"BTC-VachKC_{Math.Round(widthMm):0}", names));
+        ResizeWallType(newType, widthMm);
+        return (newType, true);
     }
 
     /// <summary>Hai tim tường được coi là trùng khi cùng cao độ, gần song song, nằm trên cùng trục

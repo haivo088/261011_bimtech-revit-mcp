@@ -1,6 +1,6 @@
 # 05 — Dựng model kết cấu từ CAD
 
-Mục tiêu: Claude dựng cột, dầm, vách, sàn, cọc từ bản vẽ CAD đã import/link vào Revit, có người duyệt trước mỗi lần ghi. Đã có **tầng + trục, cột, dầm, cọc + đài**; vách và sàn theo cùng khuôn. Tầng, trục, dầm, cọc chưa được thử trong Revit thật.
+Mục tiêu: Claude dựng cột, dầm, vách, sàn, cọc từ bản vẽ CAD đã import/link vào Revit, có người duyệt trước mỗi lần ghi. Đã có **tầng + trục, cột, dầm, vách, sàn, cọc + đài**. Mọi thứ trừ cột chưa được thử trong Revit thật.
 
 ## Lõi kết cấu
 
@@ -40,6 +40,22 @@ flowchart LR
    - Mục `move_cad` (M1, M2…): dời từng CAD để giao điểm 1-A trùng Project Base Point. CAD đang ghim được bỏ ghim rồi ghim lại. Không có mục này khi CAD đã đúng chỗ.
    - Mục `create_grid` (G-1, G-A…): một trục mỗi mục. Trục trùng tên Grid đã có thành `blocked`.
 5. Duyệt → `commit_plan`. Bỏ mục `move_cad` thì trục vẫn dựng tại Project Base Point nhưng CAD đó lệch khỏi trục.
+
+## Vách và sàn (đi qua cửa sổ duyệt)
+
+**Vách:** `scan_cad_walls` → `propose_walls` → duyệt → `commit_plan`.
+
+1. `scan_cad_walls` hai lượt như dầm: lượt đầu liệt kê layer có cặp line song song (cách nhau 30–500 mm), lượt hai nhóm vách theo tên đọc từ Text + bề dày đo từ CAD (khoá `"V1|200"`, hoặc `"w200"` khi không có tên) và trả `scanId`.
+2. `propose_walls` với `scanId`, `baseLevelId`, `topLevelId` (offset tuỳ chọn). Nhóm có tên được đề xuất mặc định, nhóm không tên phải nằm trong `include`. Tuỳ chọn như tool WPF: `onlySupported` bỏ vách không có vách/móng đỡ trong 500 mm bên dưới; `extendToColumns` kéo đầu vách tới cột gần nhất.
+3. **Mỗi nhóm là một mục** `create_walls` (không phải mỗi bức vách), để cửa sổ duyệt không có hàng trăm dòng. Muốn bỏ một nhóm thì bỏ mục đó, hoặc gọi lại với `exclude`.
+4. Type: `types` → Basic Wall cùng bề dày → Type mới `BTC-VachKC_<b>` nhân bản lúc commit từ `templateTypeId` (mặc định Type có cấu tạo lớp gần bề dày nhất). Các nhóm cùng bề dày dùng chung Type mới.
+5. Lúc commit, phần tim đã có vách cùng trục bị trừ đi (kể cả vách vừa tạo ở mục trước), chỉ tạo đoạn còn thiếu ≥ 50 mm.
+
+**Sàn:** `propose_floors` → duyệt → `commit_plan`. Sàn không đọc từ CAD mà từ **model**: tim dầm có Reference Level là tầng đó và tim vách thẳng cắt qua cao độ tầng (theo view), dò thành các ô kín; ô dưới 1 m² coi là lỗ mở. Vì vậy cần dựng dầm, vách trước.
+
+- **Mỗi ô là một mục** `create_floor` (S1 ở góc trên trái, đọc như bản vẽ).
+- Type: `floorTypeId` → `BTC_SanKC_150` → tạo `BTC_SanKC_150` (150 mm) lúc commit nếu chưa có.
+- Ô có tâm nằm trong khung bao của sàn đã có được ghi chú "có thể trùng"; lúc commit, Revit kiểm tra giao nhau thật và ô chồng lên sàn cũ bị bỏ qua (ghi trong `result.skipped`), không tính là lỗi.
 
 ## Quy trình (cột)
 
@@ -102,7 +118,7 @@ Type cho mỗi nhóm được chọn theo thứ tự: mục trong `types` → Ty
 
 ## Thêm loại phần tử mới
 
-Lõi đã có sẵn vách (`Walls/`) và sàn (`Floors/`); chưa có command MCP cho chúng. Loại mới nên theo khuôn của tầng và trục: lệnh `propose_*` chỉ đọc, phần ghi là các `IPlanAction` trong `addin/Planning/Actions/` (đăng ký ở `PlanActions.CreateDefault`), mỗi mục có `params.summary` để cửa sổ duyệt hiện một câu dễ đọc.
+Loại mới nên theo khuôn của tầng, trục, vách và sàn: lệnh `propose_*` chỉ đọc, phần ghi là các `IPlanAction` trong `addin/Planning/Actions/` (đăng ký ở `PlanActions.CreateDefault`), mỗi mục có `params.summary` để cửa sổ duyệt hiện một câu dễ đọc.
 
 1. Nếu lõi chưa có loại đó: viết scanner/placer trong `addin/StructuralCore/<Loại>/`, không phụ thuộc UI (có thể tham khảo tool WPF bên `RevitAddinManager` nhưng không sửa repo đó). Thêm hàm `Plan*` xem trước cho mỗi thao tác ghi.
 2. Thêm `Scan<Loại>Command` và `Place<Loại>Command` trong `addin/Commands/Structural/` theo mẫu cột/dầm: kết quả quét lưu bằng `context.Sessions.Add`, lần chạy thật bọc trong `WriteSession`.

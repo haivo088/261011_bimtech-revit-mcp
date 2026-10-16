@@ -12,14 +12,21 @@ internal static class FloorPlacer
 {
     public static PlaceSummary Place(Document doc, IReadOnlyList<FloorPlacement> placements)
     {
+        using var tx = new Transaction(doc, "Vẽ Sàn theo Dầm");
+        tx.Start();
+        var summary = PlaceInTransaction(doc, placements);
+        tx.Commit();
+        return summary;
+    }
+
+    /// <summary>Như Place nhưng chạy trong Transaction do caller mở sẵn (khung plan của MCP: mỗi mục 1 Transaction).</summary>
+    public static PlaceSummary PlaceInTransaction(Document doc, IReadOnlyList<FloorPlacement> placements)
+    {
         var created = 0;
         var skipped = 0;
         var failed = 0;
         var errors = new List<string>();
         var createdIds = new List<ElementId>();
-
-        using var tx = new Transaction(doc, "Vẽ Sàn theo Dầm");
-        tx.Start();
 
         foreach (var row in placements)
         {
@@ -81,8 +88,6 @@ internal static class FloorPlacer
                 errors.Add($"{row.Label}: {ex.Message}");
             }
         }
-
-        tx.Commit();
 
         return new PlaceSummary(created, failed, skipped, errors, createdIds);
     }

@@ -80,6 +80,85 @@ export const proposeGrids = defineTool({
   timeoutMs: 120000,
 });
 
+export const scanCadWalls = defineTool({
+  name: "scan_cad_walls",
+  method: "scan_cad_walls",
+  title: "Scan CAD for walls",
+  description:
+    "Read structural walls from a CAD drawing as pairs of parallel lines (30-500 mm apart) as shown in a plan view,"
+    + " with names from nearby Text Notes. Call first without layers to list the layers, ask the user which hold walls,"
+    + " then call again with layers. Walls are grouped by tag name and thickness (key like \"V1|200\", or \"w200\""
+    + " without a name), with type suggestions and a scanId for propose_walls. Changes nothing in the model.",
+  inputSchema: {
+    cadId: elementId.describe("CAD import or link ID from list_cad_sources."),
+    viewId,
+    layers: layerList("wall outlines"),
+    region: regionMm.optional(),
+    textSearchMm: z.number().min(1).max(20000).optional()
+      .describe("How far from a wall to look for its text."),
+  },
+  annotations: readOnly,
+  timeoutMs: 120000,
+});
+
+export const proposeWalls = defineTool({
+  name: "propose_walls",
+  method: "propose_walls",
+  title: "Propose walls from scan",
+  description:
+    "Plan structural walls from a scan between two levels, without changing the model. One review item per wall group;"
+    + " parts of centerlines already covered by a wall are skipped. Groups with a tag name are proposed unless listed"
+    + " in 'exclude'; groups without one only when listed in 'include'. Type per group: 'types' entry, else a Basic"
+    + " Wall type of that thickness, else a new type \"BTC-VachKC_<b>\" duplicated at commit from templateTypeId"
+    + " (default: the Basic Wall type closest in thickness). Opens the review window and returns a planId at once;"
+    + " then get_plan_status and commit_plan.",
+  inputSchema: {
+    scanId: z.string().min(1).max(64).describe("scanId from scan_cad_walls."),
+    baseLevelId: elementId.describe("Level at the bottom of the walls."),
+    topLevelId: elementId.describe("Level at the top of the walls."),
+    baseOffsetMm: z.number().min(-100000).max(100000).optional().describe("Offset from the base level (default 0)."),
+    topOffsetMm: z.number().min(-100000).max(100000).optional().describe("Offset from the top level (default 0)."),
+    include: z.array(z.string().min(1).max(200)).max(500).optional()
+      .describe("Keys of groups without a tag name to propose as well."),
+    exclude: z.array(z.string().min(1).max(200)).max(500).optional()
+      .describe("Keys of groups not to propose."),
+    types: typeMap("V1|200"),
+    templateTypeId: elementId.optional()
+      .describe("Basic Wall type to duplicate for groups with no type of their thickness."),
+    onlySupported: z.boolean().optional()
+      .describe("Keep only walls with a wall or foundation within 500 mm below. Default false."),
+    extendToColumns: z.boolean().optional()
+      .describe("Extend wall ends to the nearest structural columns at the base level. Default false."),
+    columnSearchMm: z.number().min(1).max(20000).optional()
+      .describe("How far to look for a column from a wall end (default 3000)."),
+    tagParameterName: z.string().min(1).max(200).optional()
+      .describe("Text parameter of the wall that receives the group's tag name, e.g. \"Mark\"."),
+  },
+  annotations: propose,
+  timeoutMs: 120000,
+});
+
+export const proposeFloors = defineTool({
+  name: "propose_floors",
+  method: "propose_floors",
+  title: "Propose floors from beams and walls",
+  description:
+    "Plan structural floors on a level from the model, without changing it: centerlines of beams on the level and of"
+    + " straight walls crossing it (as shown in a plan view) are traced into closed panels; panels under 1 m² are"
+    + " treated as openings. One review item per panel. Floor type: floorTypeId, else BTC_SanKC_150 (150 mm), created"
+    + " at commit if missing. Panels overlapping an existing floor are skipped at commit. Place beams and walls first."
+    + " Opens the review window and returns a planId at once; then get_plan_status and commit_plan.",
+  inputSchema: {
+    levelId: elementId.describe("Level of the floors and of the beams that bound them."),
+    viewId: elementId.optional()
+      .describe("Plan view of the level. Defaults to the active view if it shows this level, else a plan of the level."),
+    floorTypeId: elementId.optional().describe("Floor type to use. Default BTC_SanKC_150."),
+    offsetMm: z.number().min(-100000).max(100000).optional().describe("Height offset from the level (default 0)."),
+  },
+  annotations: propose,
+  timeoutMs: 120000,
+});
+
 export const scanCadColumns = defineTool({
   name: "scan_cad_columns",
   method: "scan_cad_columns",
