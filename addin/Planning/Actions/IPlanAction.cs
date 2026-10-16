@@ -34,6 +34,7 @@ public sealed class PlanActions
     [
         new SetParameterAction(),
         new CreateLevelAction(),
+        new DeleteLevelAction(),
         new CreateGridAction(),
         new MoveCadAction(),
         new CreateWallsAction(),

@@ -20,7 +20,8 @@ Công cụ đề xuất, duyệt và ghi (xem [04 — Kiến trúc đề xuất 
 
 Công cụ dựng model kết cấu từ CAD (xem [05 — Dựng model kết cấu từ CAD](docs/05-cad-to-structure.md)):
 
-- `propose_levels`: kế hoạch tạo Level + Structural Plan `KC - <tên>` cho từng tầng và nhập CAD tầng đó vào plan; duyệt rồi `commit_plan`.
+- `suggest_levels_from_folder`: đề xuất bảng tầng (tên, cao độ) từ tên các file DWG trong một thư mục.
+- `propose_levels`: kế hoạch tạo Level + Structural Plan `KC - <tên>` cho từng tầng và nhập CAD tầng đó vào plan (đổi tên level template cùng cao độ thay vì tạo trùng, đề xuất xoá level thừa); duyệt rồi `commit_plan`.
 - `propose_grids`: kế hoạch dựng trục từ layer Grid/Trục/Axis của một CAD và dời CAD các tầng để trục 1-A trùng Project Base Point; duyệt rồi `commit_plan`.
 - `scan_cad_walls` / `propose_walls`: vách theo cặp line song song, nhóm theo tên Text + bề dày; mỗi nhóm một mục duyệt; tự tạo Type `BTC-VachKC_<b>` khi thiếu.
 - `propose_floors`: ô sàn dò từ tim dầm và vách đã có trên một tầng; mỗi ô một mục duyệt; Type mặc định `BTC_SanKC_150`.

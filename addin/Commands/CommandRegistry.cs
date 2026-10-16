@@ -50,6 +50,7 @@ public sealed class CommandRegistry
         new GetSelectedElementsCommand(),
         new GetElementParametersCommand(),
         new ListCadSourcesCommand(),
+        new SuggestLevelsFromFolderCommand(),
         new ProposeLevelsCommand(plans, review, changes),
         new ProposeGridsCommand(plans, review, changes),
         new ScanCadWallsCommand(),

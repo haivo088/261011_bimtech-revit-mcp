@@ -15,7 +15,18 @@ internal enum CadPlacementMode
 internal sealed record LevelSetupRow(string FilePath, string LevelName, double ElevationMm, CadPlacementMode Mode, bool CreateGrids)
 {
     public bool HasCad => !string.IsNullOrWhiteSpace(FilePath);
+
+    /// <summary>Đơn vị đọc DWG. Mặc định mm như tool WPF; Default = theo đơn vị ghi trong file.</summary>
+    public ImportUnit Unit { get; init; } = ImportUnit.Millimeter;
+
+    /// <summary>View template và tỉ lệ cho Structural Plan mới tạo (null: giữ mặc định của Revit).</summary>
+    public ElementId? ViewTemplateId { get; init; }
+    public int? Scale { get; init; }
 }
+
+/// <summary>Level không ai dùng: không có phần tử nào phụ thuộc ngoài các view của chính nó, và không view nào nằm trên sheet.
+/// Views: số view sẽ bị xoá kèm.</summary>
+internal sealed record UnusedLevel(Level Level, int Views);
 
 /// <summary>Xem trước 1 tầng, không sửa model. Problem khác null nghĩa là ApplyRow sẽ báo lỗi cho tầng này.
 /// ExistingLevel: Level cùng tên. RenameFrom: không có Level cùng tên nhưng có đúng 1 Level khác tên ở cùng cao độ (thường
@@ -161,6 +172,9 @@ internal static class LevelSetup
         {
             plan = ViewPlan.Create(doc, structuralType.Id, level.Id);
             plan.Name = UniqueName(PlanNameFor(name), ViewNames(doc, except: plan.Id));
+            // Tỉ lệ trước, template sau: template quản lý tỉ lệ thì nó thắng, thay vì Revit báo tỉ lệ chỉ đọc.
+            if (row.Scale is { } scale) plan.Scale = scale;
+            if (row.ViewTemplateId is { } template) plan.ViewTemplateId = template;
         }
         else if (oldLevelName is not null && string.Equals(plan.Name, oldLevelName, StringComparison.OrdinalIgnoreCase))
         {
@@ -174,7 +188,7 @@ internal static class LevelSetup
             Placement = ImportPlacement.Origin,
             ThisViewOnly = true,
             ColorMode = ImportColorMode.Preserved,
-            Unit = ImportUnit.Millimeter,
+            Unit = row.Unit,
             VisibleLayersOnly = false,
             OrientToView = true,
             AutoCorrectAlmostVHLines = true
@@ -206,6 +220,53 @@ internal static class LevelSetup
         }
 
         return new RowResult(gridCount, newAlignment, level.Id, plan.Id, cadId);
+    }
+
+    /// <summary>Các Level không dùng tới, trừ <paramref name="keep"/> (Level được giữ hoặc sẽ đổi tên). Chỉ đọc model.</summary>
+    public static List<UnusedLevel> FindUnused(Document doc, IReadOnlySet<ElementId> keep) =>
+        new FilteredElementCollector(doc).OfClass(typeof(Level)).Cast<Level>()
+            .Where(level => !keep.Contains(level.Id))
+            .Select(level => (Level: level, Blockers: DeletionBlockers(doc, level, out var views), Views: views))
+            .Where(entry => entry.Blockers.Count == 0)
+            .Select(entry => new UnusedLevel(entry.Level, entry.Views))
+            .OrderBy(entry => entry.Level.Elevation)
+            .ToList();
+
+    /// <summary>Xoá 1 Level không dùng tới, trong Transaction do caller mở sẵn. Kiểm tra lại ngay trước khi xoá: nếu giờ đã
+    /// có phần tử phụ thuộc, ném InvalidOperationException và không xoá gì.</summary>
+    public static int DeleteUnusedInTransaction(Document doc, Level level)
+    {
+        var blockers = DeletionBlockers(doc, level, out _);
+        if (blockers.Count > 0)
+            throw new InvalidOperationException(
+                $"Level \"{level.Name}\" giờ đang được dùng ({string.Join(", ", blockers.Take(5))}); không xoá.");
+        return doc.Delete(level.Id).Count;
+    }
+
+    // What would be deleted with the level besides its own views (and the elements owned by those views), plus
+    // views of it placed on a sheet. Empty means deleting the level loses nothing the person made.
+    private static List<string> DeletionBlockers(Document doc, Level level, out int views)
+    {
+        var levelViews = new FilteredElementCollector(doc).OfClass(typeof(View)).Cast<View>()
+            .Where(view => !view.IsTemplate && view.GenLevel?.Id == level.Id)
+            .Select(view => view.Id)
+            .ToHashSet();
+        views = levelViews.Count;
+        var onSheets = new FilteredElementCollector(doc).OfClass(typeof(Viewport)).Cast<Viewport>()
+            .Where(viewport => levelViews.Contains(viewport.ViewId))
+            .Select(viewport => $"view {doc.GetElement(viewport.ViewId)?.Name} trên sheet");
+        // Revit cannot delete the view it is showing.
+        if (doc.ActiveView is { } active && levelViews.Contains(active.Id))
+            onSheets = onSheets.Append($"view {active.Name} đang mở");
+        var dependents = level.GetDependentElements(null)
+            .Where(id => id != level.Id && !levelViews.Contains(id))
+            .Select(doc.GetElement)
+            .Where(element => element is not null
+                && element.Category is not null
+                && element is not SketchPlane
+                && !levelViews.Contains(element.OwnerViewId))
+            .Select(element => $"{element!.Category!.Name} {element.Id}");
+        return onSheets.Concat(dependents).ToList();
     }
 
     /// <summary>CAD đã nằm trong view này có cùng tên file (tên Type của ImportInstance) — nhập lại sẽ thành 2 bản.</summary>

@@ -20,6 +20,10 @@ internal static class ActionParams
             ? number
             : throw new PlanActionException($"The plan item has no number '{name}'.");
 
+    // Null when the field is missing or null; a field of another type is an error.
+    public static double? OptionalNumber(JsonElement parameters, string name) =>
+        !parameters.TryGetProperty(name, out var value) || value.ValueKind == JsonValueKind.Null ? null : Number(parameters, name);
+
     public static ElementId Id(JsonElement parameters, string name)
     {
         var text = Text(parameters, name);

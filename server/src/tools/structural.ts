@@ -34,18 +34,37 @@ export const listCadSources = defineTool({
 // Saves a plan file and opens the review window, but never changes the model.
 const propose = { readOnlyHint: true, destructiveHint: false, idempotentHint: false };
 
+export const suggestLevelsFromFolder = defineTool({
+  name: "suggest_levels_from_folder",
+  method: "suggest_levels_from_folder",
+  title: "Suggest storeys from DWG file names",
+  description:
+    "Read the DWG file names in a folder and propose the storey table for propose_levels: storey name and elevation"
+    + " read from names like \"KC-03 MB TANG 2 (+3.600).dwg\" (Tầng N, Hầm N, Móng, Tầng trệt, Tầng lửng, Mái, Tum;"
+    + " elevations in metres such as +3.600, -1,500, COS 7.20), bottom to top. Sections, details and rebar layouts are"
+    + " listed apart. Nothing is guessed: missing names or elevations stay null, and warnings flag storeys with several"
+    + " files or unusual storey heights. Confirm the table with the user before propose_levels. Changes nothing.",
+  inputSchema: {
+    folder: z.string().min(3).max(1024).describe("Absolute path of the folder with the structural plan DWGs."),
+    recursive: z.boolean().optional().describe("Also look in subfolders (default false)."),
+  },
+  annotations: readOnly,
+});
+
 export const proposeLevels = defineTool({
   name: "propose_levels",
   method: "propose_levels",
   title: "Propose levels with their CAD",
   description:
-    "Plan setting up storeys, without changing the model. Each storey becomes one review item that creates the level"
-    + " (or reuses one with the same name and elevation), its structural plan \"KC - <name>\", and imports or links"
-    + " that storey's DWG into the plan at the origin. Storeys that are already complete and have no cadFile are skipped;"
-    + " problems (missing file, existing level at another elevation, duplicate names) become Blocked items."
-    + " Opens the review window in Revit and returns a planId at once. Tell the user the counts, ask them to review in"
-    + " Revit and say when they are done, then call get_plan_status and commit_plan."
-    + " After the commit, call list_cad_sources and propose_grids to build grids and align the CAD.",
+    "Plan setting up storeys, without changing the model. Each storey becomes one review item that creates the level,"
+    + " reuses one with the same name and elevation, or renames the one level of another name at that elevation (such"
+    + " as the template's \"Level 1\") instead of duplicating it; then its structural plan \"KC - <name>\" and imports or"
+    + " links that storey's DWG into the plan at the origin. Problems (forbidden characters, missing file, level at"
+    + " another elevation, two storeys at one elevation) become Blocked items; unusual storey heights are flagged."
+    + " Levels nobody uses get a delete item that starts rejected. Use suggest_levels_from_folder to build the table"
+    + " from DWG file names. Opens the review window in Revit and returns a planId at once; ask the user to review in"
+    + " Revit, then get_plan_status and commit_plan. After the commit check each item's cadWarning (wrong DWG unit),"
+    + " then list_cad_sources and propose_grids to build grids and align the CAD.",
   inputSchema: {
     levels: z.array(z.object({
       name: z.string().min(1).max(255).describe("Level name, e.g. \"Tầng 2\"."),
@@ -53,7 +72,14 @@ export const proposeLevels = defineTool({
       cadFile: z.string().min(1).max(1024).regex(/\.dwg$/i).optional()
         .describe("Full path of the storey's structural plan DWG. Omit to create only the level and plan."),
       mode: z.enum(["import", "link"]).optional().describe("Import (default) or link the DWG."),
+      cadUnit: z.enum(["mm", "cm", "m", "auto"]).optional()
+        .describe("Unit the DWG is drawn in (default mm); auto reads it from the file."),
     })).min(1).max(100).describe("Storeys to set up."),
+    viewTemplate: z.string().min(1).max(255).optional()
+      .describe("Name of a structural plan view template to apply to the new plans."),
+    scale: z.number().int().min(1).max(10000).optional().describe("Scale of the new plans, e.g. 100 for 1:100."),
+    proposeLevelCleanup: z.boolean().optional()
+      .describe("Offer to delete levels nobody uses, as items that start rejected (default true)."),
   },
   annotations: propose,
   timeoutMs: 60000,

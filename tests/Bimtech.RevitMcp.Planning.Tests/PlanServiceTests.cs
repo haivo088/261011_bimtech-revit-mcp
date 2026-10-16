@@ -268,6 +268,22 @@ public sealed class PlanServiceTests : IDisposable
         Assert.Equal(RpcErrorCodes.InvalidParams, error.Code);
     }
 
+    // propose_levels offers to delete unused levels as items that start rejected: they count as decided, are left
+    // out of the approval unless the person approves them, and the person can still approve them.
+    [Fact]
+    public void Items_proposed_as_rejected_count_as_decided_and_stay_out_unless_approved()
+    {
+        var delete = Item("D1", "xoá");
+        delete.Status = PlanItemStatus.Rejected;
+        var plan = _plans.Create(_document, "create_levels", "Tầng", scope: null, [Item("E1", "Tầng 1"), delete]);
+        _plans.SetItemStatus(_document, plan.PlanId, ["E1"], PlanItemStatus.Approved);
+
+        Assert.Equal(["E1"], _plans.Approve(_document, plan.PlanId).Approval!.ApprovedItemIds);
+
+        _plans.SetItemStatus(_document, plan.PlanId, ["D1"], PlanItemStatus.Approved);
+        Assert.Equal(["E1", "D1"], _plans.Approve(_document, plan.PlanId).Approval!.ApprovedItemIds);
+    }
+
     private Plan CreatePlan(bool blocked = false)
     {
         var items = new List<PlanItem> { Item("E1", "Kiểm tra"), Item("E2", "Kiểm tra") };

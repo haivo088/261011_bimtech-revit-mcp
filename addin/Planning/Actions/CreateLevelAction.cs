@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Autodesk.Revit.DB;
 using Bimtech.RevitMcp.Commands;
+using Bimtech.RevitMcp.Commands.Common;
 using Bimtech.StructuralCore.Levels;
 
 namespace Bimtech.RevitMcp.Planning.Actions;
@@ -26,7 +27,19 @@ public sealed class CreateLevelAction : IPlanAction
             ActionParams.Text(parameters, "levelName"),
             ActionParams.Number(parameters, "elevationMm"),
             mode,
-            CreateGrids: false);
+            CreateGrids: false)
+        {
+            Unit = (ActionParams.OptionalText(parameters, "cadUnit") ?? "mm") switch
+            {
+                "mm" => ImportUnit.Millimeter,
+                "cm" => ImportUnit.Centimeter,
+                "m" => ImportUnit.Meter,
+                "auto" => ImportUnit.Default,
+                var other => throw new PlanActionException($"Unknown CAD unit '{other}'."),
+            },
+            ViewTemplateId = ActionParams.OptionalText(parameters, "viewTemplateId") is null ? null : ActionParams.Id(parameters, "viewTemplateId"),
+            Scale = ActionParams.OptionalNumber(parameters, "scale") is { } scale ? (int)scale : null,
+        };
         var planType = LevelSetup.FindStructuralPlanType(document)
             ?? throw new PlanActionException("The model has no Structural Plan view type.");
 
@@ -43,11 +56,34 @@ public sealed class CreateLevelAction : IPlanAction
             throw new PlanActionException(exception.Message);
         }
 
+        var (cadSizeMm, cadWarning) = result.CadId is null ? (null, null) : CheckCadSize(document, result.CadId, result.PlanId);
         return new
         {
             levelId = RevitJson.Id(result.LevelId),
             viewId = RevitJson.Id(result.PlanId),
             cadId = result.CadId is null ? null : RevitJson.Id(result.CadId),
+            cadSizeMm,
+            cadWarning,
+        };
+    }
+
+    // A structural plan spans metres to hundreds of metres. Far smaller or larger means the DWG unit was read wrong
+    // (drawn in metres but imported as mm, or the reverse), which the person should know before building on it.
+    private const double MinPlausibleSizeMm = 2_000;
+    private const double MaxPlausibleSizeMm = 2_000_000;
+
+    private static (double? SizeMm, string? Warning) CheckCadSize(Document document, ElementId cadId, ElementId planId)
+    {
+        document.Regenerate();
+        var box = document.GetElement(cadId)?.get_BoundingBox(document.GetElement(planId) as View);
+        if (box is null) return (null, "Không đọc được kích thước CAD vừa nhập.");
+        var size = Math.Round(Math.Max(UnitConvert.Length(box.Max.X - box.Min.X), UnitConvert.Length(box.Max.Y - box.Min.Y)));
+        return size switch
+        {
+            < MinPlausibleSizeMm => (size, $"CAD chỉ rộng {size:0} mm: có thể bản vẽ dùng mét nhưng được đọc là mm. "
+                + "Huỷ (Ctrl+Z) và propose lại với cadUnit \"m\" hoặc \"auto\"."),
+            > MaxPlausibleSizeMm => (size, $"CAD rộng {size / 1000:0} m: có thể đơn vị bị đọc sai, hoặc có đối tượng nằm rất xa gốc toạ độ."),
+            _ => (size, null),
         };
     }
 }

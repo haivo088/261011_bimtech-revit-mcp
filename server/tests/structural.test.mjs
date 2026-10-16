@@ -94,8 +94,11 @@ test("level and grid proposals forward their input unchanged", async (t) => {
     levels: [
       { name: "Tầng 1", elevationMm: 0, cadFile: "D:\DuAn\S-101.DWG" },
       { name: "Tầng 2", elevationMm: 3600, cadFile: "D:\DuAn\S-201.dwg", mode: "link" },
-      { name: "Mái", elevationMm: 7200 },
+      { name: "Mái", elevationMm: 7200, cadUnit: "auto" },
     ],
+    viewTemplate: "KC - Mặt bằng",
+    scale: 100,
+    proposeLevelCleanup: false,
   };
   assert.equal((await client.callTool({ name: "propose_levels", arguments: levelArgs })).isError, false);
   const gridArgs = { cadId: "501", alignCadIds: ["502", "503"] };
@@ -116,6 +119,9 @@ test("level and grid proposals reject malformed input before contacting Revit", 
     { name: "propose_levels", arguments: { levels: [{ name: "Tầng 1" }] } },
     { name: "propose_levels", arguments: { levels: [{ name: "Tầng 1", elevationMm: 0, cadFile: "D:\S-101.pdf" }] } },
     { name: "propose_levels", arguments: { levels: [{ name: "Tầng 1", elevationMm: 0, mode: "copy" }] } },
+    { name: "propose_levels", arguments: { levels: [{ name: "Tầng 1", elevationMm: 0, cadUnit: "inch" }] } },
+    { name: "propose_levels", arguments: { levels: [{ name: "Tầng 1", elevationMm: 0 }], scale: 0 } },
+    { name: "suggest_levels_from_folder", arguments: {} },
     { name: "propose_grids", arguments: {} },
     { name: "propose_grids", arguments: { cadId: "501", alignCadIds: ["CAD-2"] } },
   ];
