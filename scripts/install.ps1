@@ -66,8 +66,17 @@ Copy-Item (Join-Path $root "addin\Bimtech.RevitMcp.addin") $AddinsDir -Force
 Copy-Item (Join-Path $addinOutput "*") $target -Recurse -Force
 
 if ($Dev) {
-    if (-not (Test-Path (Join-Path $devOutput "Bimtech.RevitMcp.DevTools.dll"))) {
-        throw "No developer tools build in $devOutput. Run without -NoBuild."
+    $devDll = Join-Path $devOutput "Bimtech.RevitMcp.DevTools.dll"
+    foreach ($file in @("Bimtech.RevitMcp.DevTools.dll", "Microsoft.CodeAnalysis.dll", "Microsoft.CodeAnalysis.CSharp.dll")) {
+        if (-not (Test-Path (Join-Path $devOutput $file))) {
+            throw "No $file in $devOutput. Run without -NoBuild."
+        }
+    }
+    # The add-in and the developer tools share interfaces (IDevToolsModule, plan actions): a tools DLL built before
+    # the add-in may not load ("failed to load" in ping_revit). Both come from one solution build.
+    $addinTime = (Get-Item (Join-Path $addinOutput "Bimtech.RevitMcp.Addin.dll")).LastWriteTime
+    if ((Get-Item $devDll).LastWriteTime -lt $addinTime.AddMinutes(-2)) {
+        throw "The developer tools build is older than the add-in build. Run without -NoBuild so both are rebuilt together."
     }
     Step "Installing the developer tools"
     Get-ChildItem $devOutput -File |
@@ -85,9 +94,46 @@ else {
 Write-Host ""
 Write-Host "Installed:" -ForegroundColor Green
 Get-ChildItem $target -File | Sort-Object Name | ForEach-Object { Write-Host ("  " + $_.Name) }
-Write-Host ""
-Write-Host "Next: open Revit, Add-Ins > BIMTECH MCP > MCP Bridge, then ask Claude to run ping_revit."
-if ($Dev) {
-    Write-Host "Developer tools: add `"BIMTECH_DEV`": `"1`" to the env of bimtech-revit-mcp in Claude Desktop's config,"
-    Write-Host "restart Claude Desktop, and check that ping_revit reports devTools: loaded."
+
+# Claude Desktop must start this repository's server, with BIMTECH_DEV=1 for the developer tools. Only checked and
+# reported here; the file is the user's, so it is never changed.
+$serverEntry = Join-Path $root "server\build\index.js"
+$claudeConfig = Join-Path $env:APPDATA "Claude\claude_desktop_config.json"
+$problems = @()
+if (-not (Test-Path $serverEntry)) { $problems += "The MCP server is not built ($serverEntry). Run without -NoBuild." }
+if (-not (Test-Path $claudeConfig)) {
+    $problems += "No Claude Desktop config at $claudeConfig. Add the entry from config\claude-desktop.example.json."
 }
+else {
+    try {
+        $server = (Get-Content $claudeConfig -Raw -Encoding UTF8 | ConvertFrom-Json).mcpServers."bimtech-revit-mcp"
+        if ($null -eq $server) {
+            $problems += "Claude Desktop has no 'bimtech-revit-mcp' server. Add the entry from config\claude-desktop.example.json."
+        }
+        else {
+            $entry = @($server.args)[0]
+            if (-not $entry -or [System.IO.Path]::GetFullPath($entry) -ne [System.IO.Path]::GetFullPath($serverEntry)) {
+                $problems += "Claude Desktop starts the server from '$entry', not from this repository ($serverEntry)."
+            }
+            $devFlag = $server.env.BIMTECH_DEV
+            if ($Dev -and $devFlag -ne "1") {
+                $problems += "Developer tools: add `"BIMTECH_DEV`": `"1`" to `"env`" of bimtech-revit-mcp in $claudeConfig."
+            }
+            if (-not $Dev -and $devFlag -eq "1") {
+                $problems += "BIMTECH_DEV=1 is set but the developer tools were removed: their tools will fail. Install with -Dev or remove the flag."
+            }
+        }
+    }
+    catch {
+        $problems += "Could not read $claudeConfig ($($_.Exception.Message))."
+    }
+}
+
+Write-Host ""
+if ($problems.Count -gt 0) {
+    Write-Host "Check before testing:" -ForegroundColor Yellow
+    $problems | ForEach-Object { Write-Host ("  - " + $_) -ForegroundColor Yellow }
+    Write-Host ""
+}
+Write-Host "Next: restart Claude Desktop, open Revit, Add-Ins > BIMTECH MCP > MCP Bridge, then ask Claude to run ping_revit."
+if ($Dev) { Write-Host "ping_revit must report devTools: loaded." }

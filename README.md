@@ -161,7 +161,7 @@ Mở Revit, mở một mô hình thử nghiệm, vào **Add-Ins → BIMTECH MCP 
 
 ## Kết nối Claude Desktop
 
-Trong `%APPDATA%\Claude\claude_desktop_config.json`, thêm entry `bimtech-revit-mcp` từ [file cấu hình mẫu](config/claude-desktop.example.json). Giữ các cấu hình khác nếu có. Đường dẫn trong mẫu dành cho máy hiện tại; sửa lại khi di chuyển dự án hoặc dùng máy khác.
+Trong `%APPDATA%\Claude\claude_desktop_config.json`, thêm entry `bimtech-revit-mcp` từ [file cấu hình mẫu](config/claude-desktop.example.json). Giữ các cấu hình khác nếu có. Đường dẫn trong mẫu dành cho máy hiện tại; sửa lại khi di chuyển dự án hoặc dùng máy khác. Mẫu có `"BIMTECH_DEV": "1"` (bộ dev, chỉ máy người phát triển); máy người dùng bỏ dòng đó. `scripts\install.ps1` kiểm tra cấu hình này khi cài và báo nếu sai đường dẫn hoặc thiếu cờ dev, nhưng không tự sửa.
 
 Khởi động lại Claude Desktop rồi thử:
 

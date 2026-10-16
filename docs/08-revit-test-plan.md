@@ -1,15 +1,31 @@
 # 08 — Kế hoạch thử trong Revit
 
-Danh sách thử trọn bộ trên Revit thật. Ngoài cột, mọi phần dưới đây mới được build và test ngoài Revit. Làm theo thứ tự: mỗi phần dùng kết quả của phần trước, và một tầng có CAD đi qua gần hết code mới.
-
-**Nếu `commit_plan` báo timeout:** commit lớn (nhập DWG nhiều tầng, rất nhiều nhóm vách) có thể vượt 120 giây. Claude hết chờ nhưng Revit vẫn ghi tiếp và lưu kết quả vào file kế hoạch. Đợi Revit rảnh tay rồi bảo Claude **gọi lại `commit_plan`** với cùng `planId` và `approvalId`. Nếu lần trước đã ghi xong, lần này chỉ trả kết quả đã lưu (`alreadyCommitted: true`), không ghi trùng; nếu lần trước chưa kịp chạy, lần này mới ghi. **Đừng propose lại**: model đã đổi nên kế hoạch mới sẽ khác, và kế hoạch cũ đã được ghi.
+Danh sách thử trọn bộ trên Revit thật. Ngoài cột, mọi phần dưới đây mới được build và test ngoài Revit. Làm theo thứ tự: mỗi phần dùng kết quả của phần trước (cột cần trục, dầm cần cột và vách, sàn cần dầm).
 
 Mỗi bước có câu mẫu để nói với Claude, và **"Đạt khi"** là điều cần thấy. Bước nào không đạt: chép nguyên câu trả lời của tool (nhất là phần lỗi), chụp màn hình Revit nếu liên quan, ghi vào bảng ở cuối, rồi đi tiếp sang phần độc lập.
 
+**Nếu `commit_plan` báo timeout:** commit lớn (nhập DWG nhiều tầng, rất nhiều nhóm vách) có thể vượt 120 giây. Claude hết chờ nhưng Revit vẫn ghi tiếp và lưu kết quả vào file kế hoạch. Đợi Revit rảnh tay rồi bảo Claude **gọi lại `commit_plan`** với cùng `planId` và `approvalId`. Nếu lần trước đã ghi xong, lần này chỉ trả kết quả đã lưu (`alreadyCommitted: true`), không ghi trùng; nếu lần trước chưa kịp chạy, lần này mới ghi. **Đừng propose lại**: model đã đổi nên kế hoạch mới sẽ khác, và kế hoạch cũ đã được ghi.
+
+## Lộ trình rút gọn (khoảng 1–1,5 giờ)
+
+Khi ít thời gian, đi đúng con đường này; các mục "Thử thêm" và phần còn lại làm sau.
+
+| # | Việc | Phần | Thời gian |
+| --- | --- | --- | --- |
+| 1 | Cài bản mới, sửa cấu hình theo lời nhắc của script, `ping_revit` | 0, 1 | 10' |
+| 2 | Một tầng có CAD + một tầng trên, chỉ mục chính | 2 | 10' |
+| 3 | Trục từ CAD tầng 1 | 3 | 10' |
+| 4 | Cột tầng 1 | 5 | 15' |
+| 5 | Dầm chính tầng 2 | 7 | 15' |
+| 6 | `send_code` đọc, rồi một lần ghi nhỏ | 10 | 10' |
+| 7 | `export_cad_case` cho CAD tầng 1 và tầng 2 (để sửa thuật toán ngoài Revit) | 10 | 5' |
+
+Điều cần ghi lại nhất: **chỗ nào nhận sai và vì sao** (nét vẽ, layer, chữ trong DWG hay Text Note), thời gian chạy, và nguyên văn mọi lỗi.
+
 ## 0. Chuẩn bị
 
-- Đóng Revit. Ở gốc repo chạy `.\scripts\install.ps1 -Dev` (bỏ `-Dev` nếu chưa muốn thử bộ dev).
-- Cấu hình Claude Desktop: server `bimtech-revit-mcp` có `"BIMTECH_DEV": "1"` trong `env` (chỉ cần cho phần 9). Khởi động lại Claude Desktop.
+- Đóng Revit. Ở gốc repo chạy `.\scripts\install.ps1 -Dev` (bỏ `-Dev` nếu chưa muốn thử bộ dev). Script build lại cả add-in, bộ dev và server, rồi **kiểm tra cấu hình Claude Desktop**. Nếu cuối kết quả có mục vàng **"Check before testing"**, sửa đúng như nó nói (thường là thêm `"BIMTECH_DEV": "1"` vào `env` của `bimtech-revit-mcp` trong `%APPDATA%\Claude\claude_desktop_config.json`, xem `config\claude-desktop.example.json`).
+- Khởi động lại Claude Desktop (bắt buộc sau mỗi lần cài).
 - Sao lưu `TEST.rvt`, rồi mở bản sao. Chuẩn bị đường dẫn đầy đủ tới 2–3 file DWG mặt bằng kết cấu của các tầng, trong đó ít nhất một file có layer trục.
 - Add-Ins → BIMTECH MCP → **MCP Bridge** để bật cầu nối. Settings: tắt chế độ chỉ đọc.
 
@@ -17,7 +33,7 @@ Mỗi bước có câu mẫu để nói với Claude, và **"Đạt khi"** là �
 
 > Dùng ping_revit.
 
-Đạt khi: `status: ok`, `revitVersion: 2025`, `bridgeVersion`, danh sách `commands` có `propose_levels`, `propose_walls`, `propose_floors`; `devTools: loaded` nếu đã cài `-Dev`.
+Đạt khi: `status: ok`, `revitVersion: 2025`, `bridgeVersion`, danh sách `commands` có `propose_levels`, `propose_columns`, `propose_beams`, `propose_walls`, `propose_floors`; `devTools: loaded` nếu đã cài `-Dev`. Nếu `devTools` là `failed to load: ...`: chép nguyên văn, cài lại bằng `install.ps1 -Dev` (không `-NoBuild`).
 
 ## 2. Tầng: `propose_levels`
 
@@ -63,55 +79,7 @@ Kết quả này quyết định mốc cao độ cho bản nâng cấp U2 (nhậ
 - Bản vẽ có layer trục tên lạ: nếu tự nhận sai thì gọi lại với `gridLayer`. Ghi lại style được chọn và điểm (`styleScores`) để bổ sung quy tắc.
 - Bản vẽ có trục xiên: kết quả có cảnh báo "đường dài xiên".
 
-## 4. Cột: `scan_cad_columns` / `propose_columns`
-
-> Quét cột từ CAD tầng 1 bằng scan_cad_columns, rồi propose_columns từ Tầng 1 lên Tầng 2.
-
-Đạt khi:
-- Nhóm theo ký hiệu (`C1`, `C2`) nếu ký hiệu là Text Note, không thì theo `300x500` (cạnh nhỏ trước). Nhóm có ký hiệu ghi kích thước khác hình vẽ thì có `tagSizeMismatch`.
-- `notRectangles` liệt kê cột chữ L, cột dính vách cùng layer, nét hở; không có "cột" nào từ mũi tên hay nét ghi chú.
-- Cửa sổ duyệt: mỗi nhóm một mục, mô tả như `C1 · 300x500 · 12 cột · Type 300x500 (BTC-CotCN_BeTong) · tại A-1, A-2…`.
-- Sau commit: cột đúng tâm, khoảng cách tới trục là bội 5 mm (đo bằng Dimension); cột vẽ lệch nhẹ được đặt thẳng theo trục; **cột chữ nhật đúng hướng b/h** (không bị xoay 90°); tham số Mark có ký hiệu.
-- **Giao trục:** cột vẽ lệch vài mm so với tâm giao trục được đặt đúng tâm; cột biên có mép vẽ gần trục được đặt mép trùng trục. So `tại A-1…` với tham số **Column Location Mark** của Revit. `emptyCrossings` liệt kê đúng các giao trục không có cột. Ghi lại cột nào bị nắn sai (ví dụ cột cố ý lệch 10 mm).
-- Đặt sẵn một cột của **family khác** ở một vị trí rồi propose: vị trí đó bị bỏ qua (không thành cột chồng cột).
-- Layer cột rất nhiều hatch: quét xong nhanh, không timeout.
-- Kiểm chứng tên tham số tiết diện của family `BTC-CotCN_BeTong` đúng là `b`/`h`.
-
-## 5. Dầm chính: `propose_beams`
-
-> Cột tầng 1 đã dựng (phần 4). Đề xuất dầm chính Tầng 2 từ CAD tầng 2 bằng propose_beams.
-
-Đạt khi:
-- Chạy xong nhanh trên bản vẽ thật (không timeout), dù không chọn layer.
-- Mỗi nhịp giữa hai cột liền nhau có dầm; dầm đặt **từ tim cột tới tim cột**; giao trục không có cột thì dầm chạy liền qua, không bị chia.
-- Dầm biên lệch trục (mép ngoài bằng mặt cột) đúng vị trí; tim dầm cách trục là bội 5 mm hoặc đúng 0 / mép trùng trục.
-- Mục duyệt ghi nhịp kiểu `A-1 → A-2 (trục A)`; ký hiệu dầm (Text Note) gán đúng dầm cùng phương, lan sang các nhịp thẳng hàng; Mark có ký hiệu.
-- `report.dangling` liệt kê dầm phụ/console (chưa dựng); `report.unusedMarks` liệt kê ký hiệu không gán được. Ghi lại dầm chính nào bị sót và vì sao (nét vẽ, khoảng đứt, layer).
-- Nhóm không có h (không có ký hiệu kích thước) bị chặn và Claude hỏi chiều cao.
-- **Kiểm chứng**: CAD import có Text Note không, hay chữ nằm trong DWG (Revit không đọc được) — khi đó dầm không có ký hiệu.
-- Kiểm chứng tên tham số tiết diện của family `BTC-DamCN_BeTong` đúng là `b`/`h`; dầm Revit tự cắt tại mặt cột khi join.
-
-## 6. Vách: `scan_cad_walls` / `propose_walls`
-
-> Quét vách từ CAD tầng 1 bằng scan_cad_walls (chọn layer vách), rồi propose_walls từ Tầng 1 lên Tầng 2.
-
-Đạt khi:
-- Mỗi nhóm (tên + bề dày) là một mục, mô tả như `V1 · dày 200 mm · 12 vách (15 đoạn) · Type BTC-VachKC_200`.
-- Sau commit: vách đúng tim, đúng chiều cao; Type `BTC-VachKC_<b>` được tạo khi thiếu.
-- Gọi lại `propose_walls` cùng scan → `alreadyModeledGroups`, không tạo vách đôi.
-
-## 7. Sàn: `propose_floors`
-
-Cần có dầm (phần 5) hoặc vách trên tầng đó.
-
-> Dùng propose_floors cho Tầng 2.
-
-Đạt khi:
-- Mỗi ô sàn là một mục `S1`, `S2`... (S1 ở góc trên trái), có diện tích; ô < 1 m² không xuất hiện (coi là lỗ).
-- Sau commit: sàn kết cấu đúng biên tim dầm, Type `BTC_SanKC_150` (tự tạo nếu thiếu).
-- Gọi lại `propose_floors` → mục có ghi chú "có thể trùng"; commit lần hai → `result.skipped`, không tạo sàn chồng.
-
-## 8. Cọc và đài: `scan_cad_piles` / `propose_piles`
+## 4. Cọc và đài: `scan_cad_piles` / `propose_piles`
 
 > Quét cọc và đài từ CAD móng bằng scan_cad_piles, rồi propose_piles với capLevelId là Tầng 1 (hoặc level đỉnh đài).
 
@@ -124,21 +92,95 @@ Cần có dầm (phần 5) hoặc vách trên tầng đó.
 - Với `pileLengthMm`: cọc đúng chiều dài, hoặc có cảnh báo nếu family không có tham số chiều dài. Ghi lại **gốc chèn** của family `BTC-CocTron_BeTong`: đỉnh cọc có trùng đáy đài không.
 - Gọi lại `propose_piles` cùng scan → đài đã dựng nằm trong `alreadyModeledCaps`.
 
+## 5. Cột: `scan_cad_columns` / `propose_columns`
+
+> Quét cột từ CAD tầng 1 bằng scan_cad_columns, rồi propose_columns từ Tầng 1 lên Tầng 2.
+
+Đạt khi:
+- Nhóm theo ký hiệu (`C1`, `C2`) nếu ký hiệu là Text Note, không thì theo `300x500` (cạnh nhỏ trước). Nhóm có ký hiệu ghi kích thước khác hình vẽ thì có `tagSizeMismatch`. **Ghi lại `taggedColumns`**: bằng 0 nghĩa là chữ nằm trong DWG, Revit không đọc được.
+- `notRectangles` liệt kê cột chữ L, cột dính vách cùng layer, nét hở; không có "cột" nào từ mũi tên hay nét ghi chú.
+- Cửa sổ duyệt: mỗi nhóm một mục, mô tả như `C1 · 300x500 · 12 cột · Type 300x500 (BTC-CotCN_BeTong) · tại A-1, A-2…`.
+- Sau commit: cột đúng tâm, khoảng cách tới trục là bội 5 mm (đo bằng Dimension); cột vẽ lệch nhẹ được đặt thẳng theo trục; **cột chữ nhật đúng hướng b/h** (không bị xoay 90°); tham số Mark có ký hiệu.
+- **Giao trục:** cột vẽ lệch vài mm so với tâm giao trục được đặt đúng tâm; cột biên có mép vẽ gần trục được đặt mép trùng trục. So `tại A-1…` với tham số **Column Location Mark** của Revit. `emptyCrossings` liệt kê đúng các giao trục không có cột. Ghi lại cột nào bị nắn sai (ví dụ cột cố ý lệch 10 mm).
+- Đặt sẵn một cột của **family khác** ở một vị trí rồi propose: vị trí đó bị bỏ qua (không thành cột chồng cột).
+- Layer cột rất nhiều hatch: quét xong nhanh, không timeout.
+- Kiểm chứng tên tham số tiết diện của family `BTC-CotCN_BeTong` đúng là `b`/`h`.
+
+## 6. Vách: `scan_cad_walls` / `propose_walls`
+
+Vách dựng trước dầm: `propose_beams` dùng vách trong model làm gối tựa.
+
+> Quét vách từ CAD tầng 1 bằng scan_cad_walls (chọn layer vách), rồi propose_walls từ Tầng 1 lên Tầng 2.
+
+Đạt khi:
+- Mỗi nhóm (tên + bề dày) là một mục, mô tả như `V1 · dày 200 mm · 12 vách (15 đoạn) · Type BTC-VachKC_200`.
+- Sau commit: vách đúng tim, đúng chiều cao; Type `BTC-VachKC_<b>` được tạo khi thiếu.
+- Gọi lại `propose_walls` cùng scan → `alreadyModeledGroups`, không tạo vách đôi.
+- Ghi lại thời gian quét: cách quét vách còn là cách cũ (ghép cặp mọi line), sẽ được review sau.
+
+## 7. Dầm chính: `propose_beams`
+
+> Cột tầng 1 đã dựng (phần 5). Đề xuất dầm chính Tầng 2 từ CAD tầng 2 bằng propose_beams.
+
+Đạt khi:
+- Chạy xong nhanh trên bản vẽ thật (không timeout), dù không chọn layer.
+- Mỗi nhịp giữa hai cột liền nhau có dầm; dầm đặt **từ tim cột tới tim cột**; giao trục không có cột thì dầm chạy liền qua, không bị chia.
+- Dầm biên lệch trục (mép ngoài bằng mặt cột) đúng vị trí; tim dầm cách trục là bội 5 mm hoặc đúng 0 / mép trùng trục.
+- Mục duyệt ghi nhịp kiểu `A-1 → A-2 (trục A)`; ký hiệu dầm (Text Note) gán đúng dầm cùng phương, lan sang các nhịp thẳng hàng; Mark có ký hiệu.
+- `report.dangling` liệt kê dầm phụ/console (chưa dựng); `report.unusedMarks` liệt kê ký hiệu không gán được. Ghi lại dầm chính nào bị sót và vì sao (nét vẽ, khoảng đứt, layer).
+- Nhóm không có h (không có ký hiệu kích thước) bị chặn và Claude hỏi chiều cao.
+- **Kiểm chứng**: CAD import có Text Note không, hay chữ nằm trong DWG (Revit không đọc được) — khi đó dầm không có ký hiệu.
+- Kiểm chứng tên tham số tiết diện của family `BTC-DamCN_BeTong` đúng là `b`/`h`; dầm Revit tự cắt tại mặt cột khi join.
+
+## 8. Sàn: `propose_floors`
+
+Cần có dầm (phần 7) hoặc vách trên tầng đó.
+
+> Dùng propose_floors cho Tầng 2.
+
+Đạt khi:
+- Mỗi ô sàn là một mục `S1`, `S2`... (S1 ở góc trên trái), có diện tích; ô < 1 m² không xuất hiện (coi là lỗ).
+- Sau commit: sàn kết cấu đúng biên tim dầm, Type `BTC_SanKC_150` (tự tạo nếu thiếu).
+- Gọi lại `propose_floors` → mục có ghi chú "có thể trùng"; commit lần hai → `result.skipped`, không tạo sàn chồng.
+
 ## 9. An toàn khi ghi
 
 - Settings → bật **chế độ chỉ đọc** → nhờ Claude `commit_plan` một kế hoạch đã duyệt → bị từ chối; các `propose_*` vẫn chạy.
 - Tắt chỉ đọc. Propose một kế hoạch, duyệt, **sửa tay** model (dời một phần tử), rồi commit → báo kế hoạch cũ (`-32022`), không ghi gì.
 - Đóng cửa sổ duyệt giữa chừng → `open_plan_review` mở lại, các mục đã duyệt vẫn còn.
 
-## 10. Bộ dev
+## 10. Bộ dev: `send_code`, `command_set` và case
 
-Làm theo [07 — Hướng dẫn từng bước](07-dev-tools.md#hướng-dẫn-từng-bước-cho-lần-thử-đầu-tiên). Ba câu hỏi quan trọng nhất cần câu trả lời:
+Cần cài `-Dev` và `BIMTECH_DEV=1` (phần 0).
 
-1. `ping_revit` có `devTools: loaded` không (Roslyn nạp được trong Revit)?
-2. Linetype được Revit giữ theo từng đối tượng, hay chỉ theo layer?
-3. Tên trong vòng tròn đầu trục có đọc được (Text Note) không?
+**Đọc (`write=false`)**
 
-Kết thúc bằng `export_cad_case` cho CAD có trục đã dựng đúng, để có case thật đầu tiên.
+> Dùng send_code đếm số Level, Grid và cột trong model.
+
+Đạt khi: trả về con số đúng, `stage: "done"` (Roslyn nạp được trong Revit). Thử một đoạn code có lỗi cú pháp → `stage: "compile"` kèm số dòng; một vòng lặp vô hạn với `timeoutSeconds: 5` → `stage: "timeout"`, Revit không treo.
+
+**Ghi (`write=true`)**
+
+> Dùng send_code với write=true, purpose "Ghi Comments = test cho 3 cột đầu tiên": đặt tham số Comments của 3 cột đầu tiên thành "test".
+
+Đạt khi:
+- Kết quả có `preview` (ví dụ `modified: 3`, `Structural Columns`), model **chưa đổi**, cửa sổ duyệt có mục `CODE-1`. Bấm vào dòng: khung dưới hiện mục đích, kết quả chạy thử và **toàn bộ code**.
+- Duyệt → `commit_plan` → 3 cột có Comments "test"; **một lần Ctrl+Z** gỡ hết.
+- Làm lại nhưng sửa tay model trước khi commit → `commit_plan` từ chối (kế hoạch cũ).
+- Code tự mở `Transaction` với `write=true` → báo lỗi, không tạo kế hoạch.
+
+**Command set**
+
+> Lưu đoạn code vừa rồi thành command set "checks/set-comments" với tham số text (string) và count (number), rồi chạy lại nó bằng send_code với text "ok".
+
+Đạt khi: có file `commandsets/checks/set-comments.cs` và `.json` trong repo; `command_set list` thấy script; chạy bằng `script` + `args` đi qua cửa sổ duyệt như trên; `command_set history` liệt kê các lần chạy (file `logs/code-runs.jsonl`). Không muốn giữ thì xoá thư mục `commandsets/checks`.
+
+**Nhận diện và case** — làm theo [07 — Hướng dẫn từng bước](07-dev-tools.md#hướng-dẫn-từng-bước-cho-lần-thử-đầu-tiên). Câu hỏi quan trọng nhất:
+
+1. Linetype được Revit giữ theo từng đối tượng, hay chỉ theo layer?
+2. Tên trong vòng tròn đầu trục, ký hiệu cột, ký hiệu dầm có đọc được (Text Note) không?
+
+Kết thúc bằng `export_cad_case` cho CAD tầng 1 (có trục đã dựng đúng) và CAD tầng 2 (có dầm), để có case thật đầu tiên.
 
 ## Ghi kết quả
 
@@ -147,10 +189,10 @@ Kết thúc bằng `export_cad_case` cho CAD có trục đã dựng đúng, đ�
 | 1. Kết nối | | |
 | 2. Tầng | | |
 | 3. Trục | | |
-| 4. Cột | | |
-| 5. Dầm | | |
+| 4. Cọc, đài | | |
+| 5. Cột | | |
 | 6. Vách | | |
-| 7. Sàn | | |
-| 8. Cọc, đài | | |
+| 7. Dầm | | |
+| 8. Sàn | | |
 | 9. An toàn | | |
 | 10. Bộ dev | | |
