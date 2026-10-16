@@ -44,10 +44,19 @@ flowchart LR
    - **Level thừa**: level không có phần tử nào phụ thuộc ngoài các view của chính nó, không view nào nằm trên sheet hay đang mở, và không được giữ hoặc đổi tên trong kế hoạch, được đề xuất xoá thành mục `D1`, `D2`... **mặc định Bỏ**; người dùng duyệt mục đó thì mới xoá (kèm các view của nó). Lúc commit kiểm tra lại, có gì phụ thuộc thì không xoá. Tắt bằng `proposeLevelCleanup: false`.
 2. Người dùng duyệt trong Revit → `get_plan_status` → `commit_plan`. Mỗi tầng một Transaction, cả lượt một Ctrl+Z.
 3. `list_cad_sources` lấy ID các CAD vừa nhập.
-4. `propose_grids` với `cadId` là CAD có layer trục (tên chứa GRID, TRUC/TRỤC hoặc AXIS) và `alignCadIds` là CAD các tầng còn lại. Lõi `GridBuilder.Plan` gộp nét theo toạ độ, đặt tên trục đứng 1, 2, 3… và trục ngang A, B, C… từ dưới trái, làm tròn khoảng cách theo mm.
-   - Mục `move_cad` (M1, M2…): dời từng CAD để giao điểm 1-A trùng Project Base Point. CAD đang ghim được bỏ ghim rồi ghim lại. Không có mục này khi CAD đã đúng chỗ.
-   - Mục `create_grid` (G-1, G-A…): một trục mỗi mục. Trục trùng tên Grid đã có thành `blocked`.
+4. `propose_grids` với `cadId` là CAD có trục và `alignCadIds` là CAD các tầng còn lại.
+   - **Tìm trục** (`addin/Recognition/GridRecognizer.cs`): line dài đứng/ngang (phủ ít nhất 30% bản vẽ) theo từng graphics style, chấm điểm theo **line pattern** (nét tâm, chấm gạch) trước, rồi **vòng tròn đầu trục**, cuối cùng **tên layer** (GRID, TRUC/TRỤC, AXIS). Chọn sai thì truyền `gridLayer`. Không tìm được trục ở cả hai phương thì báo lỗi kèm điểm của từng style.
+   - **Tên trục** lấy từ text trong vòng tròn đầu trục khi đọc được (Text Note), giữ được `1'`, `C1`; không thì trục đứng 1, 2, 3… trái sang phải, trục ngang A, B, C… dưới lên. Hai trục cùng tên thì trục sau bị chặn.
+   - **Sửa nhịp lệch** (`GridLayout.Snap`): mỗi nhịp giữa hai trục liền nhau được làm tròn về bội của `snapModuleMm` (mặc định 50) khi lệch không quá `snapToleranceMm` (mặc định 10): 5998,7 → 6000. Vị trí trục là tổng các nhịp đã làm tròn tính từ trục đầu, nên sai số không cộng dồn. Nhịp lệch quá ngưỡng giữ số đo (làm tròn 1 mm) và có ghi chú. `snapModuleMm: 0` chỉ làm tròn 1 mm.
+   - **Trục đầu tiên** mỗi phương (trái nhất, dưới nhất) nằm trên Project Base Point.
+   - **Căn từng CAD theo trục của chính nó** (`GridLayout.Match`): tìm trục trong từng CAD của `alignCadIds` và đối chiếu khoảng cách trục với CAD gốc (sai số 20 mm, cho phép bản vẽ tầng chỉ có một phần các trục). Khớp duy nhất thì CAD đó dời theo vector riêng; không tìm được trục hoặc khớp nhiều chỗ (lưới đều) thì dời theo vector của CAD gốc và mục `move_cad` ghi rõ để người duyệt kiểm tra.
+   - **Trục xiên** chưa dựng: được đếm và cảnh báo, không bỏ qua lặng lẽ.
+   - Mục `move_cad` (M1, M2…) và `create_grid` (G-1, G-A…), mô tả như `Trục B (ngang): y = 6000 mm từ gốc, nhịp 6000`. Trục và CAD được **ghim** sau khi ghi (`pin: false` để không ghim). Trục trùng tên Grid đã có thì bị chặn.
 5. Duyệt → `commit_plan`. Bỏ mục `move_cad` thì trục vẫn dựng tại Project Base Point nhưng CAD đó lệch khỏi trục.
+
+Sau khi nhập CAD (`propose_levels`), kết quả commit có `cadWarning` khi CAD nằm cách gốc toạ độ trên 10 km (bản vẽ dùng toạ độ thực tế như VN-2000). `propose_grids` sẽ dời nó về trục.
+
+`GridBuilder` (lõi cũ, chỉ theo tên layer) vẫn dùng cho tool WPF qua `LevelSetup.ApplyRow`, không còn dùng trong MCP.
 
 ## Vách và sàn (đi qua cửa sổ duyệt)
 

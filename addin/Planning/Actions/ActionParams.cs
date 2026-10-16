@@ -24,6 +24,15 @@ internal static class ActionParams
     public static double? OptionalNumber(JsonElement parameters, string name) =>
         !parameters.TryGetProperty(name, out var value) || value.ValueKind == JsonValueKind.Null ? null : Number(parameters, name);
 
+    public static bool? OptionalBool(JsonElement parameters, string name) =>
+        !parameters.TryGetProperty(name, out var value) ? null : value.ValueKind switch
+        {
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.Null => null,
+            _ => throw new PlanActionException($"The plan item's '{name}' must be true or false."),
+        };
+
     public static ElementId Id(JsonElement parameters, string name)
     {
         var text = Text(parameters, name);

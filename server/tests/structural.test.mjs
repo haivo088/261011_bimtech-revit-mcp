@@ -101,7 +101,9 @@ test("level and grid proposals forward their input unchanged", async (t) => {
     proposeLevelCleanup: false,
   };
   assert.equal((await client.callTool({ name: "propose_levels", arguments: levelArgs })).isError, false);
-  const gridArgs = { cadId: "501", alignCadIds: ["502", "503"] };
+  const gridArgs = {
+    cadId: "501", alignCadIds: ["502", "503"], gridLayer: "KC-TRUC", snapModuleMm: 100, snapToleranceMm: 5, pin: false,
+  };
   assert.equal((await client.callTool({ name: "propose_grids", arguments: gridArgs })).isError, false);
   assert.deepEqual(requests.map((request) => request.method), ["propose_levels", "propose_grids"]);
   assert.deepEqual(requests[0].params, levelArgs);
@@ -124,6 +126,8 @@ test("level and grid proposals reject malformed input before contacting Revit", 
     { name: "suggest_levels_from_folder", arguments: {} },
     { name: "propose_grids", arguments: {} },
     { name: "propose_grids", arguments: { cadId: "501", alignCadIds: ["CAD-2"] } },
+    { name: "propose_grids", arguments: { cadId: "501", snapToleranceMm: 500 } },
+    { name: "propose_grids", arguments: { cadId: "501", gridLayer: "" } },
   ];
   for (const call of invalidCalls) {
     const result = await client.callTool(call);

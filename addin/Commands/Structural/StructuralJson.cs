@@ -16,11 +16,11 @@ internal static class StructuralJson
     public static object Ref(Element element) => new { id = RevitJson.Id(element.Id), name = ElementQuery.SafeName(element) };
 
     // A CAD instance is named after its type (the file or block name); the instance name is just "location".
-    public static object CadRef(Document document, ImportInstance cad)
-    {
-        var type = document.GetElement(cad.GetTypeId());
-        return new { id = RevitJson.Id(cad.Id), name = ElementQuery.SafeName(type ?? cad) };
-    }
+    public static object CadRef(Document document, ImportInstance cad) =>
+        new { id = RevitJson.Id(cad.Id), name = CadName(document, cad) };
+
+    public static string CadName(Document document, ImportInstance cad) =>
+        ElementQuery.SafeName(document.GetElement(cad.GetTypeId()) ?? cad);
 
     public static object ColumnType(FamilySymbol symbol) => new
     {

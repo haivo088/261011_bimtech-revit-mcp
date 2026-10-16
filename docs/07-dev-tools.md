@@ -135,7 +135,7 @@ Mỗi bản vẽ mới đi qua bước 3–7 là thêm một case vào thư vi�
 | `GridRecognizer.cs` | Nhận diện trục: line dài đứng/ngang theo từng graphics style, chấm điểm theo **line pattern** (nét tâm, nét chấm gạch) trước, rồi **vòng tròn đầu trục**, cuối cùng **tên layer**. Tên trục đọc từ text trong vòng tròn (giữ được `1'`, `C1`); trục không đọc được tên thì đánh số tránh các tên đã có |
 | `GridComparison.cs` | So kết quả với đáp án |
 
-Chưa dùng `GridRecognizer` trong `propose_grids`; sẽ thay `GridBuilder` khi đã qua đủ case thật.
+`propose_grids` dùng chính `GridRecognizer` và `GridLayout` (làm tròn nhịp, đối chiếu hệ trục giữa các tầng), nên mỗi case được sửa ở đây là sửa luôn cho người dùng.
 
 ## Điều chưa kiểm chứng
 

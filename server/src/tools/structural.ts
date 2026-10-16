@@ -90,17 +90,28 @@ export const proposeGrids = defineTool({
   method: "propose_grids",
   title: "Propose grids from CAD",
   description:
-    "Plan grids read from one CAD drawing, without changing the model. Uses the CAD layer whose name contains GRID,"
-    + " TRUC/TRỤC or AXIS; vertical axes are named 1, 2, 3... and horizontal ones A, B, C... from the bottom left."
-    + " Grids are placed so grid 1-A sits on the Project Base Point, and the plan also moves this CAD (and every CAD"
-    + " in alignCadIds, usually the other storeys' CAD from propose_levels) by the same vector so drawings stay on"
-    + " the grids. One review item per grid and per CAD move; grids whose name already exists are Blocked."
-    + " Opens the review window in Revit and returns a planId at once; then get_plan_status and commit_plan.",
+    "Plan grids read from one CAD drawing, without changing the model. Grid lines are found by their line pattern"
+    + " (center / dash-dot) first, then circles with a name at their ends (grid bubbles), then a layer name with GRID,"
+    + " TRUC/TRỤC or AXIS; or pass gridLayer. Names come from the bubbles when their text is readable as Text Notes,"
+    + " else 1, 2, 3... (vertical, left to right) and A, B, C... (horizontal, bottom up). Each bay is snapped to"
+    + " snapModuleMm when within snapToleranceMm (5998.7 → 6000) and grids are laid out from the first axis, which"
+    + " sits on the Project Base Point. This CAD and every CAD in alignCadIds (usually the other storeys' CAD) is moved"
+    + " by its own vector, found by matching its axes to this grid; where that fails it uses this CAD's vector and says"
+    + " so. Skewed grids are reported, not built. Grids and moved CAD are pinned unless pin is false. One review item"
+    + " per grid and per CAD move; names already in the model are Blocked. Opens the review window in Revit and returns"
+    + " a planId at once; then get_plan_status and commit_plan.",
   inputSchema: {
-    cadId: elementId.describe("CAD import or link with the grid layer, from list_cad_sources."),
+    cadId: elementId.describe("CAD import or link with the grid lines, from list_cad_sources."),
     viewId,
     alignCadIds: z.array(elementId).max(200).optional()
-      .describe("Other CAD imports or links to move with it, e.g. every storey's CAD."),
+      .describe("Other CAD imports or links to move onto the grid, e.g. every storey's CAD."),
+    gridLayer: z.string().min(1).max(255).optional()
+      .describe("CAD layer holding the grid lines, when automatic detection picks the wrong one."),
+    snapModuleMm: z.number().min(0).max(1000).optional()
+      .describe("Bays are snapped to multiples of this (default 50). 0 only rounds to whole mm."),
+    snapToleranceMm: z.number().min(0).max(100).optional()
+      .describe("Largest drawing error snapped away (default 10); bays further off keep their measured size."),
+    pin: z.boolean().optional().describe("Pin the new grids and moved CAD (default true)."),
   },
   annotations: propose,
   timeoutMs: 120000,

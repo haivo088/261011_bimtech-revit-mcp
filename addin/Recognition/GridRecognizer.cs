@@ -48,7 +48,8 @@ public static class GridRecognizer
         public (double X, double Y) End => Vertical ? (Coordinate, Max) : (Max, Coordinate);
     }
 
-    public static GridRecognition Recognize(CadCase data)
+    // layer: the grid layer named by the person; it is used whatever its score.
+    public static GridRecognition Recognize(CadCase data, string? layer = null)
     {
         var warnings = new List<string>();
         if (data.Lines.Count == 0)
@@ -69,13 +70,38 @@ public static class GridRecognizer
         }
         scores = scores.OrderByDescending(score => score.Score).ToList();
 
-        var best = scores.FirstOrDefault();
-        if (best is null || best.Score < MinScore)
+        List<int> chosen;
+        double styleScore;
+        if (layer is not null)
         {
-            warnings.Add("Không style nào đủ tín hiệu của trục (nét tâm, đầu trục tròn có tên, hoặc tên layer GRID/TRỤC/AXIS).");
-            return new GridRecognition([], scores, [], warnings);
+            // The person named the grid layer: take it whatever its score.
+            var onLayer = scores.Where(score => string.Equals(score.Layer, layer, StringComparison.OrdinalIgnoreCase)).ToList();
+            if (onLayer.Count == 0)
+            {
+                warnings.Add($"Layer \"{layer}\" không có đường dài đứng hoặc ngang nào.");
+                return new GridRecognition([], scores, [], warnings);
+            }
+            chosen = onLayer.Select(score => score.Style).ToList();
+            styleScore = Math.Max(MinScore * 2, onLayer.Max(score => score.Score));
         }
-        var chosen = scores.Where(score => score.Score >= Math.Max(MinScore, best.Score * 0.75)).Select(score => score.Style).ToList();
+        else
+        {
+            var best = scores.FirstOrDefault();
+            if (best is null || best.Score < MinScore)
+            {
+                warnings.Add("Không style nào đủ tín hiệu của trục (nét tâm, đầu trục tròn có tên, hoặc tên layer GRID/TRỤC/AXIS).");
+                return new GridRecognition([], scores, [], warnings);
+            }
+            chosen = scores.Where(score => score.Score >= Math.Max(MinScore, best.Score * 0.75)).Select(score => score.Style).ToList();
+            styleScore = best.Score;
+        }
+
+        // Long lines on the grid styles that are neither horizontal nor vertical: skewed grids, not supported yet.
+        var longest = Math.Max(width, height) * MinRelativeLength;
+        var skewed = data.Lines.Count(line => chosen.Contains(line.Style) && line.Length >= Math.Max(MinLengthMm, longest)
+            && Math.Abs(line.X1 - line.X0) / line.Length > AxisTolerance && Math.Abs(line.Y1 - line.Y0) / line.Length > AxisTolerance);
+        if (skewed > 0)
+            warnings.Add($"{skewed} đường dài xiên trên style trục: trục xiên chưa được hỗ trợ, không dựng. Dựng tay các trục đó.");
 
         var axesAll = Merge(chosen.SelectMany(style => axesByStyle[style]).Select(axis =>
             new Candidate(axis.Vertical
@@ -84,7 +110,7 @@ public static class GridRecognizer
         if (!axesAll.Any(axis => axis.Vertical) || !axesAll.Any(axis => !axis.Vertical))
             warnings.Add("Chỉ tìm thấy trục theo một phương.");
 
-        var grids = Name(axesAll, circles, data.Texts, best.Score, warnings);
+        var grids = Name(axesAll, circles, data.Texts, styleScore, warnings);
         return new GridRecognition(grids, scores, chosen, warnings);
     }
 

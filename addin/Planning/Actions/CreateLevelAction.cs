@@ -71,6 +71,9 @@ public sealed class CreateLevelAction : IPlanAction
     // (drawn in metres but imported as mm, or the reverse), which the person should know before building on it.
     private const double MinPlausibleSizeMm = 2_000;
     private const double MaxPlausibleSizeMm = 2_000_000;
+    // Drawings in survey coordinates (VN-2000) sit hundreds of km out; Revit draws and computes poorly that far
+    // from the internal origin. propose_grids moves the CAD onto the grid, but the person should know.
+    private const double FarFromOriginMm = 10_000_000;
 
     private static (double? SizeMm, string? Warning) CheckCadSize(Document document, ElementId cadId, ElementId planId)
     {
@@ -78,11 +81,15 @@ public sealed class CreateLevelAction : IPlanAction
         var box = document.GetElement(cadId)?.get_BoundingBox(document.GetElement(planId) as View);
         if (box is null) return (null, "Không đọc được kích thước CAD vừa nhập.");
         var size = Math.Round(Math.Max(UnitConvert.Length(box.Max.X - box.Min.X), UnitConvert.Length(box.Max.Y - box.Min.Y)));
+        var center = (box.Min + box.Max) / 2;
+        var distance = UnitConvert.Length(new XYZ(center.X, center.Y, 0).GetLength());
         return size switch
         {
             < MinPlausibleSizeMm => (size, $"CAD chỉ rộng {size:0} mm: có thể bản vẽ dùng mét nhưng được đọc là mm. "
                 + "Huỷ (Ctrl+Z) và propose lại với cadUnit \"m\" hoặc \"auto\"."),
             > MaxPlausibleSizeMm => (size, $"CAD rộng {size / 1000:0} m: có thể đơn vị bị đọc sai, hoặc có đối tượng nằm rất xa gốc toạ độ."),
+            _ when distance > FarFromOriginMm => (size, $"CAD nằm cách gốc toạ độ {distance / 1_000_000:0.#} km (bản vẽ dùng toạ độ "
+                + "thực tế?). propose_grids sẽ dời nó về trục; tới lúc đó Revit có thể hiển thị và tính toán sai."),
             _ => (size, null),
         };
     }

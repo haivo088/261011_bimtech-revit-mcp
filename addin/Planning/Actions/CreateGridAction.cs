@@ -5,8 +5,8 @@ using Bimtech.StructuralCore.Levels;
 
 namespace Bimtech.RevitMcp.Planning.Actions;
 
-// Writes the grid items of propose_grids: one grid line per item, in model coordinates (mm).
-//   { "name": "B", "startMm": { "x": .., "y": .. }, "endMm": { "x": .., "y": .. }, ... }
+// Writes the grid items of propose_grids: one grid line per item, in model coordinates (mm), pinned unless pin is false.
+//   { "name": "B", "startMm": { "x": .., "y": .. }, "endMm": { "x": .., "y": .. }, "pin": true, ... }
 public sealed class CreateGridAction : IPlanAction
 {
     public string Action => "create_grid";
@@ -22,7 +22,9 @@ public sealed class CreateGridAction : IPlanAction
         try
         {
             var grid = GridBuilder.CreateNamedGrid(document, Line.CreateBound(start, end), name);
-            return new { gridId = RevitJson.Id(grid.Id), name };
+            // Grids are what every later element is placed against; pinning stops an accidental drag.
+            if (ActionParams.OptionalBool(parameters, "pin") ?? true) grid.Pinned = true;
+            return new { gridId = RevitJson.Id(grid.Id), name, pinned = grid.Pinned };
         }
         catch (InvalidOperationException exception)
         {

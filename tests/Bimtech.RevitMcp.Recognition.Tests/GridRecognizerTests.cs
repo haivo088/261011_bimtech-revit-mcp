@@ -119,6 +119,38 @@ public sealed class GridRecognizerTests
     }
 
     [Fact]
+    public void A_named_layer_is_used_even_without_any_grid_evidence()
+    {
+        var drawing = Drawing.Plan("KC-01", "Solid", null, null);
+
+        Assert.Empty(GridRecognizer.Recognize(drawing.Case).Grids);
+        var result = GridRecognizer.Recognize(drawing.Case, layer: "kc-01");
+
+        Assert.Equal(["1", "2", "3", "A", "B"], result.Grids.Select(grid => grid.Name));
+    }
+
+    [Fact]
+    public void A_named_layer_without_long_lines_gives_nothing_and_says_why()
+    {
+        var result = GridRecognizer.Recognize(Drawing.Plan("KC-01", "CENTER", null, null).Case, layer: "TEXT");
+
+        Assert.Empty(result.Grids);
+        Assert.Contains(result.Warnings, warning => warning.Contains("\"TEXT\""));
+    }
+
+    [Fact]
+    public void Skewed_grid_lines_are_reported_not_dropped_silently()
+    {
+        var drawing = Drawing.Plan("KC-01", "CENTER", ["1", "2", "3"], ["A", "B"]);
+        drawing.Line(0, 12000, 0, 20000, 6000);
+
+        var result = GridRecognizer.Recognize(drawing.Case);
+
+        Assert.Equal(5, result.Grids.Count);
+        Assert.Contains(result.Warnings, warning => warning.Contains("1 đường dài xiên"));
+    }
+
+    [Fact]
     public void Comparison_with_the_truth_reports_matches_wrong_names_and_misses()
     {
         var drawing = Drawing.Plan("KC-01", "CENTER", ["1", "2", "3"], ["A", "B"]);

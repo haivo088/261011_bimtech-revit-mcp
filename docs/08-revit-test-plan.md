@@ -54,9 +54,14 @@ Kết quả này quyết định mốc cao độ cho bản nâng cấp U2 (nhậ
 > Dùng list_cad_sources. Rồi propose_grids với cadId là CAD tầng 1, alignCadIds là CAD các tầng còn lại.
 
 Đạt khi:
-- Cửa sổ duyệt có mục `M1`, `M2`... (dời CAD) và `G-1`, `G-2`..., `G-A`... (mỗi trục một mục), mô tả `Trục B (ngang): y = ... mm, dài ... m`.
-- Sau commit: trục đứng tên 1, 2, 3... trái sang phải, trục ngang A, B, C... dưới lên; giao điểm 1-A trùng Project Base Point; CAD của **mọi tầng** nằm khớp lên trục.
+- Cửa sổ duyệt có mục `M1`, `M2`... (dời CAD) và `G-1`, `G-2`..., `G-A`... (mỗi trục một mục), mô tả `Trục B (ngang): y = 6000 mm từ gốc, nhịp 6000`.
+- Tên trục: nếu text đầu trục là Text Note thì đúng tên trên bản vẽ; không thì 1, 2, 3... / A, B, C... kèm ghi chú "tên tự đánh".
+- Nhịp vẽ lệch (5998,7) có ghi chú `Nhịp đo 5998.7 mm → 6000 mm`; sau commit đo bằng Dimension trong Revit ra đúng số tròn.
+- Mỗi mục dời CAD tầng khác ghi **"Căn theo trục của chính CAD này"**. Thử với hai file tầng vẽ ở hai chỗ khác nhau trong DWG: cả hai vẫn nằm khớp trục sau commit. Mục nào ghi "Dời theo vector của CAD gốc" thì kiểm tra kỹ CAD đó.
+- Sau commit: giao điểm trục đầu tiên hai phương trùng Project Base Point; trục và CAD đã **ghim**.
 - Gọi lại `propose_grids` → mọi trục bị blocked vì trùng tên, không có mục dời CAD.
+- Bản vẽ có layer trục tên lạ: nếu tự nhận sai thì gọi lại với `gridLayer`. Ghi lại style được chọn và điểm (`styleScores`) để bổ sung quy tắc.
+- Bản vẽ có trục xiên: kết quả có cảnh báo "đường dài xiên".
 
 ## 4. Cột (đã từng chạy, thử lại để chắc không hỏng)
 
