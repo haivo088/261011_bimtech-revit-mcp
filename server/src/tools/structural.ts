@@ -241,10 +241,12 @@ export const proposeColumns = defineTool({
   title: "Propose columns from scan",
   description:
     "Plan structural columns from a scan between two levels, without changing the model. One review item per group"
-    + " (mark and size). Each column's offset from the nearest grid is rounded to snapMm (default 5); a column drawn"
-    + " within 2° of the grid direction is set straight; columns drawn twice are placed once; columns already in the"
-    + " model at that spot (any family) are skipped; columns further than gridDistanceMm (default 1000) from every grid"
-    + " are flagged. Type per group: its entry in 'types', else an existing type with matching b/h, else a b×h type"
+    + " (mark and size). Columns usually stand at grid crossings: per direction, a column drawn within gridToleranceMm"
+    + " (default 15) of centred on a grid or of its face on the grid is set exactly there, other offsets are rounded to"
+    + " snapMm (default 5). Items name the crossings (\"A-1\"); columns on one grid only or on none are flagged; grid"
+    + " crossings with no column are returned in emptyCrossings for the user to check. A column drawn within 2° of the"
+    + " grid direction is set straight; columns drawn twice are placed once; columns already in the model at that spot"
+    + " (any family) are skipped. Type per group: its entry in 'types', else an existing type with matching b/h, else a b×h type"
     + " created in templateFamilyId. The mark goes to the Mark parameter (writeMark, default true). Opens the review"
     + " window and returns a planId at once; then get_plan_status and commit_plan.",
   inputSchema: {
@@ -256,8 +258,10 @@ export const proposeColumns = defineTool({
       .describe("Column family (familyId from a scan type or load_default_family) in which to create types for groups with no matching type."),
     snapMm: z.number().min(0).max(100).optional()
       .describe("Round each column's offset from the nearest grid to this (default 5); 0 keeps the drawing's position."),
-    gridDistanceMm: z.number().min(0).max(100000).optional()
-      .describe("Flag columns further than this from every grid in both directions (default 1000)."),
+    gridToleranceMm: z.number().min(0).max(100).optional()
+      .describe("A column drawn this close to centred on a grid, or to its face on the grid, is set exactly there (default 15)."),
+    gridMarginMm: z.number().min(0).max(5000).optional()
+      .describe("A grid counts as passing through a column when within this of its faces (default 300)."),
     writeMark: z.boolean().optional().describe("Write the column mark to the Mark parameter (default true)."),
   },
   annotations: propose,

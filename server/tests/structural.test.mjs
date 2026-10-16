@@ -11,7 +11,7 @@ test("propose_columns forwards the type map and options", async (t) => {
   const client = await mcpClient(t, options.port);
   const args = {
     scanId: "scan-1", baseLevelId: "311", topLevelId: "694", types: { "C1": "12345", "300x500": "12346" },
-    snapMm: 5, gridDistanceMm: 1500, writeMark: false,
+    snapMm: 5, gridToleranceMm: 20, gridMarginMm: 400, writeMark: false,
   };
   const result = await client.callTool({ name: "propose_columns", arguments: args });
   assert.equal(result.isError, false);

@@ -1,4 +1,5 @@
 using Autodesk.Revit.DB;
+using Bimtech.RevitMcp.Recognition;
 using View = Autodesk.Revit.DB.View;
 
 namespace Bimtech.StructuralCore.Piles;
@@ -87,6 +88,27 @@ internal static class PileGridSnapper
             group.Count == 0 ? null : group.Min(g => Math.Abs(coordinate - Project(((Line)g.Curve!).GetEndPoint(0), axis)));
         return point => (Nearest(Project(point, uAxis), vGroup, uAxis), Nearest(Project(point, vAxis), uGroup, vAxis));
     }
+
+    /// <summary>Hệ trục của view trong khung riêng của nó (mm): U/V là 2 phương, AlongU là các Grid chạy theo U (toạ độ v
+    /// cố định), AlongV ngược lại. Dùng cho GridIntersections (cột tại giao trục). Null khi view không có Grid.</summary>
+    public static GridFrame? PlanGridFrame(Document doc, View view)
+    {
+        var lineGrids = LineGridsOf(doc, view);
+        if (DetectGridAxes(lineGrids) is not { } axes) return null;
+        var (uAxis, vAxis) = axes;
+        List<GridIntersections.Axis> Family(XYZ along, XYZ across) => lineGrids
+            .Where(g => IsParallel(GridDirection(g), along))
+            .Select(g =>
+            {
+                var line = (Line)g.Curve!;
+                var (a, b) = (line.GetEndPoint(0), line.GetEndPoint(1));
+                return new GridIntersections.Axis(g.Name, Mm(Project(a, across)), Mm(Project(a, along)), Mm(Project(b, along)));
+            })
+            .ToList();
+        return new GridFrame(uAxis, vAxis, Family(uAxis, vAxis), Family(vAxis, uAxis));
+    }
+
+    private static double Mm(double feet) => UnitUtils.ConvertFromInternalUnits(feet, UnitTypeId.Millimeters);
 
     private static double Project(XYZ point, XYZ axis) => point.X * axis.X + point.Y * axis.Y;
 
@@ -202,6 +224,10 @@ internal static class PileGridSnapper
         return (line.GetEndPoint(1) - line.GetEndPoint(0)).Normalize();
     }
 }
+
+/// <summary>Hệ trục của 1 view: 2 phương (vector đơn vị) và 2 họ Grid theo mm trong khung đó.</summary>
+internal sealed record GridFrame(
+    XYZ UAxis, XYZ VAxis, IReadOnlyList<GridIntersections.Axis> AlongU, IReadOnlyList<GridIntersections.Axis> AlongV);
 
 /// <summary>Kết quả 1 lượt snap cọc/đài vừa đặt theo Grid.</summary>
 internal sealed record SnapSummary(int Snapped, int AlreadyRound, int SkippedNoGrid);

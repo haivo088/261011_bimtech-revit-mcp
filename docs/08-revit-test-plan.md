@@ -70,8 +70,9 @@ Kết quả này quyết định mốc cao độ cho bản nâng cấp U2 (nhậ
 Đạt khi:
 - Nhóm theo ký hiệu (`C1`, `C2`) nếu ký hiệu là Text Note, không thì theo `300x500` (cạnh nhỏ trước). Nhóm có ký hiệu ghi kích thước khác hình vẽ thì có `tagSizeMismatch`.
 - `notRectangles` liệt kê cột chữ L, cột dính vách cùng layer, nét hở; không có "cột" nào từ mũi tên hay nét ghi chú.
-- Cửa sổ duyệt: mỗi nhóm một mục, mô tả như `C1 · 300x500 · 12 cột · Type 300x500 (BTC-CotCN_BeTong)`.
+- Cửa sổ duyệt: mỗi nhóm một mục, mô tả như `C1 · 300x500 · 12 cột · Type 300x500 (BTC-CotCN_BeTong) · tại A-1, A-2…`.
 - Sau commit: cột đúng tâm, khoảng cách tới trục là bội 5 mm (đo bằng Dimension); cột vẽ lệch nhẹ được đặt thẳng theo trục; **cột chữ nhật đúng hướng b/h** (không bị xoay 90°); tham số Mark có ký hiệu.
+- **Giao trục:** cột vẽ lệch vài mm so với tâm giao trục được đặt đúng tâm; cột biên có mép vẽ gần trục được đặt mép trùng trục. So `tại A-1…` với tham số **Column Location Mark** của Revit. `emptyCrossings` liệt kê đúng các giao trục không có cột. Ghi lại cột nào bị nắn sai (ví dụ cột cố ý lệch 10 mm).
 - Đặt sẵn một cột của **family khác** ở một vị trí rồi propose: vị trí đó bị bỏ qua (không thành cột chồng cột).
 - Layer cột rất nhiều hatch: quét xong nhanh, không timeout.
 - Kiểm chứng tên tham số tiết diện của family `BTC-CotCN_BeTong` đúng là `b`/`h`.
