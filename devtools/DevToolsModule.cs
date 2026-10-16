@@ -9,5 +9,6 @@ public sealed class DevToolsModule : IDevToolsModule
     public IEnumerable<IRevitCommand> CreateCommands() =>
     [
         new RunRevitQueryCommand(),
+        new ExportCadCaseCommand(),
     ];
 }

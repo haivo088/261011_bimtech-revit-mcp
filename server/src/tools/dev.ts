@@ -1,5 +1,7 @@
+import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { defineTool, readOnly, type RevitTool } from "./define.js";
+import { elementId } from "./schemas.js";
 
 // Developer-only tools, backed by Bimtech.RevitMcp.DevTools.dll (devtools/). The server registers them only
 // when BIMTECH_DEV=1, and the add-in only knows them when that DLL is installed next to it.
@@ -25,6 +27,35 @@ export const runRevitQuery = defineTool({
   timeoutMs: 120000,
 });
 
+// cases/ at the repository root (gitignored); BIMTECH_CASES_DIR overrides it.
+export const caseRoot = process.env.BIMTECH_CASES_DIR ?? fileURLToPath(new URL("../../../cases/", import.meta.url));
+
+const cadId = elementId.describe("CAD import or link ID from list_cad_sources.");
+const viewId = elementId.optional()
+  .describe("Plan view showing the CAD. Defaults to the CAD's own view if it is view-specific, else the active view.");
+
+export const exportCadCase = defineTool({
+  name: "export_cad_case",
+  method: "export_cad_case",
+  title: "Export a CAD case (developer)",
+  description:
+    "Developer tool. Save one CAD import as plain data (lines, arcs, circles, polylines with layer, line pattern and"
+    + " color; Text Notes of the view) to cases/<caseId>/case.json on this machine, for developing and"
+    + " regression-testing recognition rules outside Revit. With includeTruth (default), the grids already in the"
+    + " model are saved as the truth: export after the user built and approved the grids of this drawing.",
+  inputSchema: {
+    cadId,
+    viewId,
+    notes: z.string().max(2000).optional().describe("Free notes about the drawing, e.g. its source or quirks."),
+    includeTruth: z.boolean().optional().describe("Save the model's grids as truth (default true)."),
+    maxEntities: z.number().int().min(1).max(2000000).optional().describe("Stop after this many entities (default 300000)."),
+  },
+  annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: false },
+  timeoutMs: 120000,
+  toParams: (input) => ({ ...input, caseRoot }),
+});
+
 export const devTools: readonly RevitTool[] = [
   runRevitQuery,
+  exportCadCase,
 ];

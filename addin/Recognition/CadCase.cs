@@ -1,0 +1,123 @@
+using System.IO;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
+namespace Bimtech.RevitMcp.Recognition;
+
+// A CAD drawing as plain data: what the add-in read from one CAD import, with no Revit types, so recognition
+// rules can run and be tested outside Revit. Saved by export_cad_case as cases/<caseId>/case.json; every saved
+// case with a Truth becomes a regression test (tests/Bimtech.RevitMcp.Recognition.Tests).
+// Lengths are millimeters in model coordinates, angles degrees.
+public sealed class CadCase
+{
+    public const int CurrentSchema = 1;
+
+    public int Schema { get; set; } = CurrentSchema;
+    public string CaseId { get; set; } = "";
+    public DateTimeOffset CreatedAt { get; set; }
+    public CadCaseSource Source { get; set; } = new();
+    public string? Notes { get; set; }
+
+    // Every graphics style used by the geometry; entities point to it by index.
+    public List<CadStyle> Styles { get; set; } = [];
+    public List<CadLine> Lines { get; set; } = [];
+    public List<CadArc> Arcs { get; set; } = [];
+    public List<CadPolyline> Polylines { get; set; } = [];
+    // Text Notes of the view, since text inside a DWG import is not exposed by the Revit API.
+    public List<CadText> Texts { get; set; } = [];
+    // Geometry kinds that were not exported (ellipses, splines, solids...), with their counts.
+    public Dictionary<string, int> Skipped { get; set; } = [];
+
+    // What the drawing really contains, confirmed by a person (e.g. the grids built from it and approved).
+    public CadTruth? Truth { get; set; }
+
+    public static readonly JsonSerializerOptions Json = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals,
+        // Keeps Vietnamese layer names and texts readable in the file; it is never embedded in HTML.
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+    };
+
+    public static CadCase Load(string path) =>
+        JsonSerializer.Deserialize<CadCase>(File.ReadAllText(path), Json)
+        ?? throw new InvalidDataException($"{path} is not a CAD case.");
+
+    public void Save(string path) => File.WriteAllText(path, JsonSerializer.Serialize(this, Json));
+}
+
+public sealed class CadCaseSource
+{
+    public string Document { get; set; } = "";
+    public string CadName { get; set; } = "";
+    public string? CadId { get; set; }
+    public bool IsLinked { get; set; }
+    public string? View { get; set; }
+    public string? Level { get; set; }
+}
+
+// One Revit graphics style of the import: its layer and how the layer draws.
+// LinePattern is null when Revit reports none; "Solid" for continuous lines.
+public sealed class CadStyle
+{
+    public string Layer { get; set; } = "";
+    public string? LinePattern { get; set; }
+    public string? Color { get; set; }
+    // The import's own category the layer belongs to (usually the DWG file name).
+    public string? Category { get; set; }
+}
+
+public sealed class CadLine
+{
+    public int Style { get; set; }
+    public double X0 { get; set; }
+    public double Y0 { get; set; }
+    public double X1 { get; set; }
+    public double Y1 { get; set; }
+
+    [JsonIgnore] public double Length => Math.Sqrt((X1 - X0) * (X1 - X0) + (Y1 - Y0) * (Y1 - Y0));
+}
+
+// A circle when IsCircle; else an arc counterclockwise from StartDeg to EndDeg.
+public sealed class CadArc
+{
+    public int Style { get; set; }
+    public double Cx { get; set; }
+    public double Cy { get; set; }
+    public double R { get; set; }
+    public bool IsCircle { get; set; }
+    public double StartDeg { get; set; }
+    public double EndDeg { get; set; }
+}
+
+// Points as [x, y]; the last point is not repeated when Closed.
+public sealed class CadPolyline
+{
+    public int Style { get; set; }
+    public bool Closed { get; set; }
+    public List<double[]> Points { get; set; } = [];
+}
+
+public sealed class CadText
+{
+    public string Text { get; set; } = "";
+    public double X { get; set; }
+    public double Y { get; set; }
+    public double HeightMm { get; set; }
+    public double RotationDeg { get; set; }
+}
+
+public sealed class CadTruth
+{
+    public List<TruthGrid> Grids { get; set; } = [];
+}
+
+public sealed class TruthGrid
+{
+    public string Name { get; set; } = "";
+    public double X0 { get; set; }
+    public double Y0 { get; set; }
+    public double X1 { get; set; }
+    public double Y1 { get; set; }
+}

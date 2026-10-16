@@ -1,0 +1,170 @@
+using Autodesk.Revit.DB;
+using Bimtech.RevitMcp.Commands;
+using Bimtech.RevitMcp.Recognition;
+
+namespace Bimtech.RevitMcp.Cad;
+
+// Reads one CAD import or link into a CadCase: every line, arc, circle and polyline in model coordinates with
+// its graphics style (layer, line pattern, color), plus the Text Notes of the view. Read-only.
+internal static class CadExtractor
+{
+    private const int MaxDepth = 8;
+
+    internal sealed record Limits(int MaxEntities);
+
+    public static CadCase Extract(Document document, ImportInstance cad, View? view, Limits limits)
+    {
+        var type = document.GetElement(cad.GetTypeId());
+        var result = new CadCase
+        {
+            CreatedAt = DateTimeOffset.Now,
+            Source = new CadCaseSource
+            {
+                Document = document.Title,
+                CadName = type?.Name ?? cad.Name,
+                CadId = RevitJson.Id(cad.Id),
+                IsLinked = cad.IsLinked,
+                View = view?.Name,
+                Level = (view as ViewPlan)?.GenLevel?.Name,
+            },
+        };
+
+        var walker = new Walker(document, result, limits.MaxEntities);
+        var options = view is null ? new Options() : new Options { View = view };
+        if (cad.get_Geometry(options) is { } geometry) walker.Walk(geometry, 0);
+
+        if (view is not null)
+            foreach (var note in new FilteredElementCollector(document, view.Id).OfClass(typeof(TextNote)).Cast<TextNote>())
+                result.Texts.Add(Text(document, note, view));
+        return result;
+    }
+
+    // The grids in the model, as the person approved them: the truth a case is checked against.
+    public static List<TruthGrid> ModelGrids(Document document) =>
+        new FilteredElementCollector(document).OfClass(typeof(Grid)).Cast<Grid>()
+            .Where(grid => grid.Curve is Line)
+            .Select(grid =>
+            {
+                var line = (Line)grid.Curve;
+                var (start, end) = (line.GetEndPoint(0), line.GetEndPoint(1));
+                return new TruthGrid { Name = grid.Name, X0 = Mm(start.X), Y0 = Mm(start.Y), X1 = Mm(end.X), Y1 = Mm(end.Y) };
+            })
+            .OrderBy(grid => grid.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+    private sealed class Walker(Document document, CadCase result, int maxEntities)
+    {
+        private readonly Dictionary<ElementId, int> _styles = [];
+        private int _entities;
+
+        public void Walk(GeometryElement geometry, int depth)
+        {
+            if (depth > MaxDepth) return;
+            foreach (var item in geometry)
+            {
+                if (_entities >= maxEntities)
+                {
+                    Skip("over maxEntities");
+                    continue;
+                }
+                switch (item)
+                {
+                    case GeometryInstance instance:
+                        if (instance.GetInstanceGeometry() is { } nested) Walk(nested, depth + 1);
+                        break;
+                    case Line line:
+                        _entities++;
+                        result.Lines.Add(new CadLine
+                        {
+                            Style = Style(line.GraphicsStyleId),
+                            X0 = Mm(line.GetEndPoint(0).X), Y0 = Mm(line.GetEndPoint(0).Y),
+                            X1 = Mm(line.GetEndPoint(1).X), Y1 = Mm(line.GetEndPoint(1).Y),
+                        });
+                        break;
+                    case Arc arc:
+                        _entities++;
+                        result.Arcs.Add(ToArc(arc));
+                        break;
+                    case PolyLine polyline:
+                        _entities++;
+                        result.Polylines.Add(ToPolyline(polyline));
+                        break;
+                    default:
+                        Skip(item.GetType().Name);
+                        break;
+                }
+            }
+        }
+
+        private CadArc ToArc(Arc arc)
+        {
+            var center = arc.Center;
+            var value = new CadArc { Style = Style(arc.GraphicsStyleId), Cx = Mm(center.X), Cy = Mm(center.Y), R = Mm(arc.Radius) };
+            if (!arc.IsBound)
+            {
+                value.IsCircle = true;
+                return value;
+            }
+            // Counterclockwise seen from above: a clockwise arc (normal pointing down) runs from its end to its start.
+            var (from, to) = arc.Normal.Z >= 0 ? (arc.GetEndPoint(0), arc.GetEndPoint(1)) : (arc.GetEndPoint(1), arc.GetEndPoint(0));
+            value.StartDeg = Degrees(from - center);
+            value.EndDeg = Degrees(to - center);
+            return value;
+        }
+
+        private CadPolyline ToPolyline(PolyLine polyline)
+        {
+            var points = polyline.GetCoordinates().Select(point => new[] { Mm(point.X), Mm(point.Y) }).ToList();
+            var closed = points.Count > 2 && Math.Abs(points[0][0] - points[^1][0]) < 0.01 && Math.Abs(points[0][1] - points[^1][1]) < 0.01;
+            if (closed) points.RemoveAt(points.Count - 1);
+            return new CadPolyline { Style = Style(polyline.GraphicsStyleId), Closed = closed, Points = points };
+        }
+
+        // Index of the style in result.Styles, adding it on first use.
+        private int Style(ElementId id)
+        {
+            if (_styles.TryGetValue(id, out var index)) return index;
+            var category = (document.GetElement(id) as GraphicsStyle)?.GraphicsStyleCategory;
+            result.Styles.Add(new CadStyle
+            {
+                Layer = category?.Name ?? "",
+                LinePattern = category is null ? null : PatternName(category),
+                Color = category?.LineColor is { IsValid: true } color ? $"#{color.Red:X2}{color.Green:X2}{color.Blue:X2}" : null,
+                Category = category?.Parent?.Name,
+            });
+            _styles[id] = index = result.Styles.Count - 1;
+            return index;
+        }
+
+        private string? PatternName(Category category)
+        {
+            var patternId = category.GetLinePatternId(GraphicsStyleType.Projection);
+            if (patternId == LinePatternElement.GetSolidPatternId()) return "Solid";
+            return (document.GetElement(patternId) as LinePatternElement)?.Name;
+        }
+
+        private void Skip(string kind) => result.Skipped[kind] = result.Skipped.GetValueOrDefault(kind) + 1;
+    }
+
+    private static CadText Text(Document document, TextNote note, View view)
+    {
+        var size = (document.GetElement(note.GetTypeId()) as TextNoteType)?.get_Parameter(BuiltInParameter.TEXT_SIZE)?.AsDouble() ?? 0;
+        return new CadText
+        {
+            Text = note.Text.Trim(),
+            X = Mm(note.Coord.X),
+            Y = Mm(note.Coord.Y),
+            // Text size is on paper; on the model it is that times the view scale.
+            HeightMm = Math.Round(Mm(size) * Math.Max(1, view.Scale), 1),
+            RotationDeg = Math.Round(Degrees(note.BaseDirection), 2),
+        };
+    }
+
+    private static double Degrees(XYZ vector)
+    {
+        var degrees = Math.Atan2(vector.Y, vector.X) * 180 / Math.PI;
+        return Math.Round(degrees < 0 ? degrees + 360 : degrees, 4);
+    }
+
+    private static double Mm(double feet) => Math.Round(UnitUtils.ConvertFromInternalUnits(feet, UnitTypeId.Millimeters), 2);
+}

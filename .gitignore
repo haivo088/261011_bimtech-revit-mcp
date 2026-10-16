@@ -5,3 +5,6 @@ server/build/
 .vs/
 *.user
 *.log
+
+# Developer CAD cases (export_cad_case): client drawings stay on this machine.
+cases/
