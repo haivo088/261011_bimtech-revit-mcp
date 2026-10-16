@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Developer-only commands (run_revit_query, export_cad_case, analyze_cad, run_recognition).
+       Copy the output next to Bimtech.RevitMcp.Addin.dll on the developer's machine only; the add-in loads it
+       when present (addin/DevToolsLoader.cs). Users never receive this DLL or its Roslyn dependencies. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <PlatformTarget>x64</PlatformTarget>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>Bimtech.RevitMcp.DevTools</AssemblyName>
+    <RootNamespace>Bimtech.RevitMcp.DevTools</RootNamespace>
+    <!-- Roslyn's DLLs must sit next to this one; DevToolsLoader loads them privately from that folder. -->
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <RevitInstallDir Condition="'$(RevitInstallDir)' == ''">C:\Program Files\Autodesk\Revit 2025</RevitInstallDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="RevitAPI">
+      <HintPath>$(RevitInstallDir)\RevitAPI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="RevitAPIUI">
+      <HintPath>$(RevitInstallDir)\RevitAPIUI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The add-in is already installed next to this DLL; do not copy a second one. -->
+    <ProjectReference Include="..\addin\Bimtech.RevitMcp.Addin.csproj" Private="false" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.8.0" />
+  </ItemGroup>
+</Project>

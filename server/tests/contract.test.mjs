@@ -4,12 +4,21 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { allTools } from "../build/tools/index.js";
+import { devTools } from "../build/tools/dev.js";
 
 const commandsDir = fileURLToPath(new URL("../../addin/Commands/", import.meta.url));
+// Developer-only commands, loaded by the add-in from Bimtech.RevitMcp.DevTools.dll.
+const devCommandsDir = fileURLToPath(new URL("../../devtools/", import.meta.url));
+const everyTool = [...allTools, ...devTools];
 
 async function commandSources() {
-  const files = (await readdir(commandsDir, { recursive: true })).filter((file) => file.endsWith(".cs"));
-  return Promise.all(files.map(async (file) => ({ file, source: await readFile(join(commandsDir, file), "utf8") })));
+  const sources = [];
+  for (const dir of [commandsDir, devCommandsDir]) {
+    const files = (await readdir(dir, { recursive: true }))
+      .filter((file) => file.endsWith(".cs") && !/(^|[\\/])(bin|obj)[\\/]/.test(file));
+    for (const file of files) sources.push({ file, source: await readFile(join(dir, file), "utf8") });
+  }
+  return sources;
 }
 
 // Reads `public string Method => "..."` from every C# command file.
@@ -22,7 +31,7 @@ async function addinMethods() {
 }
 
 test("every server tool has a matching add-in command and vice versa", async () => {
-  const serverMethods = allTools.map((tool) => tool.method).sort();
+  const serverMethods = everyTool.map((tool) => tool.method).sort();
   assert.deepEqual(serverMethods, await addinMethods());
 });
 
@@ -36,10 +45,8 @@ test("no add-in command approves a plan", async () => {
 
 // Reads each command's declared access (Read/Write/Delete) from the C# sources.
 async function addinAccess() {
-  const files = (await readdir(commandsDir, { recursive: true })).filter((file) => file.endsWith(".cs"));
   const access = new Map();
-  for (const file of files) {
-    const source = await readFile(join(commandsDir, file), "utf8");
+  for (const { source } of await commandSources()) {
     const method = source.match(/public\s+string\s+Method\s*=>\s*"([^"]+)"/)?.[1];
     const kind = source.match(/public\s+CommandAccess\s+Access\s*=>\s*CommandAccess\.(\w+)/)?.[1];
     if (method) access.set(method, kind);
@@ -53,7 +60,7 @@ const changesPlanOnly = new Set(["cancel_plan"]);
 
 test("server annotations match the access each add-in command declares", async () => {
   const access = await addinAccess();
-  for (const tool of allTools) {
+  for (const tool of everyTool) {
     const kind = access.get(tool.method);
     assert.ok(kind, `${tool.method} declares no CommandAccess`);
     const { readOnlyHint, destructiveHint } = tool.annotations;
@@ -64,7 +71,7 @@ test("server annotations match the access each add-in command declares", async (
 
 test("tool names and methods are unique", () => {
   for (const key of ["name", "method"]) {
-    const values = allTools.map((tool) => tool[key]);
+    const values = everyTool.map((tool) => tool[key]);
     assert.equal(new Set(values).size, values.length, `duplicate ${key}`);
   }
 });

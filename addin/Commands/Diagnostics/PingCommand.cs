@@ -14,6 +14,8 @@ public sealed class PingCommand : IRevitCommand
         status = "ok",
         revitVersion = context.UIApplication.Application.VersionNumber,
         bridgeVersion = App.Version,
+        // "not installed" for users; developers see whether Bimtech.RevitMcp.DevTools.dll loaded.
+        devTools = DevToolsLoader.Status,
         echo = context.Params.GetString("message", maxLength: 200),
         methods = context.Registry.Methods.Order().ToArray(),
         readOnlyMode = context.Settings.ReadOnlyMode,

@@ -39,7 +39,7 @@ export async function mcpClient(t, port, extraEnv = {}) {
     args: [fileURLToPath(new URL("../build/index.js", import.meta.url))],
     // A key set to undefined in extraEnv is removed, e.g. to test reading the port from settings.json.
     env: Object.fromEntries(Object.entries({
-      ...process.env, REVIT_MCP_PORT: String(port), REVIT_MCP_AVAILABILITY_POLL_MS: "0", ...extraEnv,
+      ...process.env, REVIT_MCP_PORT: String(port), REVIT_MCP_AVAILABILITY_POLL_MS: "0", BIMTECH_DEV: undefined, ...extraEnv,
     }).filter(([, value]) => value !== undefined)),
     stderr: "pipe",
   });

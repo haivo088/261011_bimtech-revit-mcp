@@ -1,6 +1,8 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { ToolAvailability } from "../availability.js";
+import { config } from "../config.js";
 import { registerRevitTools, type RevitTool } from "./define.js";
+import { devTools } from "./dev.js";
 import { pingRevit } from "./diagnostics.js";
 import { getDocumentInfo, getLevels, listCategories } from "./document.js";
 import { getElementParameters, getElements, getSelectedElements } from "./elements.js";
@@ -43,10 +45,15 @@ export const allTools: readonly RevitTool[] = [
   undoBatch,
 ];
 
+// Developer tools (dev.ts) are added only when BIMTECH_DEV=1.
+export function activeTools(): readonly RevitTool[] {
+  return config.devTools ? [...allTools, ...devTools] : allTools;
+}
+
 export function registerTools(server: McpServer): ToolAvailability {
   // The callback runs only after registration finishes, so "availability" is always set by then.
   const availability: ToolAvailability = new ToolAvailability(
-    registerRevitTools(server, allTools, () => { void availability.sync(); }),
+    registerRevitTools(server, activeTools(), () => { void availability.sync(); }),
   );
   return availability;
 }

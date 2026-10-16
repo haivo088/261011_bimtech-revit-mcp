@@ -31,8 +31,11 @@ public sealed class CommandRegistry
     // server/tests/contract.test.mjs checks that each method has a matching server tool.
     // The plan service and review window outlive the bridge (see App), so an open
     // review window keeps working while the bridge is stopped and restarted.
-    public static CommandRegistry CreateDefault(PlanService plans, ReviewWindowHost review, ModelChangeTracker changes) => new(
+    // devTools: the developer-only commands of Bimtech.RevitMcp.DevTools.dll, empty for users (see DevToolsLoader).
+    public static CommandRegistry CreateDefault(
+        PlanService plans, ReviewWindowHost review, ModelChangeTracker changes, IEnumerable<IRevitCommand> devTools) => new(
     [
+        .. devTools,
         new PingCommand(),
         new GetDocumentInfoCommand(),
         new ProposeSetParametersCommand(plans, review, changes),

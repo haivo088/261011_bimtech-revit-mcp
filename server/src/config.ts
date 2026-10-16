@@ -38,4 +38,6 @@ export const config = {
   // How often to re-check which tools the user has switched off in Revit. 0 turns the check off
   // entirely, including the one at startup (used by tests with a scripted fake bridge).
   availabilityPollMs: nonNegativeInteger("REVIT_MCP_AVAILABILITY_POLL_MS", 30000, 3600000),
+  // BIMTECH_DEV=1 adds the developer tools (server/src/tools/dev.ts). Only the developer sets it.
+  devTools: process.env.BIMTECH_DEV === "1",
 };

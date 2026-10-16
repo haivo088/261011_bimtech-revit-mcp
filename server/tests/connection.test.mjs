@@ -3,6 +3,7 @@ import { setTimeout as pause } from "node:timers/promises";
 import test from "node:test";
 import { callRevit } from "../build/revit-client.js";
 import { allTools } from "../build/tools/index.js";
+import { devTools } from "../build/tools/dev.js";
 import { bridge, mcpClient } from "./helpers.mjs";
 
 test("reads a large response split inside a Vietnamese UTF-8 character", async (t) => {
@@ -77,6 +78,14 @@ test("keeps the error code and details reported by the add-in", async (t) => {
     assert.deepEqual(error.data, { param: "limit" });
     return true;
   });
+});
+
+test("developer tools are listed only when BIMTECH_DEV=1", async (t) => {
+  const options = await bridge(t, () => {});
+  const developer = await mcpClient(t, options.port, { BIMTECH_DEV: "1" });
+  const names = (await developer.listTools()).tools.map((tool) => tool.name).sort();
+  assert.deepEqual(names, [...allTools, ...devTools].map((tool) => tool.name).sort());
+  assert.ok(names.includes("run_revit_query"));
 });
 
 test("MCP lists tools with annotations and an input schema", async (t) => {

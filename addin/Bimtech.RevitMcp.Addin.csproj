@@ -21,6 +21,11 @@
     </Reference>
   </ItemGroup>
 
+  <!-- The developer tools (devtools/) reuse internal helpers such as FailureGuard and StructuralJson. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Bimtech.RevitMcp.DevTools" />
+  </ItemGroup>
+
   <!-- Structural modeling core (StructuralCore\), copied from RevitAddinManager at f2db0d5 and now
        maintained here. Its .cs files compile in through the SDK's default glob. The company default
        families are embedded under the resource names DefaultFamilies expects. -->
