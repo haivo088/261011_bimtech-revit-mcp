@@ -23,7 +23,8 @@ public sealed class TcpBridge : IDisposable
     private static readonly TimeSpan WriteTimeout = TimeSpan.FromSeconds(10);
     internal const int DefaultTimeoutMs = 15000;
     internal const int MinTimeoutMs = 1000;
-    internal const int MaxTimeoutMs = 120000;
+    // Long enough for export_cad_case reading a large DWG file from disk.
+    internal const int MaxTimeoutMs = 300000;
     private const int MaxRequestChars = 256 * 1024;
     // Matches the server's limit in server/src/revit-client.ts.
     private const int MaxResponseBytes = 1024 * 1024;

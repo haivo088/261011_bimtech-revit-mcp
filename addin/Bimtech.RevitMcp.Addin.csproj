@@ -7,7 +7,14 @@
     <Nullable>enable</Nullable>
     <AssemblyName>Bimtech.RevitMcp.Addin</AssemblyName>
     <RevitInstallDir Condition="'$(RevitInstallDir)' == ''">C:\Program Files\Autodesk\Revit 2025</RevitInstallDir>
+    <!-- Package DLLs (ACadSharp) must sit next to the add-in; Revit loads them from its folder. -->
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
   </PropertyGroup>
+
+  <!-- Reads DWG/DXF files from disk (MIT): the hatches and texts the Revit API does not expose. -->
+  <ItemGroup>
+    <PackageReference Include="ACadSharp" Version="3.8.0" />
+  </ItemGroup>
 
   <!-- Revit provides these assemblies at runtime. Do not copy them to the add-in. -->
   <ItemGroup>

@@ -19,6 +19,7 @@ Khi ít thời gian, đi đúng con đường này; các mục "Thử thêm" và
 | 5 | Dầm chính tầng 2 | 7 | 15' |
 | 6 | `send_code` đọc, rồi một lần ghi nhỏ | 10 | 10' |
 | 7 | `export_cad_case` cho CAD tầng 1 và tầng 2, tầng 2 sau khi đã sửa tay dầm sai/thiếu (để sửa thuật toán ngoài Revit) | 10 | 5' |
+| 8 | `export_cad_case` đọc **file DWG** của một mặt bằng có **lõi thang** (hatch cho vách) | 10 | 5' |
 
 Điều cần ghi lại nhất: **chỗ nào nhận sai và vì sao** (nét vẽ, layer, chữ trong DWG hay Text Note), thời gian chạy, và nguyên văn mọi lỗi.
 
@@ -181,6 +182,12 @@ Cần cài `-Dev` và `BIMTECH_DEV=1` (phần 0).
 2. Tên trong vòng tròn đầu trục, ký hiệu cột, ký hiệu dầm có đọc được (Text Note) không?
 
 Kết thúc bằng `export_cad_case` cho CAD tầng 1 (có trục đã dựng đúng) và CAD tầng 2 với `levelId` Tầng 2. Với tầng 2: **trước khi xuất, sửa tay cho dầm trong model đúng** (thêm dầm bị sót, xoá dầm thừa), vì dầm trong model được lưu làm đáp án. Kết quả có số cột, vách và `truthBeams`; `dotnet test` sẽ chỉ ra dầm nào thuật toán còn sót hoặc thừa.
+
+**Đọc thẳng file DWG (hatch, chữ).** Revit không cho đọc hatch và chữ trong DWG, và explode trong Revit đôi khi làm mất hatch; nên add-in đọc chính file DWG trên ổ đĩa. Chọn một mặt bằng **có lõi thang** (vách được hatch):
+
+> Dùng export_cad_case với CAD <tên>, notes "lõi thang, thử đọc hatch". (CAD import, không phải link: thêm dwgPath "<đường dẫn đầy đủ tới file .dwg>".)
+
+Đạt khi phần `dwg` trong kết quả có `attached: true`, `matchRate` gần 1 (≥ 0,7), `placement` hợp lý (`scale` 1, `rotationDeg` bằng góc xoay CAD trong Revit), và `hatchesByLayer` có các layer/mẫu hatch của vách và cột. Ghi lại: CAD là **link hay import**, `readSeconds`, `matchRate`, và nguyên văn `problem` nếu có. Nếu không khớp, ghi thêm CAD được đặt thế nào khi nhập (Origin to Origin / Center to Center / xoay, đơn vị nhập).
 
 ## Ghi kết quả
 

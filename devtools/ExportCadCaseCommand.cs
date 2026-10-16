@@ -38,6 +38,7 @@ public sealed partial class ExportCadCaseCommand : IRevitCommand
 
         var data = CadExtractor.Extract(document, cad, view, new CadExtractor.Limits(maxEntities));
         data.Notes = p.GetString("notes", 2000);
+        var dwg = ReadDwg(p, document, cad, data);
         if (level is not null)
             data.Model = new CaseModel
             {
@@ -70,9 +71,11 @@ public sealed partial class ExportCadCaseCommand : IRevitCommand
                 arcs = data.Arcs.Count(arc => !arc.IsCircle),
                 circles = data.Arcs.Count(arc => arc.IsCircle),
                 polylines = data.Polylines.Count,
+                hatches = data.Hatches.Count,
                 texts = data.Texts.Count,
                 skipped = data.Skipped,
             },
+            dwg,
             level = data.Model?.Level,
             supports = new
             {
@@ -87,6 +90,48 @@ public sealed partial class ExportCadCaseCommand : IRevitCommand
                 + (data.Truth is { Beams.Count: > 0 }
                     ? "The beams on this level are saved as truth for beam recognition: export after they were checked and fixed."
                     : "No beams on this level: export again after the beams are built and checked to test beam recognition."),
+        };
+    }
+
+    // The DWG file itself, for the hatches and texts Revit does not expose: a linked CAD's own file, else dwgPath.
+    // Added to the case only when the file, placed by matching lines, reproduces the CAD Revit shows.
+    private static object ReadDwg(CommandParams p, Autodesk.Revit.DB.Document document, Autodesk.Revit.DB.ImportInstance cad, CadCase data)
+    {
+        if (!p.GetBool("readDwg", true)) return new { read = false, reason = "readDwg is false." };
+        var path = p.GetString("dwgPath", 1024) ?? DwgSource.LinkedPath(document, cad);
+        if (path is null)
+            return new
+            {
+                read = false,
+                reason = "The CAD is imported, not linked, so Revit keeps no file path: pass dwgPath to read its hatches and texts.",
+            };
+        if (!Path.IsPathFullyQualified(path)) throw RpcException.InvalidParams("dwgPath", "must be an absolute file path.");
+
+        var result = DwgSource.Read(cad, path, data);
+        var attached = DwgSource.Attach(data, result);
+        var drawing = result.Drawing;
+        return new
+        {
+            read = drawing is not null,
+            attached,
+            path,
+            version = result.Version,
+            units = result.Units,
+            readSeconds = Math.Round(result.ReadMs / 1000.0, 1),
+            placement = result.Alignment?.Placement,
+            checkedLines = result.Alignment?.Checked,
+            matchedLines = result.Alignment?.Matched,
+            matchRate = result.Alignment is { } alignment ? Math.Round(alignment.MatchRate, 3) : (double?)null,
+            problem = result.Problem,
+            hatches = drawing?.Hatches.Count,
+            texts = drawing?.Texts.Count,
+            // What the hatches look like, to judge them as wall and column evidence: by layer and pattern.
+            hatchesByLayer = drawing?.Hatches
+                .GroupBy(hatch => (drawing.Styles[hatch.Style].Layer, hatch.Pattern))
+                .OrderByDescending(group => group.Count()).Take(20)
+                .Select(group => new { layer = group.Key.Layer, pattern = group.Key.Pattern, count = group.Count() })
+                .ToList(),
+            skippedInFile = drawing?.Skipped,
         };
     }
 

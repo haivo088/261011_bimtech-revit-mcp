@@ -106,7 +106,11 @@ export const exportCadCase = defineTool({
     + " model are saved as the truth: export after the user built and approved the grids of this drawing. For the level"
     + " (levelId, else the view's level), the columns and walls reaching it are saved as beam supports and its beams as"
     + " the beam truth, so beam recognition replays on the case: export a beam plan after its beams were built and"
-    + " checked (missing ones added, wrong ones fixed).",
+    + " checked (missing ones added, wrong ones fixed). The DWG file itself is also read from disk (a linked CAD's own"
+    + " file, or dwgPath for an imported one) for its hatches and texts, which Revit does not expose; they are added"
+    + " only when the file, placed by matching its lines with the CAD's lines in Revit, reproduces at least 70% of"
+    + " them. The result's dwg part reports the placement, match rate and hatches per layer and pattern. A large DWG"
+    + " takes about a minute to read.",
   inputSchema: {
     cadId,
     viewId,
@@ -114,9 +118,12 @@ export const exportCadCase = defineTool({
     notes: z.string().max(2000).optional().describe("Free notes about the drawing, e.g. its source or quirks."),
     includeTruth: z.boolean().optional().describe("Save the model's grids as truth (default true)."),
     maxEntities: z.number().int().min(1).max(2000000).optional().describe("Stop after this many entities (default 300000)."),
+    dwgPath: z.string().min(1).max(1024).optional()
+      .describe("Absolute path of the DWG/DXF file of an imported (not linked) CAD. A linked CAD's own file is used by default."),
+    readDwg: z.boolean().optional().describe("Read the DWG file for hatches and texts (default true)."),
   },
   annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: false },
-  timeoutMs: 120000,
+  timeoutMs: 300000,
   toParams: (input) => ({ ...input, caseRoot }),
 });
 

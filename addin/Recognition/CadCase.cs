@@ -23,7 +23,9 @@ public sealed class CadCase
     public List<CadLine> Lines { get; set; } = [];
     public List<CadArc> Arcs { get; set; } = [];
     public List<CadPolyline> Polylines { get; set; } = [];
-    // Text Notes of the view, since text inside a DWG import is not exposed by the Revit API.
+    // Hatches, read from the DWG file itself (DwgImport): the Revit API does not expose them.
+    public List<CadHatch> Hatches { get; set; } = [];
+    // Text Notes of the view, and the texts of the DWG file when it was read (those have a Style).
     public List<CadText> Texts { get; set; } = [];
     // Geometry kinds that were not exported (ellipses, splines, solids...), with their counts.
     public Dictionary<string, int> Skipped { get; set; } = [];
@@ -58,6 +60,23 @@ public sealed class CadCaseSource
     public bool IsLinked { get; set; }
     public string? View { get; set; }
     public string? Level { get; set; }
+    // Set when the DWG file was read from disk and placed on the model (hatches, texts).
+    public CadDwgSource? Dwg { get; set; }
+}
+
+// The DWG file a case's hatches and texts came from, and where it sits in the model:
+// model = rotate(Scale · drawing, RotationDeg) + (Dx, Dy), the drawing already in mm by its own units.
+public sealed class CadDwgSource
+{
+    public string Path { get; set; } = "";
+    public string? Version { get; set; }
+    public string? Units { get; set; }
+    public double Scale { get; set; } = 1;
+    public double RotationDeg { get; set; }
+    public double Dx { get; set; }
+    public double Dy { get; set; }
+    // Share of the Revit lines checked that the placed drawing reproduces (within 1 mm).
+    public double MatchRate { get; set; }
 }
 
 // One Revit graphics style of the import: its layer and how the layer draws.
@@ -69,6 +88,8 @@ public sealed class CadStyle
     public string? Color { get; set; }
     // The import's own category the layer belongs to (usually the DWG file name).
     public string? Category { get; set; }
+    // True when the layer is off or frozen in the DWG file (only known for styles read from the file).
+    public bool? Off { get; set; }
 }
 
 public sealed class CadLine
@@ -102,8 +123,20 @@ public sealed class CadPolyline
     public List<double[]> Points { get; set; } = [];
 }
 
+// A hatch: its pattern and its boundary loops ([x, y] points, last point not repeated, arcs as short chords).
+// The outer boundary and its holes are all loops; a point is inside the hatch when an odd number of loops enclose it.
+public sealed class CadHatch
+{
+    public int Style { get; set; }
+    public string? Pattern { get; set; }
+    public bool IsSolid { get; set; }
+    public List<List<double[]>> Loops { get; set; } = [];
+}
+
 public sealed class CadText
 {
+    // Null for a Revit Text Note; the layer's style for a text read from the DWG file.
+    public int? Style { get; set; }
     public string Text { get; set; } = "";
     public double X { get; set; }
     public double Y { get; set; }
