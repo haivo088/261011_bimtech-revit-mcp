@@ -30,7 +30,7 @@ test("developer tools forward their input, and the server adds its folders", asy
     params: [{ name: "category", type: "string", default: "Structural Columns" }],
   };
   assert.equal((await client.callTool({ name: "command_set", arguments: save })).isError, false);
-  const exportArgs = { cadId: "501", notes: "Bản vẽ móng mẫu", includeTruth: false };
+  const exportArgs = { cadId: "501", levelId: "694", notes: "Bản vẽ móng mẫu", includeTruth: false };
   // The case folder is set by the server; a caseRoot from the caller is dropped.
   const withFolder = { ...exportArgs, caseRoot: "C:\\Windows" };
   assert.equal((await client.callTool({ name: "export_cad_case", arguments: withFolder })).isError, false);

@@ -2,6 +2,7 @@ using System.IO;
 using System.Text.RegularExpressions;
 using Bimtech.RevitMcp.Cad;
 using Bimtech.RevitMcp.Commands;
+using Bimtech.RevitMcp.Commands.Common;
 using Bimtech.RevitMcp.Commands.Structural;
 using Bimtech.RevitMcp.Protocol;
 using Bimtech.RevitMcp.Recognition;
@@ -10,7 +11,9 @@ namespace Bimtech.RevitMcp.DevTools;
 
 // Saves one CAD import as a CadCase (cases/<caseId>/case.json, gitignored) so recognition rules can be developed
 // and regression-tested outside Revit. With includeTruth, the grids already in the model are stored as the truth:
-// export after the grids were built and approved, so they are known to be right.
+// export after the grids were built and approved, so they are known to be right. For the level (levelId, else the
+// view's), the columns and walls reaching it are saved as beam supports and its beams as the beam truth, so
+// BeamCase.Run replays propose_beams on the case.
 public sealed partial class ExportCadCaseCommand : IRevitCommand
 {
     public string Method => "export_cad_case";
@@ -28,10 +31,26 @@ public sealed partial class ExportCadCaseCommand : IRevitCommand
             throw RpcException.InvalidParams("caseRoot", "must be an absolute folder path.");
         var maxEntities = p.GetInt("maxEntities", 300_000, 1, 2_000_000);
 
+        // The level whose columns and walls (beam supports) and beams are saved: levelId, else the plan view's level.
+        var level = p.Has("levelId")
+            ? StructuralJson.RequireLevel(document, p.RequireElementId("levelId"), "levelId")
+            : view.GenLevel;
+
         var data = CadExtractor.Extract(document, cad, view, new CadExtractor.Limits(maxEntities));
         data.Notes = p.GetString("notes", 2000);
+        if (level is not null)
+            data.Model = new CaseModel
+            {
+                Level = level.Name,
+                ElevationMm = Math.Round(UnitConvert.Length(level.Elevation), 2),
+                Supports = CadExtractor.ModelSupports(document, level.Elevation),
+            };
         if (p.GetBool("includeTruth", true))
-            data.Truth = new CadTruth { Grids = CadExtractor.ModelGrids(document) };
+            data.Truth = new CadTruth
+            {
+                Grids = CadExtractor.ModelGrids(document),
+                Beams = level is null ? [] : CadExtractor.ModelBeams(document, level),
+            };
         data.CaseId = $"{data.CreatedAt:yyyyMMdd-HHmmss}-{SafeName(data.Source.CadName)}";
 
         var folder = Path.Combine(caseRoot, data.CaseId);
@@ -54,10 +73,20 @@ public sealed partial class ExportCadCaseCommand : IRevitCommand
                 texts = data.Texts.Count,
                 skipped = data.Skipped,
             },
+            level = data.Model?.Level,
+            supports = new
+            {
+                columns = data.Model?.Supports.Count(s => s.Kind == "column") ?? 0,
+                walls = data.Model?.Supports.Count(s => s.Kind == "wall") ?? 0,
+            },
             truthGrids = data.Truth?.Grids.Count,
-            note = data.Truth is { Grids.Count: > 0 }
-                ? "Saved with the model's grids as truth. Check they are the approved grids of this drawing."
-                : "Saved without truth grids. Build and approve the grids, then export again to make it a regression case.",
+            truthBeams = data.Truth?.Beams.Count,
+            note = (data.Truth is { Grids.Count: > 0 }
+                    ? "Saved with the model's grids as truth. Check they are the approved grids of this drawing. "
+                    : "Saved without truth grids. Build and approve the grids, then export again to make it a regression case. ")
+                + (data.Truth is { Beams.Count: > 0 }
+                    ? "The beams on this level are saved as truth for beam recognition: export after they were checked and fixed."
+                    : "No beams on this level: export again after the beams are built and checked to test beam recognition."),
         };
     }
 

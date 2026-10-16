@@ -21,7 +21,7 @@ flowchart LR
 | `command_set` | `list`: các bộ script trong `commandsets/`. `save`: lưu một đoạn code đã chạy tốt thành script có tên và tham số (phải biên dịch được). `history`: các lần `send_code` gần nhất, để nhận ra việc lặp lại. |
 | `analyze_cad` | Dấu vân tay của một CAD: mỗi layer có gì (line pattern, màu, số line, tỉ lệ line đứng/ngang, đường kính tròn, kích thước chữ nhật, bề rộng cặp line song song), text hay gặp, ứng viên trục tốt nhất. Đủ gọn để Claude đọc cả bản vẽ trong một lần. |
 | `run_recognition` | Chạy lõi nhận diện trục trên CAD thật; nếu model đã có grid thì coi đó là đáp án và so sánh (khớp, sai tên, thiếu, thừa). |
-| `export_cad_case` | Lưu CAD thành `cases/<caseId>/case.json` (dữ liệu thuần: line, arc, tròn, polyline kèm layer/pattern/màu, text của view). Mặc định lưu kèm grid trong model làm **đáp án**: xuất sau khi đã dựng và duyệt grid của bản vẽ. |
+| `export_cad_case` | Lưu CAD thành `cases/<caseId>/case.json` (dữ liệu thuần: line, arc, tròn, polyline kèm layer/pattern/màu, text của view). Mặc định lưu kèm grid trong model làm **đáp án**: xuất sau khi đã dựng và duyệt grid của bản vẽ. Với tầng của view (hoặc `levelId`), lưu thêm **cột và vách** chạm tầng đó (gối tựa dầm) và **dầm** của tầng làm đáp án dầm: xuất mặt bằng dầm sau khi đã dựng, kiểm tra và sửa dầm. |
 
 Đoạn code của `send_code` là thân của `static object Run(QueryContext ctx)`: có sẵn `doc`, `uidoc`, `view`, `ctx`; đã `using` System.Linq, Autodesk.Revit.DB và DB.Structure. Trả về object ẩn danh hoặc danh sách số/chuỗi, không trả phần tử Revit. `ctx.Print(x)` ghi log; `ctx.Mm(feet)`, `ctx.Feet(mm)` đổi đơn vị; tham số đọc bằng `ctx.Str("x")`, `ctx.Num`, `ctx.Bool`, `ctx.Id`, `ctx.Strs`, `ctx.Ids`, `ctx.Has`.
 
@@ -159,7 +159,7 @@ Mỗi bản vẽ mới đi qua bước 3–7 là thêm một case vào thư vi�
 
 - Nằm ở `cases/` tại gốc repo, **đã gitignore**: bản vẽ khách hàng chỉ ở trên máy này. Đổi chỗ bằng biến môi trường `BIMTECH_CASES_DIR` (cho cả server và test).
 - Chỉ lưu dữ liệu hình học đã trích xuất, không lưu DWG gốc.
-- `tests/Bimtech.RevitMcp.Recognition.Tests/CaseLibraryTests` chạy lõi nhận diện trên **mọi case có đáp án** và yêu cầu khớp hoàn toàn. Trên máy không có case, test này không kiểm gì và qua.
+- `tests/Bimtech.RevitMcp.Recognition.Tests/CaseLibraryTests` chạy lõi nhận diện trên **mọi case có đáp án** và yêu cầu khớp hoàn toàn: trục (`GridRecognizer`), và dầm (`BeamCase.Run` chạy lại đúng `propose_beams` trong hệ trục của case, dầm khớp khi hai đầu lệch không quá 100 mm; báo dầm thiếu, dầm thừa). Trên máy không có case, test này không kiểm gì và qua.
 
 ## Lõi nhận diện
 

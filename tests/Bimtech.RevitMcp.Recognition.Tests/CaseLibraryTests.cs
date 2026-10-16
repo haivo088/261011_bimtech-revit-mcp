@@ -29,6 +29,27 @@ public sealed class CaseLibraryTests(ITestOutputHelper output)
         Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
     }
 
+    // Every case saved with its level's supports and approved beams must give back exactly those beams.
+    [Fact]
+    public void Every_saved_case_with_truth_beams_is_recognized_exactly()
+    {
+        var failures = new List<string>();
+        var checkedCases = 0;
+        foreach (var path in CasePaths())
+        {
+            var data = CadCase.Load(path);
+            if (data.Model is null || data.Truth is not { Beams.Count: > 0 }) continue;
+            checkedCases++;
+            var result = BeamCase.Run(data);
+            output.WriteLine($"{data.CaseId}: {result.Matched}/{result.TruthCount} beams matched, {result.Extra.Count} extra, "
+                + $"{result.Recognition.Dangling.Count} dangling");
+            if (!result.IsPerfect)
+                failures.Add($"{data.CaseId}: missing [{string.Join("; ", result.Missing)}], extra [{string.Join("; ", result.Extra)}]");
+        }
+        output.WriteLine($"{checkedCases} case(s) with truth beams checked.");
+        Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
+    }
+
     private static IEnumerable<string> CasePaths()
     {
         var root = Environment.GetEnvironmentVariable("BIMTECH_CASES_DIR") ?? FindRepositoryCases();

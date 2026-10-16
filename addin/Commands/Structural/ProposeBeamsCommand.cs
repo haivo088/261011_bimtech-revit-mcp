@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Autodesk.Revit.DB;
+using Bimtech.RevitMcp.Cad;
 using Bimtech.RevitMcp.Commands.Common;
 using Bimtech.RevitMcp.Commands.Plans;
 using Bimtech.RevitMcp.Planning;
@@ -31,8 +32,6 @@ public sealed class ProposeBeamsCommand(PlanService plans, ReviewWindowHost revi
     // Saves a plan file but never changes the model.
     public CommandAccess Access => CommandAccess.Read;
 
-    private const double LevelToleranceMm = 50;
-    private const double SameSupportMm = 50;
     private const double MarkWidthToleranceMm = 10;
     private const double WellDrawn = 0.9;
     private const int MaxListed = 8;
@@ -78,7 +77,8 @@ public sealed class ProposeBeamsCommand(PlanService plans, ReviewWindowHost revi
         double U(XYZ point) => UnitConvert.Length(point.DotProduct(uAxis));
         double V(XYZ point) => UnitConvert.Length(point.DotProduct(vAxis));
 
-        var supports = ReadSupports(document, level.Elevation, frame, U, V);
+        var caseFrame = frame is null ? BeamCase.Frame.Plain : new BeamCase.Frame(uAxis.X, uAxis.Y, frame.AlongU, frame.AlongV);
+        var supports = BeamCase.Supports(CadExtractor.ModelSupports(document, level.Elevation), caseFrame);
         if (!supports.Any(support => support.IsColumn))
             throw RpcException.InvalidParams("levelId",
                 "no structural column reaches this level. Model the columns below it first (propose_columns).");
@@ -269,79 +269,6 @@ public sealed class ProposeBeamsCommand(PlanService plans, ReviewWindowHost revi
                 + "(heightsMm or types). Tell the user about dangling edges (secondary beams or consoles, not placed yet) and "
                 + "unused marks. Ask the user to review in Revit and say when they are done, then call get_plan_status and commit_plan.",
         };
-    }
-
-    // Columns and walls of the model whose height reaches the level, in the grid frame. Columns above and below the
-    // level at the same spot count once (the one ending at the level).
-    private static List<BeamRecognizer.Support> ReadSupports(
-        Document document, double elevation, GridFrame? frame, Func<XYZ, double> u, Func<XYZ, double> v)
-    {
-        var tolerance = Feet(LevelToleranceMm);
-        bool Reaches(Element element) =>
-            element.get_BoundingBox(null) is { } box && box.Min.Z - tolerance <= elevation && box.Max.Z + tolerance >= elevation;
-
-        var supports = new List<BeamRecognizer.Support>();
-        var columns = new FilteredElementCollector(document).OfCategory(BuiltInCategory.OST_StructuralColumns)
-            .OfClass(typeof(FamilyInstance)).Cast<FamilyInstance>()
-            .Where(Reaches)
-            .OrderBy(column => Math.Abs(column.get_BoundingBox(null)!.Max.Z - elevation));
-        foreach (var column in columns)
-        {
-            var points = SolidPoints(column);
-            if (points.Count == 0) continue;
-            var (minU, maxU, minV, maxV) = (points.Min(u), points.Max(u), points.Min(v), points.Max(v));
-            var (cu, cv) = column.Location is LocationPoint location
-                ? (u(location.Point), v(location.Point))
-                : ((minU + maxU) / 2, (minV + maxV) / 2);
-            if (supports.Any(other => Math.Abs(other.CenterU - cu) <= SameSupportMm && Math.Abs(other.CenterV - cv) <= SameSupportMm))
-                continue;
-            supports.Add(new BeamRecognizer.Support(ColumnLabel(column, frame, cu, cv, maxU - minU, maxV - minV),
-                minU, maxU, minV, maxV, cu, cv, true));
-        }
-
-        foreach (var wall in new FilteredElementCollector(document).OfClass(typeof(Wall)).Cast<Wall>().Where(Reaches))
-        {
-            if (wall.Location is not LocationCurve { Curve: Line line }) continue;
-            var (a, b) = (line.GetEndPoint(0), line.GetEndPoint(1));
-            var normal = new XYZ(-(b - a).Y, (b - a).X, 0).Normalize() * (wall.Width / 2);
-            XYZ[] corners = [a + normal, a - normal, b + normal, b - normal];
-            var (minU, maxU, minV, maxV) = (corners.Min(u), corners.Max(u), corners.Min(v), corners.Max(v));
-            var mark = wall.get_Parameter(BuiltInParameter.ALL_MODEL_MARK)?.AsString();
-            supports.Add(new BeamRecognizer.Support(string.IsNullOrWhiteSpace(mark) ? $"vách #{wall.Id.Value}" : $"vách {mark}",
-                minU, maxU, minV, maxV, (minU + maxU) / 2, (minV + maxV) / 2, false));
-        }
-        return supports;
-    }
-
-    // "A-1" at a grid crossing, else the column's mark, else its id.
-    private static string ColumnLabel(FamilyInstance column, GridFrame? frame, double u, double v, double sizeU, double sizeV)
-    {
-        if (frame is not null)
-        {
-            var fitU = GridIntersections.Fit(u, sizeU / 2, frame.AlongV, 0);
-            var fitV = GridIntersections.Fit(v, sizeV / 2, frame.AlongU, 0);
-            if (fitU.OnGrid && fitV.OnGrid) return GridIntersections.Label(fitU.GridName!, fitV.GridName!);
-        }
-        var mark = column.get_Parameter(BuiltInParameter.ALL_MODEL_MARK)?.AsString();
-        return string.IsNullOrWhiteSpace(mark) ? $"cột #{column.Id.Value}" : $"cột {mark}";
-    }
-
-    // The corners of a family's solids (its true outline, whatever the family's parameter names).
-    private static List<XYZ> SolidPoints(Element element)
-    {
-        var points = new List<XYZ>();
-        void Walk(GeometryElement geometry)
-        {
-            foreach (var obj in geometry)
-            {
-                if (obj is Solid { Volume: > 0 } solid)
-                    foreach (Edge edge in solid.Edges) points.AddRange(edge.Tessellate());
-                else if (obj is GeometryInstance instance && instance.GetInstanceGeometry() is { } nested)
-                    Walk(nested);
-            }
-        }
-        if (element.get_Geometry(new Options { DetailLevel = ViewDetailLevel.Coarse }) is { } geometry) Walk(geometry);
-        return points;
     }
 
     private static (FamilySymbol? Symbol, Family? Family, string Text, string? Problem) ChooseType(

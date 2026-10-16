@@ -28,6 +28,9 @@ public sealed class CadCase
     // Geometry kinds that were not exported (ellipses, splines, solids...), with their counts.
     public Dictionary<string, int> Skipped { get; set; } = [];
 
+    // The model the drawing was read against, e.g. the columns and walls beams rest on. Null in older cases.
+    public CaseModel? Model { get; set; }
+
     // What the drawing really contains, confirmed by a person (e.g. the grids built from it and approved).
     public CadTruth? Truth { get; set; }
 
@@ -108,9 +111,42 @@ public sealed class CadText
     public double RotationDeg { get; set; }
 }
 
+// The level a case was exported for, and the columns and walls of the model that reach it (beam supports).
+public sealed class CaseModel
+{
+    public string? Level { get; set; }
+    public double ElevationMm { get; set; }
+    public List<CaseSupport> Supports { get; set; } = [];
+}
+
+// A column or wall in the model: its plan outline (convex, [x, y] points) and its centre (a column's insertion
+// point, a wall's mid-point).
+public sealed class CaseSupport
+{
+    public string Kind { get; set; } = "column"; // "column" or "wall"
+    public string? Id { get; set; }
+    public string? Mark { get; set; }
+    public double Cx { get; set; }
+    public double Cy { get; set; }
+    public List<double[]> Points { get; set; } = [];
+}
+
 public sealed class CadTruth
 {
     public List<TruthGrid> Grids { get; set; } = [];
+    // The beams of the case's level, as built and approved: axis from end to end, b×h from the type when known.
+    public List<TruthBeam> Beams { get; set; } = [];
+}
+
+public sealed class TruthBeam
+{
+    public string? Mark { get; set; }
+    public double X0 { get; set; }
+    public double Y0 { get; set; }
+    public double X1 { get; set; }
+    public double Y1 { get; set; }
+    public double? BMm { get; set; }
+    public double? HMm { get; set; }
 }
 
 public sealed class TruthGrid

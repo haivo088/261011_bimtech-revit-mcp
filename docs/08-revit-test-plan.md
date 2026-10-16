@@ -18,7 +18,7 @@ Khi ít thời gian, đi đúng con đường này; các mục "Thử thêm" và
 | 4 | Cột tầng 1 | 5 | 15' |
 | 5 | Dầm chính tầng 2 | 7 | 15' |
 | 6 | `send_code` đọc, rồi một lần ghi nhỏ | 10 | 10' |
-| 7 | `export_cad_case` cho CAD tầng 1 và tầng 2 (để sửa thuật toán ngoài Revit) | 10 | 5' |
+| 7 | `export_cad_case` cho CAD tầng 1 và tầng 2, tầng 2 sau khi đã sửa tay dầm sai/thiếu (để sửa thuật toán ngoài Revit) | 10 | 5' |
 
 Điều cần ghi lại nhất: **chỗ nào nhận sai và vì sao** (nét vẽ, layer, chữ trong DWG hay Text Note), thời gian chạy, và nguyên văn mọi lỗi.
 
@@ -180,7 +180,7 @@ Cần cài `-Dev` và `BIMTECH_DEV=1` (phần 0).
 1. Linetype được Revit giữ theo từng đối tượng, hay chỉ theo layer?
 2. Tên trong vòng tròn đầu trục, ký hiệu cột, ký hiệu dầm có đọc được (Text Note) không?
 
-Kết thúc bằng `export_cad_case` cho CAD tầng 1 (có trục đã dựng đúng) và CAD tầng 2 (có dầm), để có case thật đầu tiên.
+Kết thúc bằng `export_cad_case` cho CAD tầng 1 (có trục đã dựng đúng) và CAD tầng 2 với `levelId` Tầng 2. Với tầng 2: **trước khi xuất, sửa tay cho dầm trong model đúng** (thêm dầm bị sót, xoá dầm thừa), vì dầm trong model được lưu làm đáp án. Kết quả có số cột, vách và `truthBeams`; `dotnet test` sẽ chỉ ra dầm nào thuật toán còn sót hoặc thừa.
 
 ## Ghi kết quả
 

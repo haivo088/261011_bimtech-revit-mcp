@@ -39,6 +39,96 @@ internal static class CadExtractor
         return result;
     }
 
+    // The columns and walls whose height reaches the elevation (feet), as beam supports: a column's outline is the
+    // convex hull of its solids in plan (its real shape, whatever the family calls its parameters), a wall's the
+    // rectangle of its centre line and width. Columns above and below the level at the same spot count once (the
+    // one ending at the level). Used by propose_beams and saved in cases by export_cad_case.
+    public static List<CaseSupport> ModelSupports(Document document, double elevation)
+    {
+        var tolerance = UnitUtils.ConvertToInternalUnits(50, UnitTypeId.Millimeters);
+        bool Reaches(Element element) =>
+            element.get_BoundingBox(null) is { } box && box.Min.Z - tolerance <= elevation && box.Max.Z + tolerance >= elevation;
+
+        var supports = new List<CaseSupport>();
+        var columns = new FilteredElementCollector(document).OfCategory(BuiltInCategory.OST_StructuralColumns)
+            .OfClass(typeof(FamilyInstance)).Cast<FamilyInstance>()
+            .Where(Reaches)
+            .OrderBy(column => Math.Abs(column.get_BoundingBox(null)!.Max.Z - elevation));
+        foreach (var column in columns)
+        {
+            var hull = Bimtech.StructuralCore.Cad.CadGeometry.ConvexHull(SolidPoints(column));
+            if (hull.Count < 3) continue;
+            var center = column.Location is LocationPoint location
+                ? location.Point
+                : new XYZ(hull.Average(p => p.X), hull.Average(p => p.Y), 0);
+            var (cx, cy) = (Mm(center.X), Mm(center.Y));
+            if (supports.Any(other => Math.Abs(other.Cx - cx) <= 50 && Math.Abs(other.Cy - cy) <= 50)) continue;
+            supports.Add(new CaseSupport
+            {
+                Kind = "column", Id = RevitJson.Id(column.Id), Mark = Mark(column), Cx = cx, Cy = cy,
+                Points = hull.Select(p => new[] { Mm(p.X), Mm(p.Y) }).ToList(),
+            });
+        }
+
+        foreach (var wall in new FilteredElementCollector(document).OfClass(typeof(Wall)).Cast<Wall>().Where(Reaches))
+        {
+            if (wall.Location is not LocationCurve { Curve: Line line }) continue;
+            var (a, b) = (line.GetEndPoint(0), line.GetEndPoint(1));
+            var normal = new XYZ(-(b - a).Y, (b - a).X, 0).Normalize() * (wall.Width / 2);
+            supports.Add(new CaseSupport
+            {
+                Kind = "wall", Id = RevitJson.Id(wall.Id), Mark = Mark(wall),
+                Cx = Mm((a.X + b.X) / 2), Cy = Mm((a.Y + b.Y) / 2),
+                Points = new[] { a + normal, b + normal, b - normal, a - normal }.Select(p => new[] { Mm(p.X), Mm(p.Y) }).ToList(),
+            });
+        }
+        return supports;
+    }
+
+    // The beams placed on the level, as the person approved them: the truth a case's beams are checked against.
+    public static List<TruthBeam> ModelBeams(Document document, Level level) =>
+        new FilteredElementCollector(document).OfCategory(BuiltInCategory.OST_StructuralFraming)
+            .OfClass(typeof(FamilyInstance)).Cast<FamilyInstance>()
+            .Where(beam => beam.StructuralType == Autodesk.Revit.DB.Structure.StructuralType.Beam
+                && beam.get_Parameter(BuiltInParameter.INSTANCE_REFERENCE_LEVEL_PARAM)?.AsElementId() == level.Id
+                && beam.Location is LocationCurve { Curve: Line })
+            .Select(beam =>
+            {
+                var line = (Line)((LocationCurve)beam.Location).Curve;
+                var (start, end) = (line.GetEndPoint(0), line.GetEndPoint(1));
+                return new TruthBeam
+                {
+                    Mark = Mark(beam), X0 = Mm(start.X), Y0 = Mm(start.Y), X1 = Mm(end.X), Y1 = Mm(end.Y),
+                    BMm = TypeLength(beam.Symbol, "b"), HMm = TypeLength(beam.Symbol, "h"),
+                };
+            })
+            .ToList();
+
+    private static string? Mark(Element element) =>
+        element.get_Parameter(BuiltInParameter.ALL_MODEL_MARK)?.AsString() is { Length: > 0 } mark ? mark : null;
+
+    private static double? TypeLength(FamilySymbol symbol, string name) =>
+        symbol.LookupParameter(name) is { StorageType: StorageType.Double } parameter ? Mm(parameter.AsDouble()) : null;
+
+    // The corners of an element's solids, flattened to plan.
+    private static List<XYZ> SolidPoints(Element element)
+    {
+        var points = new List<XYZ>();
+        void Walk(GeometryElement geometry)
+        {
+            foreach (var obj in geometry)
+            {
+                if (obj is Solid { Volume: > 0 } solid)
+                    foreach (Edge edge in solid.Edges)
+                        points.AddRange(edge.Tessellate().Select(p => new XYZ(p.X, p.Y, 0)));
+                else if (obj is GeometryInstance instance && instance.GetInstanceGeometry() is { } nested)
+                    Walk(nested);
+            }
+        }
+        if (element.get_Geometry(new Options { DetailLevel = ViewDetailLevel.Coarse }) is { } geometry) Walk(geometry);
+        return points;
+    }
+
     // The grids in the model, as the person approved them: the truth a case is checked against.
     public static List<TruthGrid> ModelGrids(Document document) =>
         new FilteredElementCollector(document).OfClass(typeof(Grid)).Cast<Grid>()

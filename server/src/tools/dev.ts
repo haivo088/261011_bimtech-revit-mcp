@@ -103,10 +103,14 @@ export const exportCadCase = defineTool({
     "Developer tool. Save one CAD import as plain data (lines, arcs, circles, polylines with layer, line pattern and"
     + " color; Text Notes of the view) to cases/<caseId>/case.json on this machine, for developing and"
     + " regression-testing recognition rules outside Revit. With includeTruth (default), the grids already in the"
-    + " model are saved as the truth: export after the user built and approved the grids of this drawing.",
+    + " model are saved as the truth: export after the user built and approved the grids of this drawing. For the level"
+    + " (levelId, else the view's level), the columns and walls reaching it are saved as beam supports and its beams as"
+    + " the beam truth, so beam recognition replays on the case: export a beam plan after its beams were built and"
+    + " checked (missing ones added, wrong ones fixed).",
   inputSchema: {
     cadId,
     viewId,
+    levelId: elementId.optional().describe("Level whose supports and beams are saved. Default: the plan view's level."),
     notes: z.string().max(2000).optional().describe("Free notes about the drawing, e.g. its source or quirks."),
     includeTruth: z.boolean().optional().describe("Save the model's grids as truth (default true)."),
     maxEntities: z.number().int().min(1).max(2000000).optional().describe("Stop after this many entities (default 300000)."),
