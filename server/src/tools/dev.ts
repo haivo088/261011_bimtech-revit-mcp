@@ -55,7 +55,26 @@ export const exportCadCase = defineTool({
   toParams: (input) => ({ ...input, caseRoot }),
 });
 
+export const runRecognition = defineTool({
+  name: "run_recognition",
+  method: "run_recognition",
+  title: "Run recognition on a CAD (developer)",
+  description:
+    "Developer tool. Run the grid recognition rules on one CAD import: which graphics style looks like grid lines"
+    + " (line pattern first, then grid bubbles, then layer name) with the evidence per style, the grids found with"
+    + " names read from their bubbles, and warnings. If the model already has grids, they are compared as the truth"
+    + " (matched, wrong names, missing, extra).",
+  inputSchema: {
+    cadId,
+    viewId,
+    compareWithModel: z.boolean().optional().describe("Compare with the model's grids (default true)."),
+  },
+  annotations: readOnly,
+  timeoutMs: 120000,
+});
+
 export const devTools: readonly RevitTool[] = [
   runRevitQuery,
   exportCadCase,
+  runRecognition,
 ];
