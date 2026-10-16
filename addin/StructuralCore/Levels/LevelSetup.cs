@@ -252,8 +252,9 @@ internal static class LevelSetup
             .Select(view => view.Id)
             .ToHashSet();
         views = levelViews.Count;
+        // Every view keeps a hidden Viewport even when it is on no sheet (SheetId invalid); only placed ones count.
         var onSheets = new FilteredElementCollector(doc).OfClass(typeof(Viewport)).Cast<Viewport>()
-            .Where(viewport => levelViews.Contains(viewport.ViewId))
+            .Where(viewport => levelViews.Contains(viewport.ViewId) && viewport.SheetId != ElementId.InvalidElementId)
             .Select(viewport => $"view {doc.GetElement(viewport.ViewId)?.Name} trên sheet");
         // Revit cannot delete the view it is showing.
         if (doc.ActiveView is { } active && levelViews.Contains(active.Id))
@@ -264,6 +265,9 @@ internal static class LevelSetup
             .Where(element => element is not null
                 && element.Category is not null
                 && element is not SketchPlane
+                // The level's views' own viewports (placed ones are reported above) and work plane grids go with them.
+                && !(element is Viewport viewport && levelViews.Contains(viewport.ViewId))
+                && element.Category.Id != new ElementId(BuiltInCategory.OST_IOSSketchGrid)
                 && !levelViews.Contains(element.OwnerViewId))
             .Select(element => $"{element!.Category!.Name} {element.Id}");
         return onSheets.Concat(dependents).ToList();

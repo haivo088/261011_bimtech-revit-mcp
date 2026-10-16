@@ -69,6 +69,49 @@ public sealed class StoreyNamesTests
         Assert.Contains(warnings, warning => warning.Contains("Tầng 2 → Tầng 3") && warning.Contains("36600"));
     }
 
+    [Theory]
+    [InlineData("MB_KC_Tang1.dwg", "Tầng 1")]
+    [InlineData("MB_DaiMong.dwg", "Móng")]
+    [InlineData("MB_KC_TangKyThuat.dwg", "Tầng kỹ thuật")]
+    [InlineData("MB_KC_TangTum.dwg", "Tum")]
+    [InlineData("MB_TangHam2.dwg", "Hầm 2")]
+    [InlineData("KC B1.dwg", "Hầm 1")]
+    public void Words_written_together_are_read(string file, string name)
+    {
+        Assert.Equal(name, StoreyNames.Parse(file).Name);
+    }
+
+    [Fact]
+    public void A_file_for_a_range_of_floors_gives_one_row_per_floor()
+    {
+        var (storeys, _, _) = StoreyNames.SuggestTable(
+        [
+            "MB_KC_Tang1.dwg",
+            "MB_KC_Tang4-5.dwg",
+            "MB_KC_Tang6-11.dwg",
+            "MB_KC_TangTum.dwg",
+            "MB_KC_TangKyThuat.dwg",
+            "MB_DaiMong.dwg",
+        ]);
+
+        Assert.Equal(
+            ["Móng", "Tầng 1", "Tầng 4", "Tầng 5", "Tầng 6", "Tầng 7", "Tầng 8", "Tầng 9", "Tầng 10", "Tầng 11",
+                "Tầng kỹ thuật", "Tum"],
+            storeys.Select(storey => storey.Name));
+        Assert.All(storeys.Where(storey => storey.Name is "Tầng 6" or "Tầng 11"),
+            storey => Assert.Equal("MB_KC_Tang6-11.dwg", storey.File));
+        Assert.Contains(storeys.Single(storey => storey.Name == "Tầng 5").Notes, note => note.Contains("4–5"));
+    }
+
+    [Fact]
+    public void A_range_does_not_take_an_elevation_as_its_last_floor()
+    {
+        var guess = StoreyNames.Parse("KC-03 MB TANG 2 (+3.600).dwg");
+
+        Assert.Null(guess.LastFloor);
+        Assert.Equal(3600.0, guess.ElevationMm);
+    }
+
     [Fact]
     public void Storey_heights_outside_the_usual_range_are_reported()
     {

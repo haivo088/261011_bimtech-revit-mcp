@@ -8,8 +8,10 @@ namespace Bimtech.RevitMcp.Recognition;
 // What a DWG file name says about its storey, e.g. "KC-03 MB TANG 2 (+3.600).dwg" → "Tầng 2" at 3600 mm.
 // Name and elevation are null when the file name does not say; nothing is invented.
 // Order sorts storeys bottom to top when elevations are missing: foundation, basements, ground, 1, 2... roof, top.
+// A file drawn for a range of floors ("MB TANG 4-5") names its first floor; LastFloor is the last one it serves.
 public sealed record StoreyGuess(
-    string File, string? Name, double? ElevationMm, double Order, bool LooksLikePlan, IReadOnlyList<string> Notes);
+    string File, string? Name, double? ElevationMm, double Order, bool LooksLikePlan, IReadOnlyList<string> Notes,
+    int? LastFloor = null);
 
 public static partial class StoreyNames
 {
@@ -24,6 +26,17 @@ public static partial class StoreyNames
         var notes = new List<string>();
 
         var (name, order) = StoreyName(text);
+        int? lastFloor = null;
+        if (FloorRange().Match(Plain(stem)) is { Success: true } range)
+        {
+            var first = int.Parse(range.Groups["n"].Value, CultureInfo.InvariantCulture);
+            var last = int.Parse(range.Groups["to"].Value, CultureInfo.InvariantCulture);
+            if (last > first)
+            {
+                (name, order, lastFloor) = ($"Tầng {first}", first, last);
+                notes.Add($"Một file cho các tầng {first}–{last}.");
+            }
+        }
         if (Typical().IsMatch(text))
         {
             name = null;
@@ -34,13 +47,13 @@ public static partial class StoreyNames
         if (!looksLikePlan) notes.Add("Tên file giống mặt cắt, chi tiết hoặc bố trí thép, không phải mặt bằng.");
         if (name is null) notes.Add("Không đọc được tên tầng từ tên file.");
         if (elevation is null) notes.Add("Không đọc được cao độ từ tên file.");
-        return new StoreyGuess(fileName, name, elevation, order, looksLikePlan, notes);
+        return new StoreyGuess(fileName, name, elevation, order, looksLikePlan, notes, lastFloor);
     }
 
     // Plans only, bottom to top; storeys named by several files are kept and reported.
     public static (List<StoreyGuess> Storeys, List<StoreyGuess> Skipped, List<string> Warnings) SuggestTable(IEnumerable<string> fileNames)
     {
-        var guesses = fileNames.Select(Parse).ToList();
+        var guesses = fileNames.Select(Parse).SelectMany(ExpandRange).ToList();
         var plans = guesses.Where(guess => guess.LooksLikePlan).ToList();
         // By elevation where the file name gives one; the rest by storey order after them.
         var storeys = plans.Where(guess => guess.ElevationMm is not null)
@@ -61,6 +74,20 @@ public static partial class StoreyNames
             .GroupBy(guess => guess.Name!, StringComparer.OrdinalIgnoreCase)
             .Select(group => (group.Key, group.First().ElevationMm!.Value))));
         return (storeys, guesses.Where(guess => !guess.LooksLikePlan).ToList(), warnings);
+    }
+
+    // One row per floor a range file serves, each with the same file; only the first floor keeps the name's elevation.
+    private static IEnumerable<StoreyGuess> ExpandRange(StoreyGuess guess)
+    {
+        if (guess.LastFloor is not { } last || guess.Name is null) return [guess];
+        var first = (int)guess.Order;
+        return Enumerable.Range(first, last - first + 1).Select(floor => floor == first ? guess : guess with
+        {
+            Name = $"Tầng {floor}",
+            Order = floor,
+            ElevationMm = null,
+            Notes = [.. guess.Notes.Where(note => !note.StartsWith("Không đọc được cao độ")), "Không đọc được cao độ từ tên file."],
+        });
     }
 
     // Storey heights between consecutive levels (sorted by elevation) outside MinStoreyHeightMm..MaxStoreyHeightMm.
@@ -90,6 +117,7 @@ public static partial class StoreyNames
         if (Foundation().IsMatch(text)) return ("Móng", -1000);
         if (Ground().IsMatch(text)) return ("Tầng trệt", 1);
         if (Mezzanine().IsMatch(text)) return ("Tầng lửng", 1.5);
+        if (Technical().IsMatch(text)) return ("Tầng kỹ thuật", 890);
         if (Terrace().IsMatch(text)) return ("Sân thượng", 900);
         if (Roof().IsMatch(text)) return ("Mái", 1000);
         if (Top().IsMatch(text)) return ("Tum", 1001);
@@ -119,26 +147,34 @@ public static partial class StoreyNames
     }
 
     // Upper case, no Vietnamese diacritics, separators as single spaces: "Mặt_bằng-tầng 2" → "MAT BANG TANG 2".
-    private static string Normalize(string value)
+    private static string Normalize(string value) =>
+        Spaces().Replace(Separators().Replace(Plain(value), " "), " ").Trim();
+
+    // Upper case and no diacritics, words written together split apart, other separators kept:
+    // "MB_KC_DaiMong" → "MB KC DAI MONG", "Tang4-5" → "TANG 4-5".
+    private static string Plain(string value)
     {
         var decomposed = value.Normalize(NormalizationForm.FormD);
         var builder = new StringBuilder(decomposed.Length);
         foreach (var c in decomposed)
             if (CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark) builder.Append(c);
-        var plain = builder.ToString().Normalize(NormalizationForm.FormC).Replace('Đ', 'D').Replace('đ', 'd').ToUpperInvariant();
-        return Spaces().Replace(Separators().Replace(plain, " "), " ").Trim();
+        var plain = builder.ToString().Normalize(NormalizationForm.FormC).Replace('Đ', 'D').Replace('đ', 'd').Replace('_', ' ');
+        return WordJoints().Replace(plain, " ").ToUpperInvariant();
     }
 
     [GeneratedRegex(@"[_\-\(\)\[\]]")] private static partial Regex Separators();
     [GeneratedRegex(@"\s+")] private static partial Regex Spaces();
-    [GeneratedRegex(@"\b(TANG HAM|HAM)\s*(?<n>\d+)?\b|\bB(?<n>\d)\b")] private static partial Regex Basement();
+    [GeneratedRegex(@"(?<=\p{Ll})(?=\p{Lu})|(?<=\p{L})(?=\d)")] private static partial Regex WordJoints();
+    [GeneratedRegex(@"\b(TANG HAM|HAM)\s*(?<n>\d+)?\b|\bB\s?(?<n>\d)\b")] private static partial Regex Basement();
     [GeneratedRegex(@"\b(MONG|DAI MONG|GIANG MONG|COC)\b")] private static partial Regex Foundation();
     [GeneratedRegex(@"\bTRET\b")] private static partial Regex Ground();
     [GeneratedRegex(@"\bLUNG\b")] private static partial Regex Mezzanine();
+    [GeneratedRegex(@"\bKY THUAT\b")] private static partial Regex Technical();
     [GeneratedRegex(@"\bSAN THUONG\b")] private static partial Regex Terrace();
     [GeneratedRegex(@"\bMAI\b|\bROOF\b")] private static partial Regex Roof();
     [GeneratedRegex(@"\bTUM\b")] private static partial Regex Top();
     [GeneratedRegex(@"\b(TANG|LAU|FLOOR|LEVEL|L|T)\s*(?<n>\d{1,3})\b")] private static partial Regex Floor();
+    [GeneratedRegex(@"\b(TANG|LAU|FLOOR|LEVEL|L|T)\s*(?<n>\d{1,3})\s*[-–~÷]\s*(?<to>\d{1,3})(?![\d.,])")] private static partial Regex FloorRange();
     [GeneratedRegex(@"\b(MAT CAT|MC|CHI TIET|CT|THEP|BO TRI THEP|THONG KE|GHI CHU|TONG QUAN)\b")] private static partial Regex NotAPlan();
     [GeneratedRegex(@"(?<=^|[\s(\[_])(?<sign>[+-])\s?(?<int>\d{1,3})[.,](?<frac>\d{1,3})(?![\d])")] private static partial Regex MetersSigned();
     [GeneratedRegex(@"\b(COS|COT|EL|ELEV|CAO DO)\s*(?<sign>[+-])?\s?(?<int>\d{1,3})[.,](?<frac>\d{1,3})\b")] private static partial Regex MetersAfterKeyword();
