@@ -40,19 +40,15 @@ internal static class QueryCompiler
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary,
                 nullableContextOptions: NullableContextOptions.Disable));
 
+        // Errors are read from the code as written, so line numbers match the snippet; the guards go in after.
+        var errors = Errors(compilation.GetDiagnostics());
+        if (errors.Count > 0) return new Result(null, errors);
+        compilation = compilation.ReplaceSyntaxTree(tree, QueryGuardInserter.Insert(tree, compilation.GetSemanticModel(tree)));
+
         using var stream = new MemoryStream();
         var emitted = compilation.Emit(stream);
         if (!emitted.Success)
-            return new Result(null, emitted.Diagnostics
-                .Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
-                .Take(20)
-                .Select(diagnostic =>
-                {
-                    var position = diagnostic.Location.GetLineSpan().StartLinePosition;
-                    return new Diagnostic(position.Line + 1 - PrefixLines, position.Character + 1, diagnostic.Id,
-                        diagnostic.GetMessage());
-                })
-                .ToList());
+            return new Result(null, Errors(emitted.Diagnostics));
 
         stream.Position = 0;
         var context = AssemblyLoadContext.GetLoadContext(typeof(QueryCompiler).Assembly) ?? AssemblyLoadContext.Default;
@@ -60,6 +56,18 @@ internal static class QueryCompiler
         var method = assembly.GetType("BimtechDevQuery.Query")!.GetMethod("Run", BindingFlags.Public | BindingFlags.Static)!;
         return new Result(method.CreateDelegate<Func<QueryContext, object?>>(), []);
     }
+
+    private static List<Diagnostic> Errors(IEnumerable<Microsoft.CodeAnalysis.Diagnostic> diagnostics) =>
+        diagnostics
+            .Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
+            .Take(20)
+            .Select(diagnostic =>
+            {
+                var position = diagnostic.Location.GetLineSpan().StartLinePosition;
+                return new Diagnostic(position.Line + 1 - PrefixLines, position.Character + 1, diagnostic.Id,
+                    diagnostic.GetMessage());
+            })
+            .ToList();
 
     // The .NET runtime's assemblies plus Revit, the add-in and this DLL, one file per assembly name.
     private static IReadOnlyList<MetadataReference> LoadReferences()

@@ -17,7 +17,7 @@ flowchart LR
 
 | Tool | Làm gì |
 | --- | --- |
-| `run_revit_query` | Biên dịch (Roslyn) và chạy một đoạn C# trên model đang mở. Chạy trong một `TransactionGroup` **luôn bị rollback**, nên model không bao giờ bị đổi; `FailureGuard` chặn hộp thoại. Không chặn đọc/ghi file, và Revit không cho dừng giữa chừng: vòng lặp dài nên gọi `ctx.Cancellation.ThrowIfCancellationRequested()`. |
+| `run_revit_query` | Biên dịch (Roslyn) và chạy một đoạn C# trên model đang mở. Chạy trong một `TransactionGroup` **luôn bị rollback**, nên model không bao giờ bị đổi; `FailureGuard` chặn hộp thoại. Có chốt chặn treo và sập (xem bên dưới). Không chặn đọc/ghi file. |
 | `analyze_cad` | Dấu vân tay của một CAD: mỗi layer có gì (line pattern, màu, số line, tỉ lệ line đứng/ngang, đường kính tròn, kích thước chữ nhật, bề rộng cặp line song song), text hay gặp, ứng viên trục tốt nhất. Đủ gọn để Claude đọc cả bản vẽ trong một lần. |
 | `run_recognition` | Chạy lõi nhận diện trục trên CAD thật; nếu model đã có grid thì coi đó là đáp án và so sánh (khớp, sai tên, thiếu, thừa). |
 | `export_cad_case` | Lưu CAD thành `cases/<caseId>/case.json` (dữ liệu thuần: line, arc, tròn, polyline kèm layer/pattern/màu, text của view). Mặc định lưu kèm grid trong model làm **đáp án**: xuất sau khi đã dựng và duyệt grid của bản vẽ. |
@@ -36,6 +36,24 @@ foreach (var item in cad.get_Geometry(new Options { View = view }))
         }
 return styles.OrderByDescending(s => s.Value);
 ```
+
+### Chốt chặn treo và sập Revit
+
+Đoạn code chạy trên luồng chính của Revit, và .NET không thể ngắt một luồng đang chạy. Nếu không có biện pháp gì, một vòng lặp vô hạn sẽ **treo Revit đến khi tắt hẳn**, còn đệ quy vô hạn gây **tràn stack**, lỗi mà .NET không bắt được, và **Revit sập** mất dữ liệu chưa lưu.
+
+Vì vậy trước khi biên dịch, `devtools/QueryGuardInserter.cs` viết lại đoạn code để nó tự dừng được (`devtools/QueryGuard.cs`):
+
+| Chèn vào | Tác dụng | Kết quả trả về |
+| --- | --- | --- |
+| `QueryGuard.Tick()` ở đầu **mọi vòng lặp** (`for`, `foreach`, `while`, `do`) | Quá `timeoutSeconds` (mặc định 30, tối đa 110) hoặc Claude ngừng chờ thì dừng | `stage: "timeout"` hoặc `"cancelled"` |
+| `Enter()` / `try … finally Exit()` quanh **mọi hàm cục bộ, lambda, anonymous method** | Đếm độ sâu gọi hàm; quá 1000 tầng thì dừng trước khi tràn stack | `stage: "recursion"` |
+
+Dù dừng kiểu nào, transaction vẫn rollback và Revit lấy lại quyền điều khiển. Lỗi biên dịch được đọc từ code gốc nên số dòng vẫn đúng. Lambda chuyển thành expression tree (`Expression<Func<…>>`) được giữ nguyên. `tests/Bimtech.RevitMcp.DevTools.Tests` chạy thật các vòng lặp và đệ quy vô hạn (9 kiểu vòng lặp, 5 kiểu đệ quy) để chứng minh chúng dừng đúng, và kiểm tra code bình thường vẫn cho cùng kết quả.
+
+Những gì chốt chặn **không** dừng được:
+- Một lệnh Revit API chạy lâu (ví dụ regenerate model lớn): không vô hạn, nhưng phải chờ nó xong.
+- Vòng lặp nằm **bên trong thư viện** chứ không trong đoạn code, ví dụ `Enumerable.Repeat(0, int.MaxValue).ToList()`: chạy lâu và hết bộ nhớ.
+- Lệnh chờ vô hạn có chủ ý (`Thread.Sleep(Timeout.Infinite)`, chờ khoá).
 
 ## Cách bật trên máy người phát triển
 

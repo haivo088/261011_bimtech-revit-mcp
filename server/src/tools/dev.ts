@@ -15,11 +15,15 @@ export const runRevitQuery = defineTool({
     + " import contains. The snippet is the body of `static object Run(QueryContext ctx)`: `doc`, `uidoc`, `view` and"
     + " `ctx` are in scope, System.Linq and Autodesk.Revit.DB are imported, and it should end with `return <value>;`."
     + " Return anonymous objects or lists of numbers and strings, not Revit elements. ctx.Print(x) adds a log line;"
-    + " ctx.Mm(feet) and ctx.Feet(mm) convert lengths; long loops should call ctx.Cancellation.ThrowIfCancellationRequested()."
+    + " ctx.Mm(feet) and ctx.Feet(mm) convert lengths."
     + " Everything runs inside a transaction group that is always rolled back, so the model is never changed."
+    + " Loops are stopped after timeoutSeconds (stage \"timeout\") and recursion deeper than 1000 calls (stage"
+    + " \"recursion\"), so a mistake cannot freeze or crash Revit; one slow Revit API call still runs to its end."
     + " Compile errors come back with line numbers of the snippet.",
   inputSchema: {
     code: z.string().min(1).max(100000).describe("C# statements ending with a return."),
+    timeoutSeconds: z.number().int().min(1).max(110).optional()
+      .describe("Stop the snippet's loops after this many seconds (default 30)."),
     maxResultChars: z.number().int().min(1000).max(1000000).optional()
       .describe("Cut the result JSON after this many characters (default 50000)."),
   },
