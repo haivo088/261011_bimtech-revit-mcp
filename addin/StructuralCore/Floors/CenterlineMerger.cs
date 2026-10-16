@@ -2,7 +2,7 @@ using Autodesk.Revit.DB;
 
 namespace Bimtech.StructuralCore.Floors;
 
-/// <summary>Gộp nhiều đoạn thẳng hàng, liền kề (cùng phương, cùng vị trí vuông góc, nối tiếp dọc trục) thành 1 đoạn liền duy nhất — phỏng theo CadBeamScanner.MergeCollinearFragments của PlaceBeam, nhưng tổng quát hoá theo HƯỚNG BẤT KỲ (dùng vector + tích vô hướng) thay vì khoá cứng trục X/Y, vì dầm ở tool này không giới hạn phải chạy theo lưới. Dùng khi vẽ line tim dầm ra view — tránh vẽ vụn nhiều đoạn ngắn rời rạc cho 1 đường dầm liên tục bị cột/dầm khác chia cắt, giúp người dùng sửa tay dễ hơn (ít mẩu rời hơn).</summary>
+/// <summary>Gộp nhiều đoạn thẳng hàng, liền kề (cùng phương, cùng vị trí vuông góc, nối tiếp dọc trục) thành 1 đoạn liền duy nhất — phỏng theo cách gộp đoạn thẳng hàng của tool PlaceBeam cũ, nhưng tổng quát hoá theo HƯỚNG BẤT KỲ (dùng vector + tích vô hướng) thay vì khoá cứng trục X/Y, vì dầm ở tool này không giới hạn phải chạy theo lưới. Dùng khi vẽ line tim dầm ra view — tránh vẽ vụn nhiều đoạn ngắn rời rạc cho 1 đường dầm liên tục bị cột/dầm khác chia cắt, giúp người dùng sửa tay dễ hơn (ít mẩu rời hơn).</summary>
 internal static class CenterlineMerger
 {
     private const double AngleToleranceDegrees = 2.0;
