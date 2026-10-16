@@ -32,6 +32,8 @@ Công cụ dựng model kết cấu từ CAD (xem [05 — Dựng model kết c�
 - Mọi `place_*` mặc định chỉ xem trước (`dryRun`); chạy thật trả `batchId`.
 - `undo_batch`: xóa đúng những gì một lần ghi đã tạo.
 
+Công cụ cho người phát triển (`run_revit_query`, `analyze_cad`, `run_recognition`, `export_cad_case`) nằm trong DLL riêng, chỉ cài trên máy người phát triển và chỉ hiện khi `BIMTECH_DEV=1`; xem [07 — Bộ công cụ cho người phát triển](docs/07-dev-tools.md).
+
 Phần thuật toán CAD nằm trong lõi `addin/StructuralCore/`, chép từ repo `RevitAddinManager` và từ nay được duy trì riêng trong repo này; build không cần repo nào khác.
 
 Quy ước chung: ID phần tử là chuỗi; danh sách trả `total`, `hasMore`, `nextOffset`; giá trị đo dùng đơn vị SI cố định ghi trong trường `unit` (mm, m², m³, độ, kg, kN, MPa...), kèm `display` theo cài đặt project. Lọc `categoryType: "Model"` để chỉ lấy phần tử vật lý.

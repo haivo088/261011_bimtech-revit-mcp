@@ -11,5 +11,6 @@ public sealed class DevToolsModule : IDevToolsModule
         new RunRevitQueryCommand(),
         new ExportCadCaseCommand(),
         new RunRecognitionCommand(),
+        new AnalyzeCadCommand(),
     ];
 }

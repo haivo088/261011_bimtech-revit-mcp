@@ -73,8 +73,28 @@ export const runRecognition = defineTool({
   timeoutMs: 120000,
 });
 
+export const analyzeCad = defineTool({
+  name: "analyze_cad",
+  method: "analyze_cad",
+  title: "Analyze a CAD drawing (developer)",
+  description:
+    "Developer tool. Fingerprint one CAD import so the whole drawing fits in one reply: extent, totals, and per layer"
+    + " the line patterns and colors, line counts and lengths, share of horizontal/vertical lines, circle diameters,"
+    + " rectangle sizes (\"300x500\"), and widths of parallel line pairs (beams, walls); the most frequent texts; and"
+    + " the best grid candidate. Use it to propose which layer holds piles, caps, columns, beams, walls or grids,"
+    + " then confirm with the user.",
+  inputSchema: {
+    cadId,
+    viewId,
+    maxLayers: z.number().int().min(1).max(500).optional().describe("Layers to return, busiest first (default 60)."),
+  },
+  annotations: readOnly,
+  timeoutMs: 120000,
+});
+
 export const devTools: readonly RevitTool[] = [
   runRevitQuery,
   exportCadCase,
   runRecognition,
+  analyzeCad,
 ];
