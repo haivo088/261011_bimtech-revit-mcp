@@ -28,7 +28,7 @@ Công cụ dựng model kết cấu từ CAD (xem [05 — Dựng model kết c�
 - Mọi `place_*` mặc định chỉ xem trước (`dryRun`); chạy thật trả `batchId`.
 - `undo_batch`: xóa đúng những gì một lần ghi đã tạo.
 
-Phần thuật toán CAD nằm trong lõi dùng chung ở repo `RevitAddinManager` (`Tools/_Shared/StructuralCore/`); repo đó phải nằm cạnh repo này khi build.
+Phần thuật toán CAD nằm trong lõi `addin/StructuralCore/`, chép từ repo `RevitAddinManager` và từ nay được duy trì riêng trong repo này; build không cần repo nào khác.
 
 Quy ước chung: ID phần tử là chuỗi; danh sách trả `total`, `hasMore`, `nextOffset`; giá trị đo dùng đơn vị SI cố định ghi trong trường `unit` (mm, m², m³, độ, kg, kN, MPa...), kèm `display` theo cài đặt project. Lọc `categoryType: "Model"` để chỉ lấy phần tử vật lý.
 

@@ -21,18 +21,13 @@
     </Reference>
   </ItemGroup>
 
-  <!-- Structural modeling core shared with the BIMTECH WPF hot tools (repo RevitAddinManager).
-       Source files are compiled into this add-in; see StructuralCore.props for why. -->
-  <PropertyGroup>
-    <!-- Embeds the company default families (e.g. the concrete column family) for load_default_column_family. -->
-    <StructuralCoreEmbedFamilies>true</StructuralCoreEmbedFamilies>
-    <StructuralCoreDir Condition="'$(StructuralCoreDir)' == ''">$(MSBuildThisFileDirectory)..\..\RevitAddinManager\Tools\_Shared\StructuralCore\</StructuralCoreDir>
-  </PropertyGroup>
-  <Import Project="$(StructuralCoreDir)StructuralCore.props" Condition="Exists('$(StructuralCoreDir)StructuralCore.props')" />
-
-  <Target Name="ValidateStructuralCore" BeforeTargets="ResolveReferences">
-    <Error Condition="!Exists('$(StructuralCoreDir)StructuralCore.props')" Text="Structural core not found at $(StructuralCoreDir). Clone RevitAddinManager next to this repo or set StructuralCoreDir." />
-  </Target>
+  <!-- Structural modeling core (StructuralCore\), copied from RevitAddinManager at f2db0d5 and now
+       maintained here. Its .cs files compile in through the SDK's default glob. The company default
+       families are embedded under the resource names DefaultFamilies expects. -->
+  <ItemGroup>
+    <EmbeddedResource Include="StructuralCore\Families\*.rfa"
+                      LogicalName="Bimtech.StructuralCore.Families.%(Filename)%(Extension)" />
+  </ItemGroup>
 
   <Target Name="ValidateRevitLocation" BeforeTargets="ResolveReferences">
     <Error Condition="!Exists('$(RevitInstallDir)\RevitAPI.dll')" Text="Revit 2025 API not found. Set RevitInstallDir to your Revit installation folder." />

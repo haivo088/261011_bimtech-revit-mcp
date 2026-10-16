@@ -2,13 +2,12 @@
 
 Mục tiêu: Claude dựng cột, dầm, vách, sàn, cọc từ bản vẽ CAD đã import/link vào Revit, có người duyệt trước mỗi lần ghi. Đã có **cột, dầm, cọc + đài**; vách và sàn theo cùng khuôn.
 
-## Lõi dùng chung
+## Lõi kết cấu
 
-Thuật toán quét CAD và đặt phần tử nằm ở repo `RevitAddinManager`, thư mục `Tools/_Shared/StructuralCore/`. Lõi được dùng chung với các hot tool WPF (`Tools/Modeling/Place*`), nên sửa thuật toán ở một chỗ thì cả hai được hưởng.
+Thuật toán quét CAD và đặt phần tử nằm trong `addin/StructuralCore/`. Lõi được chép từ repo `RevitAddinManager` (`Tools/_Shared/StructuralCore/`, commit `f2db0d5`) và từ nay được duy trì riêng ở đây. Các hot tool WPF bên `RevitAddinManager` giữ bản của chúng, nên sửa lõi ở repo này không ảnh hưởng tới chúng và ngược lại.
 
-- Add-in MCP **biên dịch thẳng** các file `.cs` của lõi vào DLL qua `StructuralCore.props`, không tham chiếu DLL riêng.
-- `addin/Bimtech.RevitMcp.Addin.csproj` tìm lõi ở `..\..\RevitAddinManager\Tools\_Shared\StructuralCore\`. Nếu đặt repo ở chỗ khác: `dotnet build ... -p:StructuralCoreDir=<đường dẫn>\`.
-- `StructuralCoreEmbedFamilies=true` nhúng các family chuẩn (`Families/*.rfa`) vào DLL MCP.
+- Các file `.cs` của lõi được **biên dịch thẳng** vào DLL add-in, không tham chiếu DLL riêng.
+- Các family chuẩn (`StructuralCore/Families/*.rfa`) được nhúng vào DLL dưới tên tài nguyên `Bimtech.StructuralCore.Families.<tên file>`.
 
 | Thành phần lõi | Vai trò |
 | --- | --- |
@@ -80,9 +79,10 @@ Type cho mỗi nhóm được chọn theo thứ tự: mục trong `types` → Ty
 
 `scanId` và `batchId` chỉ sống trong bộ nhớ của bridge (tối đa 20 mỗi loại) và gắn với document đã tạo ra chúng. Tắt bridge thì mất; khi đó dùng Ctrl+Z trong Revit.
 
-## Thêm loại phần tử mới (dầm, vách, sàn, cọc)
+## Thêm loại phần tử mới
 
-1. Chuyển scanner/placer của tool WPF tương ứng vào `StructuralCore/<Loại>/`, giữ nguyên thuật toán, bỏ phụ thuộc UI. Thêm hàm `Plan*` xem trước cho mỗi thao tác ghi.
-2. Cho tool WPF dùng lõi, build bằng `publish-tool.ps1 -NoUpload`, test hồi quy trong Revit.
-3. Thêm `Scan<Loại>Command` và `Place<Loại>Command` trong `addin/Commands/Structural/` theo mẫu cột/dầm: kết quả quét lưu bằng `context.Sessions.Add`, lần chạy thật bọc trong `WriteSession`.
-4. Khai báo công cụ trong `server/src/tools/structural.ts`; `tests/contract.test.mjs` kiểm tra hai phía khớp tên.
+Lõi đã có sẵn level/lưới (`Levels/`), vách (`Walls/`) và sàn (`Floors/`); chưa có command MCP cho chúng.
+
+1. Nếu lõi chưa có loại đó: viết scanner/placer trong `addin/StructuralCore/<Loại>/`, không phụ thuộc UI (có thể tham khảo tool WPF bên `RevitAddinManager` nhưng không sửa repo đó). Thêm hàm `Plan*` xem trước cho mỗi thao tác ghi.
+2. Thêm `Scan<Loại>Command` và `Place<Loại>Command` trong `addin/Commands/Structural/` theo mẫu cột/dầm: kết quả quét lưu bằng `context.Sessions.Add`, lần chạy thật bọc trong `WriteSession`.
+3. Khai báo công cụ trong `server/src/tools/structural.ts`; `tests/contract.test.mjs` kiểm tra hai phía khớp tên.
