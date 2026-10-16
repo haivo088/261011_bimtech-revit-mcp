@@ -73,11 +73,13 @@ Kết quả này quyết định mốc cao độ cho bản nâng cấp U2 (nhậ
 
 Đạt khi:
 - Cửa sổ duyệt có mục `M1`, `M2`... (dời CAD) và `G-1`, `G-2`..., `G-A`... (mỗi trục một mục), mô tả `Trục B (ngang): y = 6000 mm từ gốc, nhịp 6000`.
-- Tên trục: nếu text đầu trục là Text Note thì đúng tên trên bản vẽ; không thì 1, 2, 3... / A, B, C... kèm ghi chú "tên tự đánh".
+- Tên trục: CAD import thì thêm `dwgPath` (CAD link tự tìm file) → tên đọc từ chữ trong vòng tròn đầu trục của file DWG, kể cả vòng tròn vẽ bằng ellipse, nằm trong block, hay cách xa đầu trục có đường dẫn. Kết quả có `dwg.attached: true`. Thiếu `dwgPath` thì 1, 2, 3... / A, B, C... kèm ghi chú "tên tự đánh".
+- Đường trên layer trục mà không có vòng tròn (mép sàn, console) thành `A'`, `B'`... trong `extraLines`, trạng thái **Bỏ** sẵn; giao trục 1-A là trục **có tên** đầu tiên, không phải đường phụ.
 - Nhịp vẽ lệch (5998,7) có ghi chú `Nhịp đo 5998.7 mm → 6000 mm`; sau commit đo bằng Dimension trong Revit ra đúng số tròn.
 - Mỗi mục dời CAD tầng khác ghi **"Căn theo trục của chính CAD này"**. Thử với hai file tầng vẽ ở hai chỗ khác nhau trong DWG: cả hai vẫn nằm khớp trục sau commit. Mục nào ghi "Dời theo vector của CAD gốc" thì kiểm tra kỹ CAD đó.
 - Sau commit: giao điểm trục đầu tiên hai phương trùng Project Base Point; trục và CAD đã **ghim**.
 - Gọi lại `propose_grids` → mọi trục bị blocked vì trùng tên, không có mục dời CAD.
+- Mục cuối `X1` "Căn phạm vi": sau commit, mở các mặt đứng → mọi trục chạy từ level thấp nhất −1000 tới level cao nhất +1000, mọi level dài quá trục biên 2000 mm (chỉnh bằng `gridMarginMm` / `levelMarginMm`). Thêm tầng bằng `propose_levels` khi đã có trục → kế hoạch cũng có `X1`, trục tự cao thêm tới tầng mới.
 - Bản vẽ có layer trục tên lạ: nếu tự nhận sai thì gọi lại với `gridLayer`. Ghi lại style được chọn và điểm (`styleScores`) để bổ sung quy tắc.
 - Bản vẽ có trục xiên: kết quả có cảnh báo "đường dài xiên".
 
@@ -196,15 +198,17 @@ Kết thúc bằng `export_cad_case` cho CAD tầng 1 (có trục đã dựng đ
 
 ## Ghi kết quả
 
+Lần thử 16–17/10/2026 trên `261016.rvt` (Revit 2025), DWG `MB_KC_*.dwg` của dự án thử.
+
 | Phần | Đạt / Không | Ghi chú, lỗi (chép nguyên văn) |
 | --- | --- | --- |
-| 1. Kết nối | | |
-| 2. Tầng | | |
-| 3. Trục | | |
-| 4. Cọc, đài | | |
-| 5. Cột | | |
-| 6. Vách | | |
-| 7. Dầm | | |
-| 8. Sàn | | |
-| 9. An toàn | | |
-| 10. Bộ dev | | |
+| 1. Kết nối | Đạt | Revit 2025, bridge 0.5.0, `devTools: loaded`. Sau khi cài lại, Claude vẫn giữ mô tả tool cũ (thiếu `dwgPath`) nhưng server mới vẫn nhận tham số. |
+| 2. Tầng | Đạt (sau sửa) | 19 tầng (Móng −3600, Tầng 1–18 bước 3600) + CAD từng tầng, ~52 s, không timeout. `Level 1` → `Tầng 1` (đổi tên, không trùng). Lỗi đã sửa: `DaiMong`/`TangKyThuat`/`TangTum` viết liền không nhận; file dải tầng `Tang4-5` chỉ ra 1 tầng; `Level 2` thừa không có mục xoá `D1` (viewport ẩn và work plane grid của view bị coi là đang dùng). Mới: mục `X1` kéo trục theo dải level và level theo trục biên. Chưa thử: Ctrl+Z, ký tự cấm, `viewTemplate`, `cadUnit`, mốc cao độ (C). |
+| 3. Trục | Đạt (sau sửa) | 17 trục, layer `kata_grid` nét `IMPORT-CENTER`, không phải làm tròn nhịp. Lỗi đã sửa: tên trục tự đánh vì chữ đầu trục nằm trong DWG → `propose_grids` đọc file (`dwgPath`); vòng tròn đầu trục là Ellipse (trước bị bỏ); chữ trong block lồng `truc/toado` lấy sai điểm căn; vòng tròn trục ngang cách đầu trục 3,5 m; đường 1800 không tên thành trục A làm lệch tên → giờ là `A'` (đường phụ, Bỏ sẵn), 1-A là trục có tên đầu tiên. File khai Inches nhưng vẽ mm: căn vị trí tự xử lý (tỉ lệ 1/25,4). Mỗi CAD dời theo trục của chính nó, CAD Móng khớp. |
+| 4. Cọc, đài | Một phần | 128 cọc (D800×54, D1000×74), 57 đài + 57 lót, đỉnh cọc = đáy đài + 100, join đúng. Lỗi: chiều dài cọc không đặt được (`Length` của `BTC-CocTron_BeTong` chỉ đọc, cọc 6,1 m thay vì 30 m); 13 đường bao không cọc trên `DCE_BaoBeTong` thành đài (6 dựng, 7 lồng trong đài khác, có "floors overlap"); chiều dày đài không đọc được (ký hiệu trong DWG). Số hiệu mục `C…` không theo thứ tự quét. Cần: đài = đường bao chứa cọc, không phụ thuộc layer. |
+| 5. Cột | Đạt, cần nâng cấp | 51 cột (350x1300×4, 350x1400×28, 500x1700×1, 1000x1000×18), cách trục bội 5 mm, Column Location Mark khớp, vị trí đúng (người dùng kiểm tra). `taggedColumns: 0` (ký hiệu trong DWG). Vẫn phải chọn layer — trái hướng "nhận như kỹ sư": hatch `01 Hatch colum` SOLID ×51 đúng bằng số cột, nên nhận cột từ hatch là khả thi. |
+| 6. Vách | Một phần | Đọc DWG khớp 95,1%, `regionFrom: grids`, mẫu cột SOLID học từ cột đã dựng, quét lại `cached: true`, propose lại → `alreadyModeledGroups`. Dựng 17 vách (w300×13, w330×4), 6 vách sai đã xoá: chỉ có đài đỡ 0–67% chiều dài (dải mép trục A/D là dầm), 11 vách lõi nằm 100% trên đài. Lỗi: nhóm w350 trùng cột dẹt đã dựng; type khớp theo bề dày (`CW 102-85-100p`, `Exterior - Brick on Mtl. Stud`) — phải tạo `BTC-VachKC_300/330` bằng send_code. Cần luật: vách phải có đỡ liên tục bên dưới; mẫu hatch BETONG/AR-CONC là bằng chứng bê tông. |
+| 7. Dầm | Đạt (sau sửa) | Dò từ 51 cột + 11 vách: 87 dầm chính. Lần đầu cả 12 nhóm bị chặn (thiếu h, ký hiệu trong DWG) → `propose_beams` đọc ký hiệu từ file (`dwgPath`, khớp 80,5%): 24 nhóm theo ký hiệu thật, dựng 78 dầm, b/h đúng ký hiệu, đỉnh +3600, có Mark, join cột. Còn lại: 251 ký hiệu dầm phụ 220x600 chưa dựng (dầm phụ chưa hỗ trợ); 3 nhóm `D2-X14 b275`, `D2-X6A b100`, `b350` (ký hiệu lan sang cặp nét đo bề rộng khác); 2 dầm treo (A-8 dọc trục 8 1800, C-7 dọc trục 7 5340). |
+| 8. Sàn | Chưa đủ | Thử khi chỉ có vách lõi: 2 ô trong lõi thang rộng 2,5 m — là giếng, không phải sàn; không dựng. Cần: ô chỉ bao bởi vách lõi → gợi ý giếng, Bỏ sẵn. Thử lại sau khi có dầm. |
+| 9. An toàn | Đạt | Chỉ đọc: `commit_plan` → `-32008`, `propose_*` vẫn chạy. Sửa tay model → `-32022`, không ghi gì. `open_plan_review` mở lại, giữ mục đã duyệt. Lưu ý: sau khi bật chỉ đọc, server ẩn lệnh ghi và trả `-32602 Tool commit_plan disabled` cho tới khi ping lại. |
+| 10. Bộ dev | Đạt | `send_code` đọc/ghi qua cửa sổ duyệt (kéo trục/level, xoá vách, tạo type vách), một Ctrl+Z. Mô tả ghi `ctx.Mm` nhưng phải là `QueryContext.Mm` (đã sửa). Command set `checks/walls-on-caps` lưu, chạy bằng `script`+`args`, `history` đủ. `export_cad_case` Tầng 1: CAD import, AC1032, Inches, khớp 1658/1743 nét (95,1%), `problem: null`, hatch `01 Hatch colum` SOLID×51, `DCE_Hatch` BRASS×35, BETONG×16, EARTH×6, AR-CONC×4. |

@@ -1,0 +1,21 @@
+{
+  "description": "For every wall, the share of its length that sits over a pile cap (Foundation Slab of capType), flagging walls under minPct: a structural wall on the lowest storey needs continuous support.",
+  "write": false,
+  "params": [
+    {
+      "name": "capType",
+      "type": "string",
+      "description": "Floor type name of the pile caps.",
+      "default": "BTC-DaiMong_1500"
+    },
+    {
+      "name": "minPct",
+      "type": "number",
+      "description": "Walls with less of their length over a cap are flagged.",
+      "default": 80
+    }
+  ],
+  "notes": [
+    "Revit test 2026-10-17 on 261016.rvt: the 11 lift-core walls sat 100% on caps, the 6 wrong hatch walls 0-67% (perimeter strips on grids A/D were beams)."
+  ]
+}
