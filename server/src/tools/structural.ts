@@ -3,22 +3,20 @@ import { defineTool, readOnly } from "./define.js";
 import { elementId } from "./schemas.js";
 
 // CAD-to-structure workflow. Each element kind follows the same steps:
-//   list_cad_sources → scan_cad_<kind> (layers) → scan_cad_<kind> (groups, scanId)
-//   → place_<kind> dryRun=true → user confirms → place_<kind> dryRun=false → undo_batch if needed.
-// Geometry stays in the add-in; tools exchange scanId/batchId and summaries only.
+//   list_cad_sources → scan_cad_<kind> (layers) → scan_cad_<kind> (groups, scanId) → propose_<kind>
+//   → the user reviews the plan in Revit → commit_plan. Beams need no scan: propose_beams reads the CAD itself.
+// Geometry stays in the add-in; tools exchange scanId/planId and summaries only.
 
 const regionMm = z.object({
   minX: z.number(), minY: z.number(), maxX: z.number(), maxY: z.number(),
 }).describe("Optional plan rectangle in millimeters (model coordinates); only outlines whose center lies inside are kept.");
 
-const write = { readOnlyHint: false, destructiveHint: false, idempotentHint: false };
 const viewId = elementId.optional()
   .describe("Plan view showing the CAD. Defaults to the CAD's own view if it is view-specific, else the active view.");
 const layerList = (what: string) => z.array(z.string().min(1).max(255)).max(50).optional()
   .describe(`CAD layer names holding ${what}, exactly as returned by the first call.`);
 const typeMap = (example: string) => z.record(z.string(), elementId).optional()
   .describe(`Type to use per group key, e.g. {"${example}": "12345"}. Overrides automatic matching.`);
-const dryRun = z.boolean().optional().describe("Default true: report only. false: modify the model.");
 
 export const listCadSources = defineTool({
   name: "list_cad_sources",
@@ -226,7 +224,7 @@ export const loadDefaultFamily = defineTool({
     "Load a company structural family packaged with the add-in: column BTC-CotCN_BeTong (b/h), beam BTC-DamCN_BeTong"
     + " (b/h), or pile BTC-CocTron_BeTong (Diameter). For piles it also creates the default cap (BTC-DaiMong_1500)"
     + " and lean-concrete (BTC-BeTongLot_100) Foundation Slab types when missing. Use when a scan reports no suitable"
-    + " type; its familyId is the templateFamilyId for propose_columns/place_beams. Does nothing if already loaded."
+    + " type; its familyId is the templateFamilyId for propose_columns/propose_beams. Does nothing if already loaded."
     + " Confirm with the user first.",
   inputSchema: {
     kind: z.enum(["column", "beam", "pile"]).describe("Which family to load."),
@@ -268,59 +266,52 @@ export const proposeColumns = defineTool({
   timeoutMs: 120000,
 });
 
-export const scanCadBeams = defineTool({
-  name: "scan_cad_beams",
-  method: "scan_cad_beams",
-  title: "Scan CAD for beams",
+export const proposeBeams = defineTool({
+  name: "propose_beams",
+  method: "propose_beams",
+  title: "Propose main beams from CAD",
   description:
-    "Read beams from a CAD drawing as pairs of parallel lines, and their names/sizes from nearby Text Notes in the"
-    + " view (e.g. \"D2-X7(220x600)\"). Call first without layers to list the layers, ask the user which hold beams,"
-    + " then call again with layers. Groups: by tag name (placed by default), by bxh from bare text, or by width"
-    + " only (key like \"b220\"). Optionally extends beam ends to columns on levelId. Changes nothing in the model.",
+    "Plan the main beams of one level from a CAD plan, without changing the model. Model the columns (and walls) below"
+    + " the level first: they are the supports. A beam is a pair of parallel CAD lines leaving a column (100-1000 mm"
+    + " apart, middle within the column) and reaching the next column or wall in line, across gaps where other beams"
+    + " cross. Beams run centre to centre of their supports and split only at supports, not at grid crossings. Marks"
+    + " like \"D1 (220x600)\" are read from Text Notes in the view (the nearest beam parallel to the text, then spread"
+    + " along the beams in line); b comes from the mark, else from the lines; h only from the mark or heightsMm, else"
+    + " the group is Blocked: ask the user. The offset from the grid is set like columns (centred or face on the grid"
+    + " within gridToleranceMm, else rounded to snapMm). One review item per group (mark and size); beams already in"
+    + " the model are skipped. Reports dangling edges (secondary beams or consoles, not placed yet) and unused marks."
+    + " Opens the review window and returns a planId at once; then get_plan_status and commit_plan.",
   inputSchema: {
     cadId: elementId.describe("CAD import or link ID from list_cad_sources."),
     viewId,
-    layers: layerList("beam outlines"),
-    region: regionMm.optional(),
-    textSearchMm: z.number().min(1).max(20000).optional()
-      .describe("How far from a beam to look for its text (default 1000)."),
-    extendToColumns: z.boolean().optional()
-      .describe("Extend beam ends to the nearest columns (needs levelId). Default false."),
-    levelId: elementId.optional().describe("Level whose columns beams are extended to."),
-    columnSearchMm: z.number().min(1).max(20000).optional()
-      .describe("How far to look for a column from a beam end (default 3000)."),
-  },
-  annotations: readOnly,
-  timeoutMs: 120000,
-});
-
-export const placeBeams = defineTool({
-  name: "place_beams",
-  method: "place_beams",
-  title: "Place beams from scan",
-  description:
-    "Place structural beams from a scan on a level (offset 0); beams overlapping an existing beam are skipped."
-    + " Groups with a tag name are placed unless listed in 'exclude'; groups without one only when listed in"
-    + " 'include'. dryRun defaults to true and only reports the plan: always show it to the user and get"
-    + " confirmation before calling again with dryRun=false. A real run is one undo step and returns a batchId."
-    + " Type per group: 'types' entry, else an existing type with matching bxh, else a new type in templateFamilyId."
-    + " Width-only groups always need a 'types' entry.",
-  inputSchema: {
-    scanId: z.string().min(1).max(64).describe("scanId from scan_cad_beams."),
-    levelId: elementId.describe("Level the beams are placed on."),
-    include: z.array(z.string().min(1).max(200)).max(500).optional()
-      .describe("Keys of groups without a tag name to place as well."),
-    exclude: z.array(z.string().min(1).max(200)).max(500).optional()
-      .describe("Keys of groups not to place."),
-    types: typeMap("D2-X7"),
+    levelId: elementId.describe("Level the beams are placed on (top of beam at the level plus offsetMm)."),
+    offsetMm: z.number().min(-100000).max(100000).optional().describe("Top of beam above the level (default 0)."),
+    layers: layerList("beam edges").describe("Optional: only lines on these CAD layers. Default: every layer."),
+    types: typeMap("D1"),
+    heightsMm: z.record(z.string(), z.number().min(100).max(5000)).optional()
+      .describe("Beam height h per group key for groups whose mark gives no size, e.g. {\"b220\": 500}. Ask the user."),
     templateFamilyId: elementId.optional()
-      .describe("Beam family (familyId from a scan type or load_default_family) in which to create bxh types."),
-    tagParameterName: z.string().min(1).max(200).optional()
-      .describe("Text parameter of the beam that receives the group's tag name, e.g. \"Mark\"."),
-    dryRun,
+      .describe("Beam family in which to create b×h types. Default: BTC-DamCN_BeTong when loaded (load_default_family kind=beam)."),
+    writeMark: z.boolean().optional().describe("Write the beam mark to the Mark parameter (default true)."),
+    snapMm: z.number().min(0).max(100).optional()
+      .describe("Round each beam's offset from the nearest grid to this (default 5); 0 keeps the drawing's position."),
+    gridToleranceMm: z.number().min(0).max(100).optional()
+      .describe("A beam drawn this close to centred on a grid, or to its face on the grid, is set exactly there (default 15)."),
+    gridMarginMm: z.number().min(0).max(5000).optional()
+      .describe("A grid counts as passing through a beam when within this of its faces (default 300)."),
+    minWidthMm: z.number().min(50).max(2000).optional().describe("Narrowest beam (default 100)."),
+    maxWidthMm: z.number().min(50).max(3000).optional().describe("Widest beam (default 1000)."),
+    probeMm: z.number().min(50).max(3000).optional()
+      .describe("How far from a column face the beam edges must start (default 300)."),
+    maxGapMm: z.number().min(0).max(10000).optional()
+      .describe("Longest break in a beam edge, e.g. where another beam crosses (default 1500)."),
+    minCoverage: z.number().min(0.1).max(1).optional()
+      .describe("Share of the span the edges must draw (default 0.6)."),
+    tagDistanceMm: z.number().min(0).max(10000).optional()
+      .describe("How far from a beam its mark may be (default 1000)."),
   },
-  annotations: write,
-  timeoutMs: 120000,
+  annotations: propose,
+  timeoutMs: 180000,
 });
 
 export const scanCadPiles = defineTool({
@@ -394,7 +385,7 @@ export const undoBatch = defineTool({
     "Delete the elements created by one write call, identified by its batchId. Types created by that call"
     + " are deleted only if nothing uses them. Confirm with the user first.",
   inputSchema: {
-    batchId: z.string().min(1).max(64).describe("batchId returned by a write tool such as place_beams."),
+    batchId: z.string().min(1).max(64).describe("batchId returned by a write tool such as load_default_family."),
   },
   annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
   timeoutMs: 60000,

@@ -22,7 +22,7 @@ public interface IRevitCommand
     CommandAccess Access { get; }
 
     // Whether this particular call changes the model. Override when a write command has a
-    // preview mode, e.g. place_beams with dryRun=true, so previews still work in read-only mode.
+    // preview mode (a dryRun flag), so previews still work in read-only mode.
     bool ModifiesModel(CommandParams parameters) => Access != CommandAccess.Read;
 
     object? Execute(CommandContext context);

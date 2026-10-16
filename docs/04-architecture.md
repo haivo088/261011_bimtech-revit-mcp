@@ -64,7 +64,7 @@ Mỗi loại công việc mới (cột, dầm, móng…) chỉ cần thêm **m�
 ```json
 {
   "planId": "pln_20261014_8f3a2c",
-  "kind": "place_beams",
+  "kind": "create_beams",
   "title": "Dựng dầm tầng 3 từ CAD S-301",
   "createdAt": "2026-10-14T09:12:00Z",
   "document": { "title": "DuAn_KetCau", "path": "D:\\DuAn\\DuAn_KetCau.rvt" },

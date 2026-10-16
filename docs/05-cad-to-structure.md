@@ -22,7 +22,7 @@ Thuật toán quét CAD và đặt phần tử nằm trong `addin/StructuralCore
 
 ## Tầng và trục (đi qua cửa sổ duyệt)
 
-Khác với cột, dầm, cọc (`dryRun` rồi ghi thẳng), tầng và trục dùng khuôn propose / duyệt / commit của [04](04-architecture.md). Việc chia làm hai vòng vì trục được đọc từ CAD, mà propose không được ghi nên không thể nhập CAD trước để đọc thử.
+Tầng và trục dùng khuôn propose / duyệt / commit của [04](04-architecture.md) như mọi loại khác. Việc chia làm hai vòng vì trục được đọc từ CAD, mà propose không được ghi nên không thể nhập CAD trước để đọc thử.
 
 ```mermaid
 flowchart LR
@@ -107,13 +107,29 @@ Type cho mỗi nhóm: mục trong `types` → Type có sẵn khớp b/h → Type
 
 ## Dầm
 
-`scan_cad_beams` → `place_beams`, cùng khuôn với cột. Khác biệt:
+`propose_beams` → duyệt → `commit_plan`. Hiện chỉ **dầm chính** (nối cột với cột hoặc vách); dầm phụ, dầm console làm sau.
 
-- Dầm là cặp line song song; tên và kích thước đọc từ Text Note gần tim dầm (`"D2-X7(220x600)"`, khoảng tìm `textSearchMm`, mặc định 1000).
-- Ba loại nhóm: theo **tên** (khóa = tên dầm, mặc định được đặt), theo **b×h** từ Text không tên (`"220x600"`), chỉ theo **bề rộng** (`"b220"`). Hai loại sau chỉ đặt khi có trong `include`; nhóm chỉ có bề rộng luôn cần Type trong `types` vì không biết h.
-- `extendToColumns` + `levelId`: kéo đầu dầm tới cột gần nhất (`columnSearchMm`, mặc định 3000).
-- Chống trùng tính cả dầm vừa đặt trong cùng lượt.
-- Type mới tạo trong `templateFamilyId` (`load_default_family kind=beam` cho `BTC-DamCN_BeTong`); nhiều nhóm cùng b×h dùng chung 1 Type.
+**Lan từ cột, trục làm thước.** Dựng cột (và vách) bên dưới tầng trước: chúng là gối tựa. Không cần bước quét riêng, không cần chọn layer (`layers` chỉ để giới hạn khi cần).
+
+1. Gối tựa: cột và vách **trong model** có chiều cao chạm cao độ tầng (cột tầng dưới và tầng trên cùng chỗ chỉ tính một). Đường bao lấy từ hình khối thật của family.
+2. Line CAD: chỉ giữ line theo phương trục (lệch ≤ 2°; line xiên được đếm); line nằm trọn trong cột hoặc vách (đường bao, hatch) bị bỏ.
+3. Ở mỗi mặt cột: cặp line song song **xuất phát trong 300 mm** (`probeMm`) từ mặt cột, cách nhau 100–1000 mm (`minWidthMm`/`maxWidthMm`), tim nằm trong bề rộng cột, là đầu một dầm. Line nằm đúng giữa hai line khác là **nét tim**, không phải mép dầm.
+4. Dò dọc hai mép, nhảy qua chỗ đứt tới 1500 mm (`maxGapMm`, chỗ dầm khác cắt ngang), tới **cột hoặc vách đầu tiên** cùng dải. Hai mép phải vẽ đủ ít nhất 60% nhịp (`minCoverage`).
+5. Dầm đặt **từ tim cột tới tim cột** (vách: tới tim vách). **Chỉ chia tại gối tựa**, giao trục không có cột thì dầm chạy liền qua.
+6. Mép dầm đi ra từ cột mà không tới gối tựa nào → **đầu dầm lơ lửng** (`report.dangling`): dầm phụ hoặc console, chưa dựng.
+
+**Ký hiệu dầm** (`D1 (220x600)`, `220X600`, `DC1 250*500`, `DP3`) đọc từ Text Note trong view, kể cả mã định dạng MText:
+- Mỗi ký hiệu gán cho dầm **cùng phương với chữ** gần nhất trong 1000 mm (`tagDistanceMm`), rồi **lan sang các dầm thẳng hàng** (cùng bề rộng, chung gối tựa) tới khi gặp ký hiệu khác.
+- b lấy theo ký hiệu, không có thì đo từ nét (làm tròn 5 mm); ký hiệu ghi b khác nét đo quá 10 mm thì có ghi chú. **h chỉ lấy từ ký hiệu** hoặc `heightsMm`; không có thì mục **bị chặn** để hỏi người dùng, không đoán.
+- Ký hiệu không gán được dầm nào nằm trong `report.unusedMarks`.
+
+**Trục**: độ lệch tim dầm so với trục đặt như cột (đồng tâm hoặc mép trùng trục trong `gridToleranceMm` thì đặt đúng, còn lại làm tròn `snapMm`). Mỗi dầm ghi `A-1 → A-2 (trục A)`; dầm không nằm trên trục nào có ghi chú.
+
+**Mục duyệt**: mỗi nhóm (ký hiệu + kích thước; khóa `"D1"`, `"D1 220x600"` khi một ký hiệu có nhiều kích thước, `"220x600"`, hoặc `"b220"` khi chưa biết h) là một mục, ghi các nhịp, số dầm lấy ký hiệu từ dầm bên cạnh, dầm nét đứt nhiều (phủ dưới 90%). Dầm đã có trong model trên cùng trục bị bỏ qua. Cao độ đỉnh dầm = tầng + `offsetMm`. Ký hiệu ghi vào **Mark** (`writeMark`).
+
+Type mỗi nhóm: mục trong `types` → Type có sẵn khớp b×h → Type `b×h` tạo trong `templateFamilyId` (mặc định `BTC-DamCN_BeTong` nếu đã nạp; `load_default_family kind=beam`) → chưa có Type (mục bị chặn).
+
+**Giới hạn đã biết**: Revit API không đọc được chữ bên trong file DWG import/link, chỉ đọc Text Note của Revit. Nếu bản vẽ chưa có Text Note, dầm vẫn được nhận nhưng không có ký hiệu (cần `heightsMm` hoặc `types`).
 
 ## Cọc và đài
 
@@ -140,7 +156,7 @@ Type cho mỗi nhóm: mục trong `types` → Type có sẵn khớp b/h → Type
 
 | Cơ chế | Tác dụng |
 | --- | --- |
-| `dryRun` mặc định `true` | Muốn sửa model phải gọi rõ `dryRun=false`; mô tả công cụ yêu cầu Claude hỏi người dùng trước |
+| `propose_*` chỉ đọc | Mọi thay đổi đi qua cửa sổ duyệt; chỉ `commit_plan` ghi, và chỉ những mục người dùng đã duyệt |
 | `RequireWritableDocument()` | Từ chối family document, model chỉ đọc, hoặc khi Revit đang trong transaction khác (`-32006`) |
 | `FailureGuard` | Cảnh báo Revit được ghi lại và bỏ qua; lỗi thì rollback và báo về — không có hộp thoại nào làm treo bridge |
 | `TransactionGroup` | Mỗi lần ghi là một bước Undo; lỗi giữa chừng thì rollback toàn bộ |

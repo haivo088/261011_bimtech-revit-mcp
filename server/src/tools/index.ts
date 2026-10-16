@@ -9,9 +9,9 @@ import { getElementParameters, getElements, getSelectedElements } from "./elemen
 import { proposeSetParameters } from "./parameters.js";
 import { cancelPlan, commitPlan, getPlan, getPlanStatus, openPlanReview } from "./plans.js";
 import {
-  listCadSources, loadDefaultFamily, placeBeams, proposeColumns, proposeFloors, proposeGrids, proposeLevels,
+  listCadSources, loadDefaultFamily, proposeBeams, proposeColumns, proposeFloors, proposeGrids, proposeLevels,
   proposePiles, proposeWalls, suggestLevelsFromFolder,
-  scanCadBeams, scanCadColumns, scanCadPiles, scanCadWalls, undoBatch,
+  scanCadColumns, scanCadPiles, scanCadWalls, undoBatch,
 } from "./structural.js";
 
 // The list of tools Claude can call. To add a tool: define it in a file in this
@@ -40,8 +40,7 @@ export const allTools: readonly RevitTool[] = [
   loadDefaultFamily,
   scanCadColumns,
   proposeColumns,
-  scanCadBeams,
-  placeBeams,
+  proposeBeams,
   scanCadPiles,
   proposePiles,
   undoBatch,

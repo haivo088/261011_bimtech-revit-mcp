@@ -28,9 +28,9 @@ Công cụ dựng model kết cấu từ CAD (xem [05 — Dựng model kết c�
 - `list_cad_sources`: các file CAD import/link trong model.
 - `load_default_family`: nạp family chuẩn công ty (`kind`: column, beam, pile); với cọc còn tạo Type đài/lót mặc định.
 - `scan_cad_columns` / `propose_columns`: cột chữ nhật theo ký hiệu và kích thước, mỗi nhóm một mục duyệt; vị trí làm tròn 5 mm theo trục.
-- `scan_cad_beams` / `place_beams`: dầm theo cặp line song song, tên và kích thước đọc từ Text Note.
+- `propose_beams`: dầm chính lan từ cột đã dựng tới cột/vách kế tiếp, tim cột tới tim cột, chỉ chia tại gối tựa; ký hiệu và kích thước đọc từ Text Note; mỗi nhóm một mục duyệt; báo đầu dầm lơ lửng (dầm phụ, console).
 - `scan_cad_piles` / `propose_piles`: cọc tròn + đài móng, mỗi đài một mục duyệt; chiều dày đài theo ký hiệu bản vẽ hoặc người dùng; làm tròn 5 mm theo trục; lớp lót; join cọc với đài của nó.
-- Mọi `place_*` mặc định chỉ xem trước (`dryRun`); chạy thật trả `batchId`.
+- Mọi `propose_*` chỉ đọc; model chỉ thay đổi qua `commit_plan` sau khi duyệt trong Revit.
 - `undo_batch`: xóa đúng những gì một lần ghi đã tạo.
 
 Công cụ cho người phát triển (`run_revit_query`, `analyze_cad`, `run_recognition`, `export_cad_case`) nằm trong DLL riêng, chỉ cài trên máy người phát triển và chỉ hiện khi `BIMTECH_DEV=1`; xem [07 — Bộ công cụ cho người phát triển](docs/07-dev-tools.md).
@@ -186,6 +186,6 @@ Cổng mặc định là `8081`, đổi trong cửa sổ Settings của Revit. S
 
 ## Mở rộng từng bước
 
-Đã có: tham số và timeout theo request, registry command, khung đọc dữ liệu (phân trang, lọc, đơn vị, giới hạn kích thước response), Settings và chế độ chỉ đọc, dựng cột/dầm/cọc từ CAD (`dryRun` + `undo_batch`), và khung đề xuất → duyệt trong Revit → `commit_plan`. Tiếp theo: chuyển cột/dầm/cọc sang `propose_*` + `IPlanAction`, rồi level/lưới, vách, sàn (xem [04](docs/04-architecture.md) và [05](docs/05-cad-to-structure.md)). Xem [03 — Thêm một công cụ mới](docs/03-add-a-tool.md) cho quy trình thêm từng công cụ.
+Đã có: tham số và timeout theo request, registry command, khung đọc dữ liệu (phân trang, lọc, đơn vị, giới hạn kích thước response), Settings và chế độ chỉ đọc, khung đề xuất → duyệt trong Revit → `commit_plan`, và mọi loại kết cấu (tầng, trục, cọc, cột, dầm chính, vách, sàn) đi qua `propose_*` + `IPlanAction`. Tiếp theo: thử trọn bộ trong Revit ([08](docs/08-revit-test-plan.md)), rồi dầm phụ và console (xem [04](docs/04-architecture.md) và [05](docs/05-cad-to-structure.md)). Xem [03 — Thêm một công cụ mới](docs/03-add-a-tool.md) cho quy trình thêm từng công cụ.
 
 Nền tảng API được đối chiếu với tài liệu Autodesk: [Revit 2025 dùng .NET 8](https://help.autodesk.com/cloudhelp/2025/ENU/Revit-WhatsNew/files/GUID-50024FD2-16BE-40BE-96E6-550294D9537D.htm), [ExternalEvent.Raise](https://help.autodesk.com/cloudhelp/2026/ENU/Revit-API-MainReference/files/html/13bf4411-c400-dcd2-458c-7f09357d9ecb.htm).

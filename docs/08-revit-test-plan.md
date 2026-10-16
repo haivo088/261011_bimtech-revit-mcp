@@ -77,11 +77,19 @@ Kết quả này quyết định mốc cao độ cho bản nâng cấp U2 (nhậ
 - Layer cột rất nhiều hatch: quét xong nhanh, không timeout.
 - Kiểm chứng tên tham số tiết diện của family `BTC-CotCN_BeTong` đúng là `b`/`h`.
 
-## 5. Dầm: `scan_cad_beams` / `place_beams`
+## 5. Dầm chính: `propose_beams`
 
-> Quét dầm từ CAD tầng 2 bằng scan_cad_beams, extendToColumns với levelId Tầng 1. Đặt lên Tầng 2, xem trước rồi đặt.
+> Cột tầng 1 đã dựng (phần 4). Đề xuất dầm chính Tầng 2 từ CAD tầng 2 bằng propose_beams.
 
-Đạt khi: nhóm theo tên đọc từ Text (`D2-X7(220x600)`); dầm đặt đúng tim, đầu dầm kéo tới cột; Type mới tạo trong family dầm mặc định nếu thiếu.
+Đạt khi:
+- Chạy xong nhanh trên bản vẽ thật (không timeout), dù không chọn layer.
+- Mỗi nhịp giữa hai cột liền nhau có dầm; dầm đặt **từ tim cột tới tim cột**; giao trục không có cột thì dầm chạy liền qua, không bị chia.
+- Dầm biên lệch trục (mép ngoài bằng mặt cột) đúng vị trí; tim dầm cách trục là bội 5 mm hoặc đúng 0 / mép trùng trục.
+- Mục duyệt ghi nhịp kiểu `A-1 → A-2 (trục A)`; ký hiệu dầm (Text Note) gán đúng dầm cùng phương, lan sang các nhịp thẳng hàng; Mark có ký hiệu.
+- `report.dangling` liệt kê dầm phụ/console (chưa dựng); `report.unusedMarks` liệt kê ký hiệu không gán được. Ghi lại dầm chính nào bị sót và vì sao (nét vẽ, khoảng đứt, layer).
+- Nhóm không có h (không có ký hiệu kích thước) bị chặn và Claude hỏi chiều cao.
+- **Kiểm chứng**: CAD import có Text Note không, hay chữ nằm trong DWG (Revit không đọc được) — khi đó dầm không có ký hiệu.
+- Kiểm chứng tên tham số tiết diện của family `BTC-DamCN_BeTong` đúng là `b`/`h`; dầm Revit tự cắt tại mặt cột khi join.
 
 ## 6. Vách: `scan_cad_walls` / `propose_walls`
 

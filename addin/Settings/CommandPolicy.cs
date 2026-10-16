@@ -17,7 +17,7 @@ public static class CommandPolicy
         AlwaysEnabled.Contains(command.Method) || !settings.IsDisabled(command.Method);
 
     // Whether Claude should see the tool. In read-only mode a write command stays visible only if its
-    // default call is a preview (place_beams defaults to dryRun=true).
+    // default call is a preview (e.g. a dryRun flag that defaults to true).
     public static bool IsAvailable(IRevitCommand command, McpSettings settings) =>
         IsEnabled(command, settings) && !(settings.ReadOnlyMode && command.ModifiesModel(NoParams));
 

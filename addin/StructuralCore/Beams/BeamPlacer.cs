@@ -237,6 +237,39 @@ internal static class BeamPlacer
         return new BeamCreateTypesSummary(created, failed, errors, createdSymbols, resolved);
     }
 
+    /// <summary>Type dầm đúng b×h trong Family mẫu, trong Transaction do caller mở sẵn: dùng lại nếu có (kể cả Type vừa tạo
+    /// ở mục trước), không thì duplicate Type gần nhất, tên "b×h", set b/h. Ném InvalidOperationException khi Family không
+    /// có tham số b/h dạng Length sửa được.</summary>
+    public static (FamilySymbol Symbol, bool Created) ResolveOrCreateBeamType(Document doc, double bMm, double hMm, Family family)
+    {
+        var symbols = SymbolsOf(doc, family);
+        if (BeamTypeMatcher.FindExactMatch(bMm, hMm, symbols, s => s) is { } existing)
+            return (existing, false);
+        var template = BeamTypeMatcher.AutoMatchExact(bMm, hMm, symbols, s => s)
+            ?? throw new InvalidOperationException($"Family \"{family.Name}\" không có Type chứa tham số b/h dạng Length.");
+        var name = SymbolParameters.UniqueName($"{(long)Math.Round(bMm)}x{(long)Math.Round(hMm)}",
+            symbols.Select(s => s.Name).ToHashSet(StringComparer.OrdinalIgnoreCase));
+        if (template.Duplicate(name) is not FamilySymbol created)
+            throw new InvalidOperationException("Duplicate không trả về FamilySymbol.");
+        var b = created.LookupParameter(BeamTypeMatcher.BeamBParam);
+        var h = created.LookupParameter(BeamTypeMatcher.BeamHParam);
+        if (b is not { StorageType: StorageType.Double, IsReadOnly: false } || h is not { StorageType: StorageType.Double, IsReadOnly: false })
+            throw new InvalidOperationException($"Family \"{family.Name}\" không có tham số b/h dạng Length sửa được.");
+        b.Set(UnitUtils.ConvertToInternalUnits(bMm, UnitTypeId.Millimeters));
+        h.Set(UnitUtils.ConvertToInternalUnits(hMm, UnitTypeId.Millimeters));
+        return (created, true);
+    }
+
+    /// <summary>Đặt 1 dầm từ start tới end (Z đã gồm cao độ đỉnh dầm), trong Transaction do caller mở sẵn; ghi mark vào
+    /// Mark nếu có. Ném InvalidOperationException khi Revit không tạo được.</summary>
+    public static ElementId PlaceBeamInTransaction(Document doc, XYZ start, XYZ end, FamilySymbol symbol, Level level, string? mark)
+    {
+        if (!symbol.IsActive) symbol.Activate();
+        var instance = doc.Create.NewFamilyInstance(Line.CreateBound(start, end), symbol, level, StructuralType.Beam);
+        if (mark is not null) instance.get_Parameter(BuiltInParameter.ALL_MODEL_MARK)?.Set(mark);
+        return instance.Id;
+    }
+
     private static List<FamilySymbol> SymbolsOf(Document doc, Family family) =>
         family.GetFamilySymbolIds().Select(doc.GetElement).OfType<FamilySymbol>().ToList();
 

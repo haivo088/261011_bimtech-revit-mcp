@@ -24,9 +24,10 @@ test("write tools are marked as such, read tools are not", async (t) => {
   const client = await mcpClient(t, options.port);
   const { tools } = await client.listTools();
   const annotations = Object.fromEntries(tools.map((tool) => [tool.name, tool.annotations]));
-  assert.equal(annotations.place_beams.readOnlyHint, false);
-  assert.equal(annotations.place_beams.destructiveHint, false);
+  assert.equal(annotations.load_default_family.readOnlyHint, false);
+  assert.equal(annotations.load_default_family.destructiveHint, false);
   assert.equal(annotations.propose_columns.readOnlyHint, true);
+  assert.equal(annotations.propose_beams.readOnlyHint, true);
   assert.equal(annotations.undo_batch.readOnlyHint, false);
   assert.equal(annotations.undo_batch.destructiveHint, true);
   assert.equal(annotations.scan_cad_columns.readOnlyHint, true);
@@ -53,21 +54,24 @@ test("structural tools reject malformed input before contacting Revit", async (t
   assert.equal(contacted, false);
 });
 
-test("beam placement and pile proposals forward their options", async (t) => {
+test("beam and pile proposals forward their options", async (t) => {
   const requests = [];
   const options = await bridge(t, (socket, request) => {
     requests.push(request);
     socket.end(JSON.stringify({ jsonrpc: "2.0", id: request.id, result: { dryRun: true } }) + "\n");
   });
   const client = await mcpClient(t, options.port);
-  const beamArgs = { scanId: "scan-2", levelId: "694", include: ["220x600"], exclude: ["D9"], tagParameterName: "Mark" };
-  assert.equal((await client.callTool({ name: "place_beams", arguments: beamArgs })).isError, false);
+  const beamArgs = {
+    cadId: "501", levelId: "694", offsetMm: -50, layers: ["S-DAM"], types: { "D1": "12345" }, heightsMm: { "b220": 500 },
+    writeMark: false, snapMm: 5, gridToleranceMm: 10, maxGapMm: 2000, minCoverage: 0.7,
+  };
+  assert.equal((await client.callTool({ name: "propose_beams", arguments: beamArgs })).isError, false);
   const pileArgs = {
     scanId: "scan-3", capLevelId: "311", withLot: false, createMissingTypes: true, embedmentMm: 150,
     capTypes: { "Đ1": "12345" }, capThicknessMm: { "2000x2000": 1200 }, pileLengthMm: 32000, snapMm: 5, join: false,
   };
   assert.equal((await client.callTool({ name: "propose_piles", arguments: pileArgs })).isError, false);
-  assert.deepEqual(requests.map((request) => request.method), ["place_beams", "propose_piles"]);
+  assert.deepEqual(requests.map((request) => request.method), ["propose_beams", "propose_piles"]);
   assert.deepEqual(requests[0].params, beamArgs);
   assert.deepEqual(requests[1].params, pileArgs);
 });
@@ -79,8 +83,9 @@ test("beam, pile and family tools reject malformed input before contacting Revit
   const invalidCalls = [
     { name: "load_default_family", arguments: {} },
     { name: "load_default_family", arguments: { kind: "wall" } },
-    { name: "scan_cad_beams", arguments: { cadId: "1", textSearchMm: 0 } },
-    { name: "place_beams", arguments: { scanId: "scan-1" } },
+    { name: "propose_beams", arguments: { cadId: "1" } },
+    { name: "propose_beams", arguments: { cadId: "1", levelId: "694", heightsMm: { b220: 20 } } },
+    { name: "propose_beams", arguments: { cadId: "1", levelId: "694", minCoverage: 2 } },
     { name: "scan_cad_piles", arguments: { cadId: "1", pileLayers: [""] } },
     { name: "propose_piles", arguments: { scanId: "scan-1", capLevelId: "311", embedmentMm: -1 } },
     { name: "propose_piles", arguments: { scanId: "scan-1", capLevelId: "311", capThicknessMm: { "Đ1": 20 } } },
