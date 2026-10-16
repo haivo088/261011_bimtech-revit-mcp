@@ -4,7 +4,8 @@ using System.Text;
 namespace Bimtech.RevitMcp.Recognition;
 
 // One grid read from a drawing. NameSource is "bubble" when the name was read from the text in the grid's end
-// circle, "auto" when it was numbered 1, 2, 3... (vertical, left to right) or A, B, C... (horizontal, bottom up).
+// circle, "auto" when it was numbered 1, 2, 3... (vertical, left to right) or A, B, C... (horizontal, bottom up),
+// "extra" for a line without a name among named grids (likely not a grid), named after its nearest grid: A'.
 public sealed record RecognizedGrid(
     string Name, double X0, double Y0, double X1, double Y1, bool Vertical, string NameSource, double Confidence,
     IReadOnlyList<string> Reasons);
@@ -31,6 +32,8 @@ public static class GridRecognizer
     private const double AxisTolerance = 0.01;
     private const double MinBubbleRadiusMm = 100;
     private const double MaxBubbleRadiusMm = 1500;
+    // How far past the end of its axis a bubble may sit, drawn with a leader (3.5 m seen on a real plan).
+    private const double BubbleReachMm = 5000;
     private const int MaxBubbleTextLength = 6;
     // More candidate lines than this on one style looks like hatching or detail, not grids.
     private const int MaxPlausibleGrids = 80;
@@ -204,18 +207,21 @@ public static class GridRecognizer
             Math.Round(score, 2), reasons);
     }
 
-    // A grid bubble: a circle at one end of the axis, its center on the axis line (or its extension).
+    // A grid bubble: a circle at one end of the axis, its center on the axis line (or its extension). Outside the
+    // end it may sit well apart, joined by a leader (BubbleReachMm); inside, only next to the end, so a round column
+    // on the axis is not taken for one.
     private static CadArc? FindBubble(Axis axis, IReadOnlyList<CadArc> circles)
     {
         CadArc? best = null;
         var bestDistance = double.MaxValue;
-        foreach (var end in new[] { axis.Start, axis.End })
+        foreach (var (end, outward) in new[] { (axis.Start, -1), (axis.End, 1) })
             foreach (var circle in circles)
             {
                 var along = axis.Vertical ? circle.Cy - end.Y : circle.Cx - end.X;
                 var across = axis.Vertical ? circle.Cx - axis.Coordinate : circle.Cy - axis.Coordinate;
                 var distance = Math.Abs(along);
-                if (Math.Abs(across) <= circle.R * 0.5 && distance <= circle.R * 2.2 && distance < bestDistance)
+                var reach = along * outward > 0 ? Math.Max(circle.R * 2.2, BubbleReachMm) : circle.R * 2.2;
+                if (Math.Abs(across) <= circle.R * 0.5 && distance <= reach && distance < bestDistance)
                 {
                     best = circle;
                     bestDistance = distance;
@@ -250,12 +256,26 @@ public static class GridRecognizer
         foreach (var vertical in new[] { true, false })
         {
             var index = 0;
-            foreach (var entry in named.Where(entry => entry.Axis.Vertical == vertical).OrderBy(entry => entry.Axis.Coordinate))
+            var direction = named.Where(entry => entry.Axis.Vertical == vertical).OrderBy(entry => entry.Axis.Coordinate).ToList();
+            var withNames = direction.Where(entry => entry.Name is not null).ToList();
+            foreach (var entry in direction)
             {
                 var reasons = new List<string>();
                 var name = entry.Name;
                 var source = "bubble";
-                if (name is null)
+                if (name is null && entry.Bubble is null && withNames.Count > 0)
+                {
+                    // The other grids of this direction carry names: a line without a bubble is usually an extra line on
+                    // the grid layer (slab edge, cantilever), not a grid. Named after its nearest grid: A', A''...
+                    var nearest = withNames.MinBy(other => Math.Abs(other.Axis.Coordinate - entry.Axis.Coordinate)).Name!;
+                    name = nearest + "'";
+                    while (used.Contains(name)) name += "'";
+                    used.Add(name);
+                    source = "extra";
+                    reasons.Add($"Đường trên layer trục nhưng không có tên, trong khi các trục khác có: thường là đường phụ "
+                        + $"(mép sàn, console). Đặt tên theo trục gần nhất \"{nearest}\".");
+                }
+                else if (name is null)
                 {
                     do name = vertical ? (++index).ToString(CultureInfo.InvariantCulture) : Letters(index++);
                     while (used.Contains(name));

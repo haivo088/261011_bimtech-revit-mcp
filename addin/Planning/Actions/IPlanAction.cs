@@ -39,6 +39,7 @@ public sealed class PlanActions
         new DeleteLevelAction(),
         new CreateGridAction(),
         new MoveCadAction(),
+        new FitDatumExtentsAction(),
         new CreateWallsAction(),
         new CreateFloorAction(),
         new CreatePileCapAction(),

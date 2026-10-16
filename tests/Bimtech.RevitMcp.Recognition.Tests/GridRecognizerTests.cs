@@ -108,6 +108,38 @@ public sealed class GridRecognizerTests
     }
 
     [Fact]
+    public void A_line_without_a_bubble_among_named_grids_is_an_extra_line_named_after_its_neighbour()
+    {
+        var drawing = Drawing.Plan("KC-01", "CENTER", ["1", "2", "3"], ["A", "B"]);
+        // A slab edge on the grid layer, 1800 below A, with no bubble.
+        drawing.Line(drawing.Case.Lines[0].Style, -1000, -1800, 13000, -1800);
+
+        var result = GridRecognizer.Recognize(drawing.Case);
+
+        var horizontal = result.Grids.Where(grid => !grid.Vertical).ToList();
+        Assert.Equal(["A'", "A", "B"], horizontal.Select(grid => grid.Name));
+        Assert.Equal("extra", horizontal[0].NameSource);
+        Assert.Equal(["bubble", "bubble"], horizontal.Skip(1).Select(grid => grid.NameSource));
+        Assert.Contains(horizontal[0].Reasons, reason => reason.Contains("đường phụ"));
+    }
+
+    [Fact]
+    public void A_bubble_drawn_well_past_the_end_of_its_axis_with_a_leader_still_names_it()
+    {
+        var drawing = Drawing.Plan("KC-01", "CENTER", ["1", "2", "3"], null);
+        // Horizontal axes end at x = -1000; their bubbles sit 3.5 m further out, as on a real plan.
+        drawing.Bubble(0, -4500, 0, "A");
+        drawing.Bubble(0, -4500, 8000, "B");
+        // A round column on axis B, inside the drawing, is not a bubble.
+        drawing.Case.Arcs.Add(new CadArc { Style = 0, Cx = 1500, Cy = 8000, R = 400, IsCircle = true });
+
+        var result = GridRecognizer.Recognize(drawing.Case);
+
+        Assert.Equal(["A", "B"], result.Grids.Where(grid => !grid.Vertical).Select(grid => grid.Name));
+        Assert.All(result.Grids, grid => Assert.Equal("bubble", grid.NameSource));
+    }
+
+    [Fact]
     public void Nothing_is_returned_when_no_style_looks_like_grids()
     {
         var drawing = Drawing.Plan("KC-01", "Solid", null, null);

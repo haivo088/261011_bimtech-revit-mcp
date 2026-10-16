@@ -36,6 +36,8 @@ public sealed class ProposeBeamsCommand(PlanService plans, ReviewWindowHost revi
     private const double WellDrawn = 0.9;
     private const int MaxListed = 8;
     private const int MaxReported = 30;
+    // Revit lines read to place the DWG file on the CAD.
+    private const int AlignmentEntities = 150_000;
 
     private sealed record Placed(
         BeamRecognizer.Beam Beam, XYZ Start, XYZ End, string At, bool OnGrid, string? Name, double BMm, double? HMm, string? WidthNote);
@@ -92,6 +94,22 @@ public sealed class ProposeBeamsCommand(PlanService plans, ReviewWindowHost revi
             .Select(note => new BeamRecognizer.Text(note.Text, U(note.Coord), V(note.Coord),
                 Math.Atan2(note.BaseDirection.DotProduct(vAxis), note.BaseDirection.DotProduct(uAxis))))
             .ToList();
+        // Marks are usually texts in the DWG ("D2-X1(350x600)"), not Text Notes: read the file and add its texts.
+        object? dwg = null;
+        if (texts.Count == 0 || p.Has("dwgPath"))
+        {
+            var data = CadExtractor.Extract(document, cad, view, new CadExtractor.Limits(AlignmentEntities));
+            var revitTexts = data.Texts.Count;
+            dwg = DwgOverlay.Attach(context, document, cad, data, "beam marks are not read, so h is unknown", circles: false);
+            texts.AddRange(data.Texts.Skip(revitTexts).Select(text =>
+            {
+                var radians = text.RotationDeg * Math.PI / 180;
+                var direction = new XYZ(Math.Cos(radians), Math.Sin(radians), 0);
+                var at = new XYZ(Feet(text.X), Feet(text.Y), 0);
+                return new BeamRecognizer.Text(text.Text, U(at), V(at),
+                    Math.Atan2(direction.DotProduct(vAxis), direction.DotProduct(uAxis)));
+            }));
+        }
         context.Cancellation.ThrowIfCancellationRequested();
 
         var result = BeamRecognizer.Recognize(lines, supports, texts, options);
@@ -169,7 +187,7 @@ public sealed class ProposeBeamsCommand(PlanService plans, ReviewWindowHost revi
 
             var reasons = new List<string>();
             if (problem is not null) reasons.Add(problem);
-            if (first.Name is null) reasons.Add("Không có ký hiệu dầm (Text Note) gần các dầm này.");
+            if (first.Name is null) reasons.Add("Không có ký hiệu dầm (Text Note hay chữ trong file DWG) gần các dầm này.");
             var inherited = group.Count(beam => beam.Beam.TagInherited);
             if (inherited > 0) reasons.Add($"{inherited} dầm lấy ký hiệu từ dầm thẳng hàng bên cạnh.");
             var widthNotes = group.Where(beam => beam.WidthNote is not null).ToList();
@@ -233,6 +251,7 @@ public sealed class ProposeBeamsCommand(PlanService plans, ReviewWindowHost revi
                 plan = (object?)null,
                 alreadyModeledGroups = alreadyModeled,
                 report,
+                dwg,
                 note = result.Beams.Count == 0
                     ? "No beam was found between the columns. Check that the CAD beam lines are visible in this view, the columns "
                       + "below this level are modeled, and the layers (if given) hold the beam edges."
@@ -264,6 +283,7 @@ public sealed class ProposeBeamsCommand(PlanService plans, ReviewWindowHost revi
             blockedGroups = items.Where(item => item.Tier == PlanTier.Blocked).Select(item => new { item.ItemId, reason = item.Reasons.FirstOrDefault() }),
             alreadyModeledGroups = alreadyModeled,
             report,
+            dwg,
             reviewWindow = "opened",
             note = "Nothing was changed in the model. Each item is one beam group. Blocked groups need the user's answer "
                 + "(heightsMm or types). Tell the user about dangling edges (secondary beams or consoles, not placed yet) and "

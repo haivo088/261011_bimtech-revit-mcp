@@ -24,7 +24,7 @@ export const sendCode = defineTool({
     + " (script \"set/name\" + args; check command_set list before writing new code). The snippet is the body of"
     + " `static object Run(QueryContext ctx)`: `doc`, `uidoc`, `view` and `ctx` are in scope, System.Linq,"
     + " Autodesk.Revit.DB and DB.Structure are imported, and it ends with `return <value>;`. Return anonymous objects"
-    + " or lists, not Revit elements. ctx.Print(x) logs; ctx.Mm(feet)/ctx.Feet(mm) convert; arguments are read with"
+    + " or lists, not Revit elements. ctx.Print(x) logs; QueryContext.Mm(feet)/QueryContext.Feet(mm) convert (static); arguments are read with"
     + " ctx.Str/Num/Bool/Id/Strs/Ids(\"name\") and ctx.Has(\"name\")."
     + " write=false (default): runs inside a transaction group that is always rolled back, so the model never"
     + " changes; use it to explore and check. write=true (needs purpose): the code runs inside a Transaction that is"

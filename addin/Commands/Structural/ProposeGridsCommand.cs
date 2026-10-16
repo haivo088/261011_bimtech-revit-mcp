@@ -50,7 +50,10 @@ public sealed class ProposeGridsCommand(PlanService plans, ReviewWindowHost revi
         var tolerance = p.GetDouble("snapToleranceMm", GridLayout.DefaultToleranceMm, 0, 100);
         var pin = p.GetBool("pin", true);
 
-        var recognition = GridRecognizer.Recognize(CadExtractor.Extract(document, cad, view, new(MaxEntities)), gridLayer);
+        var data = CadExtractor.Extract(document, cad, view, new(MaxEntities));
+        // Ellipse or block bubbles and their names come from the DWG file itself.
+        var dwg = DwgOverlay.Attach(context, document, cad, data, "grid names are numbered, not read", circles: true);
+        var recognition = GridRecognizer.Recognize(data, gridLayer);
         var source = Split(recognition);
         if (source.Vertical.Count == 0 || source.Horizontal.Count == 0)
         {
@@ -65,9 +68,11 @@ public sealed class ProposeGridsCommand(PlanService plans, ReviewWindowHost revi
 
         var basePoint = BasePoint.GetProjectBasePoint(document).Position;
         var (baseX, baseY) = (UnitConvert.Length(basePoint.X), UnitConvert.Length(basePoint.Y));
-        var xs = GridLayout.Snap(source.Xs, module, tolerance);
-        var ys = GridLayout.Snap(source.Ys, module, tolerance);
-        var shift = (X: baseX - source.Xs[0], Y: baseY - source.Ys[0]);
+        // Grid 1-A sits on the base point: the first named grid of each direction when the drawing names them, so an
+        // extra line outside it does not take the origin.
+        var xs = FromOrigin(GridLayout.Snap(source.Xs, module, tolerance), Origin(source.Vertical));
+        var ys = FromOrigin(GridLayout.Snap(source.Ys, module, tolerance), Origin(source.Horizontal));
+        var shift = (X: baseX - source.Xs[Origin(source.Vertical)], Y: baseY - source.Ys[Origin(source.Horizontal)]);
 
         var items = new List<PlanItem>();
         var moves = new List<(ImportInstance Cad, double Dx, double Dy, string Reason)>
@@ -93,6 +98,11 @@ public sealed class ProposeGridsCommand(PlanService plans, ReviewWindowHost revi
             GridItem(grid, baseX + xs[i].OffsetMm, yMin, baseX + xs[i].OffsetMm, yMax, xs[i], existing, planned, pin)));
         items.AddRange(source.Horizontal.Select((grid, i) =>
             GridItem(grid, xMin, baseY + ys[i].OffsetMm, xMax, baseY + ys[i].OffsetMm, ys[i], existing, planned, pin)));
+        var (gridMargin, levelMargin) = DatumExtentsItem.ReadMargins(p);
+        var levels = new FilteredElementCollector(document).OfClass(typeof(Level)).Cast<Level>()
+            .Select(level => (level.Name, UnitConvert.Length(level.Elevation))).ToList();
+        var newGrids = items.Count(item => item.Action == "create_grid" && item.Tier != PlanTier.Blocked);
+        if (DatumExtentsItem.Create(levels, existing.Count + newGrids, gridMargin, levelMargin) is { } fit) items.Add(fit);
 
         var plan = plans.Create(
             PlanStorageLocation.For(document),
@@ -121,6 +131,8 @@ public sealed class ProposeGridsCommand(PlanService plans, ReviewWindowHost revi
                 horizontal = source.Horizontal.Select((grid, i) => new { grid.Name, grid.NameSource, offsetMm = ys[i].OffsetMm }),
             },
             snappedBays = xs.Concat(ys).Count(axis => axis.Note is not null),
+            extraLines = recognition.Grids.Where(grid => grid.NameSource == "extra").Select(grid => grid.Name),
+            dwg,
             warnings = recognition.Warnings,
             styleScores = recognition.Styles.Take(5),
             existingGridNames = items.Where(item => item.Tier == PlanTier.Blocked).Select(item => item.ItemId),
@@ -131,6 +143,12 @@ public sealed class ProposeGridsCommand(PlanService plans, ReviewWindowHost revi
                 + "review in Revit and say when they are done, then call get_plan_status and commit_plan.",
         };
     }
+
+    // The first grid named in the drawing, else the first grid.
+    private static int Origin(List<RecognizedGrid> grids) => Math.Max(0, grids.FindIndex(grid => grid.NameSource == "bubble"));
+
+    private static List<GridLayout.Placed> FromOrigin(List<GridLayout.Placed> placed, int origin) =>
+        placed.Select(axis => axis with { OffsetMm = axis.OffsetMm - placed[origin].OffsetMm }).ToList();
 
     private static Axes Split(GridRecognition recognition) => new(
         recognition.Grids.Where(grid => grid.Vertical).OrderBy(grid => grid.X0).ToList(),
@@ -201,7 +219,7 @@ public sealed class ProposeGridsCommand(PlanService plans, ReviewWindowHost revi
             Params = JsonSerializer.SerializeToElement(new
             {
                 summary = $"Trục {grid.Name} ({(grid.Vertical ? "đứng" : "ngang")}): {position} mm từ gốc{bay}"
-                    + (grid.NameSource == "auto" ? " · tên tự đánh" : ""),
+                    + (grid.NameSource == "auto" ? " · tên tự đánh" : grid.NameSource == "extra" ? " · đường phụ, không tên" : ""),
                 name = grid.Name,
                 startMm = new { x = Math.Round(x0, 2), y = Math.Round(y0, 2) },
                 endMm = new { x = Math.Round(x1, 2), y = Math.Round(y1, 2) },
@@ -210,6 +228,8 @@ public sealed class ProposeGridsCommand(PlanService plans, ReviewWindowHost revi
                 pin,
             }),
             Tier = nameTaken ? PlanTier.Blocked : PlanTier.Review,
+            // A line without a name among named grids is likely not a grid: built only when the reviewer approves it.
+            Status = grid.NameSource == "extra" && !nameTaken ? PlanItemStatus.Rejected : PlanItemStatus.Pending,
             Reasons = reasons,
             Source = JsonSerializer.SerializeToElement(new { name = grid.Name, category = "Grids" }),
         };

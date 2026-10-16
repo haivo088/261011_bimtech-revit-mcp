@@ -75,11 +75,23 @@ public sealed class ProposeLevelsCommand(PlanService plans, ReviewWindowHost rev
             .OfType<Level>().Select(level => level.Id).ToHashSet();
         var unused = p.GetBool("proposeLevelCleanup", true) ? LevelSetup.FindUnused(document, keep) : [];
         items.AddRange(unused.Select((level, index) => DeleteItem(level, index)));
+        // Grids come later from propose_grids; when the model has them already, the new levels are fitted to them.
+        var (gridMargin, levelMargin) = DatumExtentsItem.ReadMargins(p);
+        var grids = new FilteredElementCollector(document).OfClass(typeof(Grid)).GetElementCount();
+        var requested = rows.Select(row => row.LevelName.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var levelsAfter = new FilteredElementCollector(document).OfClass(typeof(Level)).Cast<Level>()
+            .Where(level => !requested.Contains(level.Name) && !previews.Any(preview => preview.RenameFrom?.Id == level.Id))
+            .Select(level => (level.Name, UnitConvert.Length(level.Elevation)))
+            .Concat(previews.Where(preview => preview.Problem is null)
+                .Select(preview => (preview.Row.LevelName.Trim(), preview.Row.ElevationMm)))
+            .ToList();
+        var fit = DatumExtentsItem.Create(levelsAfter, grids, gridMargin, levelMargin);
+        if (fit is not null) items.Add(fit);
 
         var plan = plans.Create(
             PlanStorageLocation.For(document),
             kind: "create_levels",
-            title: $"Tạo {items.Count - unused.Count} tầng (Level, Structural Plan, CAD)",
+            title: $"Tạo {items.Count - unused.Count - (fit is null ? 0 : 1)} tầng (Level, Structural Plan, CAD)",
             scope: JsonSerializer.SerializeToElement(new
             {
                 levels = rows.Select(row => new { name = row.LevelName.Trim(), elevationMm = row.ElevationMm }),

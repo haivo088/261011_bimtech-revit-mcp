@@ -65,7 +65,8 @@ public static class DwgImport
                 case Insert insert:
                     // Attribute values are real texts (grid names in bubbles, marks); the block's attribute
                     // definitions are only their templates.
-                    foreach (var attribute in insert.Attributes) AddText(attribute);
+                    // A nested block's attributes come out of the outer block's Explode placed by their insert point only.
+                    foreach (var attribute in insert.Attributes) AddText(attribute, exploded: depth > 0);
                     if (depth >= MaxBlockDepth)
                     {
                         Skip("block nested too deep");
@@ -93,6 +94,10 @@ public static class DwgImport
                     var (cx, cy) = Plan(circle.Center.X, circle.Center.Y, circle.Normal.Z);
                     result.Arcs.Add(new CadArc { Style = Style(entity), Cx = cx, Cy = cy, R = Mm(circle.Radius), IsCircle = true });
                     return;
+                case Ellipse ellipse:
+                    Count();
+                    AddEllipse(ellipse);
+                    return;
                 case LwPolyline polyline:
                     Count();
                     result.Polylines.Add(new CadPolyline
@@ -117,7 +122,7 @@ public static class DwgImport
                     result.Hatches.Add(new CadHatch { Style = Style(entity, withPattern: false), Pattern = hatch.Pattern?.Name, IsSolid = hatch.IsSolid, Loops = loops });
                     return;
                 case TextEntity text:
-                    AddText(text);
+                    AddText(text, exploded: depth > 0);
                     return;
                 case MText text:
                     Count();
@@ -136,12 +141,15 @@ public static class DwgImport
             }
         }
 
-        private void AddText(TextEntity text)
+        private void AddText(TextEntity text, bool exploded)
         {
             if (text.IsInvisible || string.IsNullOrWhiteSpace(text.Value)) return;
             Count();
-            // Left-baseline text sits at its insert point; any other justification at its alignment point.
-            var anchor = text.HorizontalAlignment == TextHorizontalAlignment.Left && text.VerticalAlignment == TextVerticalAlignmentType.Baseline
+            // Left-baseline text sits at its insert point; any other justification at its alignment point. Explode
+            // (ACadSharp) moves a text's insert point but not its alignment point, so a text from a block (grid
+            // bubbles, marks) is placed by its insert point, within about one text height of its alignment point.
+            var anchor = exploded
+                || text.HorizontalAlignment == TextHorizontalAlignment.Left && text.VerticalAlignment == TextVerticalAlignmentType.Baseline
                 ? text.InsertPoint
                 : text.AlignmentPoint;
             var (x, y) = Plan(anchor.X, anchor.Y, text.Normal.Z);
@@ -149,6 +157,48 @@ public static class DwgImport
             {
                 Style = Style(text, withPattern: false), Text = text.Value.Trim(), X = x, Y = y,
                 HeightMm = Math.Round(text.Height * scale, 1), RotationDeg = Degrees(text.Rotation),
+            });
+        }
+
+        // Some drawings make grid bubbles and round columns with ellipses of equal axes: those are circles (or arcs),
+        // as Revit reports them. A true ellipse becomes a polyline. Unlike arcs and circles, an ellipse is stored in
+        // world coordinates, its parameter turning about the normal from the major axis.
+        private void AddEllipse(Ellipse ellipse)
+        {
+            var major = ellipse.MajorAxisEndPoint;
+            var side = ellipse.Normal.Z < 0 ? -1 : 1;
+            var sweep = ellipse.EndParameter - ellipse.StartParameter;
+            if (sweep <= 0) sweep += 2 * Math.PI;
+            var full = Math.Abs(sweep - 2 * Math.PI) < 1e-6;
+            (double X, double Y) At(double t) => (
+                Mm(ellipse.Center.X + major.X * Math.Cos(t) - side * major.Y * ellipse.RadiusRatio * Math.Sin(t)),
+                Mm(ellipse.Center.Y + major.Y * Math.Cos(t) + side * major.X * ellipse.RadiusRatio * Math.Sin(t)));
+
+            if (Math.Abs(ellipse.RadiusRatio - 1) < 0.01)
+            {
+                var arc = new CadArc
+                {
+                    Style = Style(ellipse), Cx = Mm(ellipse.Center.X), Cy = Mm(ellipse.Center.Y),
+                    R = Mm(Math.Sqrt(major.X * major.X + major.Y * major.Y)), IsCircle = full,
+                };
+                if (!full)
+                {
+                    // Counterclockwise seen from above: from the start point, or from the end point when the normal points down.
+                    var (a, b) = side > 0 ? (At(ellipse.StartParameter), At(ellipse.EndParameter)) : (At(ellipse.EndParameter), At(ellipse.StartParameter));
+                    arc.StartDeg = Degrees(Math.Atan2(a.Y - arc.Cy, a.X - arc.Cx));
+                    arc.EndDeg = Degrees(Math.Atan2(b.Y - arc.Cy, b.X - arc.Cx));
+                }
+                result.Arcs.Add(arc);
+                return;
+            }
+            var count = ArcPoints * 2;
+            result.Polylines.Add(new CadPolyline
+            {
+                Style = Style(ellipse),
+                Closed = full,
+                Points = Enumerable.Range(0, full ? count : count + 1)
+                    .Select(k => At(ellipse.StartParameter + sweep * k / count))
+                    .Select(p => new[] { p.X, p.Y }).ToList(),
             });
         }
 

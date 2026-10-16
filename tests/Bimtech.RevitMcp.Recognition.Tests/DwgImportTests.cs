@@ -93,4 +93,26 @@ public class DwgImportTests
         Assert.Contains(points, p => Math.Abs(p[0]) < 0.01 && Math.Abs(p[1] - 1000) < 0.01);
         Assert.All(points, p => Assert.Equal(1000, Math.Sqrt(p[0] * p[0] + p[1] * p[1]), 1));
     }
+
+    [Fact]
+    public void Ellipses_with_equal_axes_are_circles_and_arcs_like_Revit_reports_them()
+    {
+        var document = new CadDocument();
+        // A grid bubble drawn as an ellipse, a half of one, and a true ellipse.
+        document.Entities.Add(new Ellipse { Center = new XYZ(0, -1400, 0), MajorAxisEndPoint = new XYZ(400, 0, 0), RadiusRatio = 1, StartParameter = 0, EndParameter = 2 * Math.PI });
+        document.Entities.Add(new Ellipse { Center = new XYZ(5000, 0, 0), MajorAxisEndPoint = new XYZ(0, 300, 0), RadiusRatio = 1, StartParameter = 0, EndParameter = Math.PI });
+        document.Entities.Add(new Ellipse { Center = new XYZ(0, 0, 0), MajorAxisEndPoint = new XYZ(1000, 0, 0), RadiusRatio = 0.5, StartParameter = 0, EndParameter = 2 * Math.PI });
+
+        var data = DwgImport.ToCase(document, "plan.dwg");
+
+        var bubble = data.Arcs.Single(arc => arc.IsCircle);
+        Assert.Equal((0.0, -1400.0, 400.0), (bubble.Cx, bubble.Cy, bubble.R));
+        // From the major axis (up) counterclockwise by half a turn: from 90° to 270°.
+        var half = data.Arcs.Single(arc => !arc.IsCircle);
+        Assert.Equal((300.0, 90.0, 270.0), (half.R, half.StartDeg, half.EndDeg));
+        var oval = Assert.Single(data.Polylines);
+        Assert.True(oval.Closed);
+        Assert.Equal(1000, oval.Points.Max(p => p[0]), 1);
+        Assert.Equal(500, oval.Points.Max(p => p[1]), 1);
+    }
 }

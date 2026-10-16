@@ -59,7 +59,8 @@ export const proposeLevels = defineTool({
     + " as the template's \"Level 1\") instead of duplicating it; then its structural plan \"KC - <name>\" and imports or"
     + " links that storey's DWG into the plan at the origin. Problems (forbidden characters, missing file, level at"
     + " another elevation, two storeys at one elevation) become Blocked items; unusual storey heights are flagged."
-    + " Levels nobody uses get a delete item that starts rejected. Use suggest_levels_from_folder to build the table"
+    + " Levels nobody uses get a delete item that starts rejected. When the model has grids, the last item X1 makes"
+    + " every grid span every level and every level span the grids. Use suggest_levels_from_folder to build the table"
     + " from DWG file names. Opens the review window in Revit and returns a planId at once; ask the user to review in"
     + " Revit, then get_plan_status and commit_plan. After the commit check each item's cadWarning (wrong DWG unit),"
     + " then list_cad_sources and propose_grids to build grids and align the CAD.",
@@ -78,6 +79,10 @@ export const proposeLevels = defineTool({
     scale: z.number().int().min(1).max(10000).optional().describe("Scale of the new plans, e.g. 100 for 1:100."),
     proposeLevelCleanup: z.boolean().optional()
       .describe("Offer to delete levels nobody uses, as items that start rejected (default true)."),
+    gridMarginMm: z.number().min(0).max(50000).optional()
+      .describe("The last item X1 makes every grid run from the lowest level minus this to the highest level plus this (default 1000)."),
+    levelMarginMm: z.number().min(0).max(50000).optional()
+      .describe("X1 makes every level run past the outer grids by this in the elevations (default 2000)."),
   },
   annotations: propose,
   timeoutMs: 60000,
@@ -90,13 +95,13 @@ export const proposeGrids = defineTool({
   description:
     "Plan grids read from one CAD drawing, without changing the model. Grid lines are found by their line pattern"
     + " (center / dash-dot) first, then circles with a name at their ends (grid bubbles), then a layer name with GRID,"
-    + " TRUC/TRỤC or AXIS; or pass gridLayer. Names come from the bubbles when their text is readable as Text Notes,"
+    + " TRUC/TRỤC or AXIS; or pass gridLayer. Names come from the texts in the bubbles, read from the DWG file (dwgPath for an import; a link's file is found),"
     + " else 1, 2, 3... (vertical, left to right) and A, B, C... (horizontal, bottom up). Each bay is snapped to"
     + " snapModuleMm when within snapToleranceMm (5998.7 → 6000) and grids are laid out from the first axis, which"
     + " sits on the Project Base Point. This CAD and every CAD in alignCadIds (usually the other storeys' CAD) is moved"
     + " by its own vector, found by matching its axes to this grid; where that fails it uses this CAD's vector and says"
     + " so. Skewed grids are reported, not built. Grids and moved CAD are pinned unless pin is false. One review item"
-    + " per grid and per CAD move; names already in the model are Blocked. Opens the review window in Revit and returns"
+    + " per grid and per CAD move; names already in the model are Blocked. A line without a name among named grids (likely a slab edge) is named after its nearest grid, A', and starts rejected; grid 1-A is the first named grid. The last item X1 fits datums: every grid spans every level and every level spans the grids. Opens the review window in Revit and returns"
     + " a planId at once; then get_plan_status and commit_plan.",
   inputSchema: {
     cadId: elementId.describe("CAD import or link with the grid lines, from list_cad_sources."),
@@ -105,11 +110,17 @@ export const proposeGrids = defineTool({
       .describe("Other CAD imports or links to move onto the grid, e.g. every storey's CAD."),
     gridLayer: z.string().min(1).max(255).optional()
       .describe("CAD layer holding the grid lines, when automatic detection picks the wrong one."),
+    dwgPath: z.string().min(1).max(1024).optional()
+      .describe("Full path of the CAD's DWG file, for an imported CAD (a link's file is found): grid names are read from the texts in the file's bubbles, which Revit does not expose. Without it an import's grids are numbered."),
     snapModuleMm: z.number().min(0).max(1000).optional()
       .describe("Bays are snapped to multiples of this (default 50). 0 only rounds to whole mm."),
     snapToleranceMm: z.number().min(0).max(100).optional()
       .describe("Largest drawing error snapped away (default 10); bays further off keep their measured size."),
     pin: z.boolean().optional().describe("Pin the new grids and moved CAD (default true)."),
+    gridMarginMm: z.number().min(0).max(50000).optional()
+      .describe("The last item X1 makes every grid run from the lowest level minus this to the highest level plus this (default 1000)."),
+    levelMarginMm: z.number().min(0).max(50000).optional()
+      .describe("X1 makes every level run past the outer grids by this in the elevations (default 2000)."),
   },
   annotations: propose,
   timeoutMs: 120000,
@@ -288,7 +299,8 @@ export const proposeBeams = defineTool({
     + " the level first: they are the supports. A beam is a pair of parallel CAD lines leaving a column (100-1000 mm"
     + " apart, middle within the column) and reaching the next column or wall in line, across gaps where other beams"
     + " cross. Beams run centre to centre of their supports and split only at supports, not at grid crossings. Marks"
-    + " like \"D1 (220x600)\" are read from Text Notes in the view (the nearest beam parallel to the text, then spread"
+    + " like \"D1 (220x600)\" are read from Text Notes in the view, or from the DWG file itself (dwgPath for an import;"
+    + " a link's file is found) when the view has none (the nearest beam parallel to the text, then spread"
     + " along the beams in line); b comes from the mark, else from the lines; h only from the mark or heightsMm, else"
     + " the group is Blocked: ask the user. The offset from the grid is set like columns (centred or face on the grid"
     + " within gridToleranceMm, else rounded to snapMm). One review item per group (mark and size); beams already in"
@@ -298,6 +310,8 @@ export const proposeBeams = defineTool({
     cadId: elementId.describe("CAD import or link ID from list_cad_sources."),
     viewId,
     levelId: elementId.describe("Level the beams are placed on (top of beam at the level plus offsetMm)."),
+    dwgPath: z.string().min(1).max(1024).optional()
+      .describe("Full path of the CAD's DWG file, for an imported CAD: beam marks like \"D2-X1(350x600)\" are texts in the file, which Revit does not expose."),
     offsetMm: z.number().min(-100000).max(100000).optional().describe("Top of beam above the level (default 0)."),
     layers: layerList("beam edges").describe("Optional: only lines on these CAD layers. Default: every layer."),
     types: typeMap("D1"),
