@@ -51,8 +51,15 @@ public sealed class RevitPlanWriter(Document document, PlanActions actions, stri
         }
         catch (Exception exception) when (exception is PlanActionException or Autodesk.Revit.Exceptions.ApplicationException)
         {
-            transaction.RollBack();
+            if (transaction.HasStarted() && !transaction.HasEnded()) transaction.RollBack();
             return Failed(item, exception.Message);
+        }
+        // Any other exception is a bug in the action, but it still fails only this item: the items before it stay
+        // written (principle 4). The type name shows it was unexpected. Cancellation still stops the whole commit.
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            if (transaction.HasStarted() && !transaction.HasEnded()) transaction.RollBack();
+            return Failed(item, $"Unexpected {exception.GetType().Name}: {exception.Message}");
         }
 
         if (transaction.Commit() != TransactionStatus.Committed || failures.Errors.Count > 0)
