@@ -71,7 +71,7 @@ public sealed class LoadDefaultFamilyCommand : IRevitCommand
                 : null,
             createdSlabTypes = newSlabTypes.Select(type => type.Name).ToList(),
             batchId,
-            next = "Use familyId as templateFamilyId in place_columns/place_beams (pile types are created from the nearest pile type).",
+            next = "Use familyId as templateFamilyId in propose_columns/place_beams (pile types are created from the nearest pile type).",
         };
     }
 }

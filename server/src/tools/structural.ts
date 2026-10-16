@@ -390,7 +390,7 @@ export const undoBatch = defineTool({
     "Delete the elements created by one write call, identified by its batchId. Types created by that call"
     + " are deleted only if nothing uses them. Confirm with the user first.",
   inputSchema: {
-    batchId: z.string().min(1).max(64).describe("batchId returned by a write tool such as place_columns."),
+    batchId: z.string().min(1).max(64).describe("batchId returned by a write tool such as place_beams."),
   },
   annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
   timeoutMs: 60000,

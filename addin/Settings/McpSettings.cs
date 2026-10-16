@@ -23,7 +23,7 @@ public sealed record McpSettings
     // Blocks every command that changes the model, whatever DisabledCommands says.
     public bool ReadOnlyMode { get; init; }
 
-    // Upper bound for elements one write call may create, e.g. columns in place_columns.
+    // Upper bound for elements one write call may create, e.g. beams in place_beams.
     public int MaxElementsPerWrite { get; init; } = DefaultMaxElementsPerWrite;
 
     // Methods switched off by the user. Stored as an exclusion list so new commands start enabled.

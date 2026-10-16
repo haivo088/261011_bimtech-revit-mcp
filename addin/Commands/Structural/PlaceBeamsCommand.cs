@@ -5,7 +5,7 @@ using Bimtech.StructuralCore.Beams;
 
 namespace Bimtech.RevitMcp.Commands.Structural;
 
-// Places the beams of a scan on a level, like place_columns:
+// Places the beams of a scan on a level:
 //   dryRun (default true) reports the plan; dryRun false runs in one WriteSession and returns a batchId.
 // Which groups: those with a tag name, plus "include", minus "exclude".
 // Type per group: "types" entry → existing type with matching b×h → new type in templateFamilyId (needs h) → unresolved.
