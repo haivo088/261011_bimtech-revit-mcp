@@ -143,7 +143,9 @@ Build không tự cài hoặc thay add-in trên máy.
 
 ## Cài vào Revit để thử
 
-Đóng Revit trước khi chép DLL. Trong `%APPDATA%\Autodesk\Revit\Addins\2025\`, tạo cấu trúc:
+Cách nhanh: đóng Revit rồi chạy `.\scripts\install.ps1` ở gốc repo. Script build add-in và server rồi chép đúng file vào thư mục add-in; thêm `-Dev` để cài cả bộ công cụ cho người phát triển ([07](docs/07-dev-tools.md)). Danh sách thử trọn bộ: [08 — Kế hoạch thử trong Revit](docs/08-revit-test-plan.md).
+
+Cài tay: đóng Revit trước khi chép DLL. Trong `%APPDATA%\Autodesk\Revit\Addins\2025\`, tạo cấu trúc:
 
 ```text
 2025/
