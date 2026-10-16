@@ -33,6 +33,16 @@ internal sealed class RawWall
     /// <summary>Ghi chú cách sửa mồ côi (layer gốc, có khớp Text hay không) — chỉ có giá trị khi IsCrossLayerPair = true, phục vụ hiển thị cảnh báo.</summary>
     public string? CrossLayerNote { get; init; }
 
+    /// <summary>Vách nhận từ hatch (WallRecognizer): true = đủ bằng chứng (dựng mặc định), false = nên xem lại; null cho
+    /// vách ghép từ cặp Line kiểu cũ.</summary>
+    public bool? Sure { get; init; }
+
+    /// <summary>Bằng chứng có dấu của vách nhận từ hatch, vd "+1 nằm trên trục" — hiện trong cửa sổ duyệt.</summary>
+    public IReadOnlyList<string>? Evidence { get; init; }
+
+    /// <summary>Trục mà tim hoặc mặt vách nằm trên (vách nhận từ hatch).</summary>
+    public string? Grid { get; init; }
+
     public XYZ Midpoint => new((Start.X + End.X) / 2, (Start.Y + End.Y) / 2, 0);
 }
 
@@ -78,13 +88,18 @@ internal sealed class WallSizeGroup
 
     public required List<RawWall> Walls { get; init; }
 
-    /// <summary>Khoá ổn định của nhóm khi trao đổi qua MCP: "TÊN|200", hoặc "w200" cho tường không có tên.</summary>
-    public string Key => TagName is null ? $"w{SizeBMm:0}" : $"{TagName}|{SizeBMm:0}";
+    /// <summary>Nhóm vách nhận từ hatch: true = đủ bằng chứng, false = nên xem lại; null cho nhóm kiểu cũ (cặp Line).</summary>
+    public bool? Sure { get; init; }
+
+    /// <summary>Khoá ổn định của nhóm khi trao đổi qua MCP: "TÊN|200", hoặc "w200" cho tường không có tên; vách nhận từ
+    /// hatch: "w200" (đủ bằng chứng) hoặc "w200-maybe" (nên xem lại).</summary>
+    public string Key => Sure is { } sure ? (sure ? $"w{SizeBMm:0}" : $"w{SizeBMm:0}-maybe")
+        : TagName is null ? $"w{SizeBMm:0}" : $"{TagName}|{SizeBMm:0}";
 
     public string SizeLabel => TagName is not null ? $"{TagName} — {SizeBMm:0}mm" : $"{SizeBMm:0}mm";
 
     /// <summary>Mặc định chỉ dựng nhóm có tên đọc từ Text — nhóm không tên thường là nét phụ, người dùng tự chọn thêm.</summary>
-    public bool ModelByDefault => !string.IsNullOrWhiteSpace(TagName);
+    public bool ModelByDefault => Sure ?? !string.IsNullOrWhiteSpace(TagName);
 
     public bool HasCrossLayerWalls => Walls.Any(w => w.IsCrossLayerPair);
 }

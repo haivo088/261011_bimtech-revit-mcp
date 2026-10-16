@@ -107,7 +107,7 @@ public sealed partial class ExportCadCaseCommand : IRevitCommand
             };
         if (!Path.IsPathFullyQualified(path)) throw RpcException.InvalidParams("dwgPath", "must be an absolute file path.");
 
-        var result = DwgSource.Read(cad, path, data);
+        var result = DwgSource.Read(cad, path, () => data);
         var attached = DwgSource.Attach(data, result);
         var drawing = result.Drawing;
         return new

@@ -70,19 +70,34 @@ internal static class CadExtractor
             });
         }
 
-        foreach (var wall in new FilteredElementCollector(document).OfClass(typeof(Wall)).Cast<Wall>().Where(Reaches))
-        {
-            if (wall.Location is not LocationCurve { Curve: Line line }) continue;
-            var (a, b) = (line.GetEndPoint(0), line.GetEndPoint(1));
-            var normal = new XYZ(-(b - a).Y, (b - a).X, 0).Normalize() * (wall.Width / 2);
-            supports.Add(new CaseSupport
-            {
-                Kind = "wall", Id = RevitJson.Id(wall.Id), Mark = Mark(wall),
-                Cx = Mm((a.X + b.X) / 2), Cy = Mm((a.Y + b.Y) / 2),
-                Points = new[] { a + normal, b + normal, b - normal, a - normal }.Select(p => new[] { Mm(p.X), Mm(p.Y) }).ToList(),
-            });
-        }
+        supports.AddRange(new FilteredElementCollector(document).OfClass(typeof(Wall)).Cast<Wall>().Where(Reaches)
+            .Select(WallSupport).OfType<CaseSupport>());
         return supports;
+    }
+
+    // The straight walls whose top is at the elevation (feet), i.e. the walls of the storey below it.
+    public static List<CaseSupport> ModelWallsBelow(Document document, double elevation)
+    {
+        var tolerance = UnitUtils.ConvertToInternalUnits(100, UnitTypeId.Millimeters);
+        return new FilteredElementCollector(document).OfClass(typeof(Wall)).Cast<Wall>()
+            .Where(wall => wall.get_BoundingBox(null) is { } box
+                && Math.Abs(box.Max.Z - elevation) <= tolerance && box.Min.Z < elevation - tolerance)
+            .Select(WallSupport).OfType<CaseSupport>()
+            .ToList();
+    }
+
+    // A straight wall as the rectangle of its centre line and width: points 0-1 on one face, 2-3 on the other.
+    private static CaseSupport? WallSupport(Wall wall)
+    {
+        if (wall.Location is not LocationCurve { Curve: Line line }) return null;
+        var (a, b) = (line.GetEndPoint(0), line.GetEndPoint(1));
+        var normal = new XYZ(-(b - a).Y, (b - a).X, 0).Normalize() * (wall.Width / 2);
+        return new CaseSupport
+        {
+            Kind = "wall", Id = RevitJson.Id(wall.Id), Mark = Mark(wall),
+            Cx = Mm((a.X + b.X) / 2), Cy = Mm((a.Y + b.Y) / 2),
+            Points = new[] { a + normal, b + normal, b - normal, a - normal }.Select(p => new[] { Mm(p.X), Mm(p.Y) }).ToList(),
+        };
     }
 
     // The beams placed on the level, as the person approved them: the truth a case's beams are checked against.

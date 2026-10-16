@@ -16,6 +16,7 @@ Khi ít thời gian, đi đúng con đường này; các mục "Thử thêm" và
 | 2 | Một tầng có CAD + một tầng trên, chỉ mục chính | 2 | 10' |
 | 3 | Trục từ CAD tầng 1 | 3 | 10' |
 | 4 | Cột tầng 1 | 5 | 15' |
+| 4b | Vách tầng 1 từ hatch (tầng có lõi thang) | 6 | 15' |
 | 5 | Dầm chính tầng 2 | 7 | 15' |
 | 6 | `send_code` đọc, rồi một lần ghi nhỏ | 10 | 10' |
 | 7 | `export_cad_case` cho CAD tầng 1 và tầng 2, tầng 2 sau khi đã sửa tay dầm sai/thiếu (để sửa thuật toán ngoài Revit) | 10 | 5' |
@@ -111,13 +112,17 @@ Kết quả này quyết định mốc cao độ cho bản nâng cấp U2 (nhậ
 
 Vách dựng trước dầm: `propose_beams` dùng vách trong model làm gối tựa.
 
-> Quét vách từ CAD tầng 1 bằng scan_cad_walls (chọn layer vách), rồi propose_walls từ Tầng 1 lên Tầng 2.
+Vách giờ đọc từ **hatch của file DWG** (xem [05](05-cad-to-structure.md)), nên làm sau trục và cột của tầng đó. Chọn tầng có **lõi thang**.
+
+> Quét vách CAD tầng 1 bằng scan_cad_walls (CAD import thì thêm dwgPath "<đường dẫn .dwg>"). Cho mình xem các nhóm và bằng chứng, rồi propose_walls từ Tầng 1 lên Tầng 2.
 
 Đạt khi:
-- Mỗi nhóm (tên + bề dày) là một mục, mô tả như `V1 · dày 200 mm · 12 vách (15 đoạn) · Type BTC-VachKC_200`.
-- Sau commit: vách đúng tim, đúng chiều cao; Type `BTC-VachKC_<b>` được tạo khi thiếu.
-- Gọi lại `propose_walls` cùng scan → `alreadyModeledGroups`, không tạo vách đôi.
-- Ghi lại thời gian quét: cách quét vách còn là cách cũ (ghép cặp mọi line), sẽ được review sau.
+- Kết quả quét có `dwg.matchRate` gần 1, `regionFrom: "grids"`, `model.columns` > 0, và `columnPatternsFrom` là "hatches inside the modeled columns".
+- Nhóm `w200`, `w300`… đúng các bề dày vách của bản vẽ; mỗi nhóm có `evidence` hợp lý. Ghi lại: vách nào **sót** (có hatch mà không ra), vách nào **thừa** (tường xây, cột bị nhận nhầm), nhóm `-maybe` có gì.
+- Cửa sổ duyệt: mỗi nhóm một mục kèm dòng "Vì sao: …" và "Trên trục: …".
+- Sau commit: vách đúng tim, đúng bề dày, góc chữ L/T nối đúng; Type `BTC-VachKC_<b>` được tạo khi thiếu.
+- Gọi lại `scan_cad_walls` lần hai: `dwg.cached: true`, nhanh hơn hẳn. Gọi lại `propose_walls` cùng scan → `alreadyModeledGroups`, không tạo vách đôi.
+- Ghi lại thời gian lần quét đầu (`dwg.readSeconds`).
 
 ## 7. Dầm chính: `propose_beams`
 

@@ -45,6 +45,14 @@ internal static class WallPlacer
             }).OrderBy(g => g.TagName is null).ThenBy(g => g.SizeBMm).ToList();
     }
 
+    /// <summary>Nhóm vách nhận từ hatch theo độ chắc chắn + bề dày (làm tròn 5mm), KHÔNG gộp tim: WallRecognizer đã gộp
+    /// đúng các dải cùng bề dày, gộp lại ở đây sẽ nối cả vách khác bề dày nằm cùng trục. Nhóm chắc chắn trước.</summary>
+    public static List<WallSizeGroup> GroupRecognizedWalls(IEnumerable<RawWall> walls) =>
+        walls.GroupBy(wall => (Sure: wall.Sure == true,
+                Width: Math.Round(UnitUtils.ConvertFromInternalUnits(wall.WidthFeet, UnitTypeId.Millimeters) / 5) * 5))
+            .Select(g => new WallSizeGroup { TagName = null, SizeBMm = g.Key.Width, Sure = g.Key.Sure, Walls = g.ToList() })
+            .OrderByDescending(g => g.Sure).ThenBy(g => g.SizeBMm).ToList();
+
     /// <summary>Type gợi ý cho 1 nhóm: Type khớp đúng bề dày (IsExact = true), không thì Type có bề dày gần nhất.</summary>
     public static (T? Choice, bool IsExact) SuggestType<T>(double widthMm, IReadOnlyList<T> choices, Func<T, WallType> typeOf)
         where T : class

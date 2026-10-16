@@ -120,20 +120,33 @@ export const scanCadWalls = defineTool({
   method: "scan_cad_walls",
   title: "Scan CAD for walls",
   description:
-    "Read structural walls from a CAD drawing as pairs of parallel lines (30-500 mm apart) as shown in a plan view,"
-    + " with names from nearby Text Notes. Call first without layers to list the layers, ask the user which hold walls,"
-    + " then call again with layers. Walls are grouped by tag name and thickness (key like \"V1|200\", or \"w200\""
-    + " without a name), with type suggestions and a scanId for propose_walls. Changes nothing in the model.",
+    "Read structural walls from a CAD drawing. Normally (no layers): from the hatches of the DWG file itself, read from"
+    + " disk (a linked CAD's own file, or dwgPath for an imported one) and placed on the CAD by matching lines. Each"
+    + " hatched strip is weighed like an engineer would: hatch pattern shared with the columns, concrete thickness, on a"
+    + " grid, joined to a modeled column, on a wall of the storey below, part of a core (with lift text); masonry"
+    + " thickness, flat-column proportions or a column/masonry layer name count against. Column-sized hatches are never"
+    + " walls. Walls are grouped by thickness: \"w300\" (enough evidence, proposed by default) and \"w300-maybe\" (to"
+    + " review, only when included), each with its evidence counts, type suggestions and a scanId for propose_walls."
+    + " Model the grids and columns first: the region defaults to the grids' extent and they add evidence. With"
+    + " layers: the older reading of parallel line pairs on those layers, for drawings without hatches. Reading a"
+    + " large DWG takes up to a minute the first time; repeated scans reuse it. Changes nothing in the model.",
   inputSchema: {
     cadId: elementId.describe("CAD import or link ID from list_cad_sources."),
     viewId,
-    layers: layerList("wall outlines"),
+    levelId: elementId.optional().describe("Base level of the walls. Default: the plan view's level."),
+    dwgPath: z.string().min(1).max(1024).optional()
+      .describe("Absolute path of the DWG/DXF file of an imported (not linked) CAD. A linked CAD's own file is used by default."),
     region: regionMm.optional(),
+    gridToleranceMm: z.number().min(0).max(200).optional().describe("How close to a grid a wall face or centre counts as on it (default 15)."),
+    columnMaxLengthMm: z.number().min(0).max(5000).optional()
+      .describe("Hatches no longer than this are columns, not walls (default 1000)."),
+    sureScore: z.number().int().min(1).max(20).optional().describe("Evidence score from which a wall is proposed by default (default 3)."),
+    layers: layerList("wall outlines").describe("Only for drawings without hatches: layers holding wall outlines as line pairs."),
     textSearchMm: z.number().min(1).max(20000).optional()
-      .describe("How far from a wall to look for its text."),
+      .describe("With layers only: how far from a wall to look for its text."),
   },
   annotations: readOnly,
-  timeoutMs: 120000,
+  timeoutMs: 300000,
 });
 
 export const proposeWalls = defineTool({
@@ -142,8 +155,8 @@ export const proposeWalls = defineTool({
   title: "Propose walls from scan",
   description:
     "Plan structural walls from a scan between two levels, without changing the model. One review item per wall group;"
-    + " parts of centerlines already covered by a wall are skipped. Groups with a tag name are proposed unless listed"
-    + " in 'exclude'; groups without one only when listed in 'include'. Type per group: 'types' entry, else a Basic"
+    + " parts of centerlines already covered by a wall are skipped. Groups proposed by default (\"wNNN\" from"
+    + " hatches, or with a tag name) are proposed unless listed in 'exclude'; the others only when listed in 'include'. Type per group: 'types' entry, else a Basic"
     + " Wall type of that thickness, else a new type \"BTC-VachKC_<b>\" duplicated at commit from templateTypeId"
     + " (default: the Basic Wall type closest in thickness). Opens the review window and returns a planId at once;"
     + " then get_plan_status and commit_plan.",
@@ -154,7 +167,7 @@ export const proposeWalls = defineTool({
     baseOffsetMm: z.number().min(-100000).max(100000).optional().describe("Offset from the base level (default 0)."),
     topOffsetMm: z.number().min(-100000).max(100000).optional().describe("Offset from the top level (default 0)."),
     include: z.array(z.string().min(1).max(200)).max(500).optional()
-      .describe("Keys of groups without a tag name to propose as well."),
+      .describe("Keys of groups not proposed by default to propose as well (\"w300-maybe\", or groups without a tag name)."),
     exclude: z.array(z.string().min(1).max(200)).max(500).optional()
       .describe("Keys of groups not to propose."),
     types: typeMap("V1|200"),

@@ -20,14 +20,39 @@ internal static class DwgSource
         return path is null ? null : ModelPathUtils.ConvertModelPathToUserVisiblePath(path);
     }
 
-    // Reads the file and places it against the lines Revit reported for the same CAD (fromRevit, model mm).
-    public static Result Read(ImportInstance cad, string path, CadCase fromRevit)
+    // The last files read and placed, by path, modification time and where the CAD sits: a large DWG takes about
+    // 40 s to read, and a scan is often repeated on the same CAD. Two entries keep memory bounded.
+    private static readonly List<(string Key, Result Result)> Recent = [];
+    private const int RecentCount = 2;
+
+    // Reads the file and places it against the lines Revit reports for the same CAD (fromRevit, model mm; only
+    // called when the file or the CAD's placement changed since the last read).
+    public static Result Read(ImportInstance cad, string path, Func<CadCase> fromRevit)
     {
         if (!File.Exists(path)) return new Result(null, null, path, null, null, 0, $"File not found: {path}");
         var transform = cad.GetTotalTransform();
         if (transform.BasisX.CrossProduct(transform.BasisY).Z < 0)
             return new Result(null, null, path, null, null, 0, "The CAD is mirrored in Revit; reading its file is not supported for mirrored imports.");
 
+        var key = string.Join("|", Path.GetFullPath(path).ToUpperInvariant(), File.GetLastWriteTimeUtc(path).Ticks,
+            cad.Id.Value, transform.Origin, transform.BasisX);
+        lock (Recent)
+        {
+            var hit = Recent.FindIndex(entry => entry.Key == key);
+            if (hit >= 0) return Recent[hit].Result with { ReadMs = 0 };
+        }
+        var result = ReadFile(path, transform, fromRevit);
+        if (result.Drawing is not null)
+            lock (Recent)
+            {
+                Recent.Insert(0, (key, result));
+                if (Recent.Count > RecentCount) Recent.RemoveRange(RecentCount, Recent.Count - RecentCount);
+            }
+        return result;
+    }
+
+    private static Result ReadFile(string path, Transform transform, Func<CadCase> fromRevit)
+    {
         var watch = Stopwatch.StartNew();
         ACadSharp.CadDocument file;
         try
@@ -41,7 +66,7 @@ internal static class DwgSource
         var drawing = DwgImport.ToCase(file, Path.GetFileName(path));
         var (version, units) = (file.Header.Version.ToString(), file.Header.InsUnits.ToString());
         var rotation = Math.Atan2(transform.BasisX.Y, transform.BasisX.X) * 180 / Math.PI;
-        var alignment = DwgAlignment.Find(DwgAlignment.Segments(fromRevit), DwgAlignment.Segments(drawing), rotation);
+        var alignment = DwgAlignment.Find(DwgAlignment.Segments(fromRevit()), DwgAlignment.Segments(drawing), rotation);
         return new Result(drawing, alignment, path, version, units, watch.ElapsedMilliseconds, alignment.Problem);
     }
 

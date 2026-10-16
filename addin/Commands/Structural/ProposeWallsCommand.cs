@@ -10,8 +10,8 @@ using Bimtech.StructuralCore.Walls;
 
 namespace Bimtech.RevitMcp.Commands.Structural;
 
-// Plans structural walls from a scan_cad_walls scan: one review item per wall group (tag name + thickness),
-// placed between two levels. Read-only: it may drop unsupported walls and extend walls to columns in memory,
+// Plans structural walls from a scan_cad_walls scan: one review item per wall group (tag name + thickness, or for
+// walls recognized from hatches: evidence level + thickness, with the evidence counted), placed between two levels. Read-only: it may drop unsupported walls and extend walls to columns in memory,
 // checks each group against existing walls (WallPlacer.PlanPlacement) and saves a plan, but never opens a Transaction.
 // Type per group: "types" entry → existing Basic Wall type of that thickness → new type "BTC-VachKC_<b>"
 // duplicated at commit time from templateTypeId (default: the Basic Wall type closest in thickness).
@@ -69,13 +69,13 @@ public sealed class ProposeWallsCommand(PlanService plans, ReviewWindowHost revi
         }
         context.Cancellation.ThrowIfCancellationRequested();
 
-        var groups = WallPlacer.GroupWalls(walls);
+        var groups = scan.FromHatch ? WallPlacer.GroupRecognizedWalls(walls) : WallPlacer.GroupWalls(walls);
         var selected = groups
             .Where(group => (group.ModelByDefault || include.Contains(group.Key)) && !exclude.Contains(group.Key))
             .ToList();
         if (selected.Count == 0)
             throw RpcException.InvalidParams("include",
-                "no group is selected. Groups without a tag name must be listed in 'include'"
+                "no group is selected. Groups not proposed by default (\"-maybe\" groups, groups without a tag name) must be listed in 'include'"
                 + (dropped > 0 ? $"; onlySupported dropped {dropped} wall(s) with nothing below." : "."));
         var total = selected.Sum(group => group.Walls.Count);
         var limit = context.Settings.MaxElementsPerWrite;
@@ -178,7 +178,16 @@ public sealed class ProposeWallsCommand(PlanService plans, ReviewWindowHost revi
         var group = plan.Group;
         var reasons = new List<string>();
         if (problem is not null) reasons.Add(problem);
-        if (group.TagName is null) reasons.Add("Nhóm không có tên đọc từ Text.");
+        if (group.Sure is { } sure)
+        {
+            if (!sure) reasons.Add("Bằng chứng chưa đủ, nên xem lại trên mặt bằng.");
+            reasons.Add("Vì sao: " + string.Join("; ", group.Walls.SelectMany(wall => wall.Evidence ?? [])
+                .GroupBy(reason => reason).OrderByDescending(g => g.Count())
+                .Select(g => $"{g.Key} ({g.Count()}/{group.Walls.Count})")));
+            var grids = group.Walls.Where(wall => wall.Grid is not null).Select(wall => wall.Grid!).Distinct().ToList();
+            if (grids.Count > 0) reasons.Add("Trên trục: " + string.Join(", ", grids));
+        }
+        else if (group.TagName is null) reasons.Add("Nhóm không có tên đọc từ Text.");
         var repaired = group.Walls.Count(wall => wall.IsCrossLayerPair);
         if (repaired > 0) reasons.Add($"{repaired} vách được ghép từ nét mồ côi, nên kiểm tra.");
         if (preview.FullyCovered > 0) reasons.Add($"{preview.FullyCovered} vách đã có trong model, sẽ bỏ qua.");
@@ -186,7 +195,7 @@ public sealed class ProposeWallsCommand(PlanService plans, ReviewWindowHost revi
         var typeText = plan.Type is not null ? $"Type {plan.Type.Name}"
             : plan.NewTypeName is not null ? $"tạo Type {plan.NewTypeName} từ {plan.Template!.Name}"
             : "chưa có Type";
-        var name = group.TagName ?? "(không tên)";
+        var name = group.TagName ?? group.Sure switch { true => "Vách", false => "Vách (xem lại)", null => "(không tên)" };
         return new PlanItem
         {
             ItemId = "W-" + group.Key,

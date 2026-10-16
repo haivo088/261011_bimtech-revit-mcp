@@ -38,6 +38,9 @@ internal static class WallColumnExtender
                 TagHMm = wall.TagHMm,
                 IsCrossLayerPair = wall.IsCrossLayerPair,
                 CrossLayerNote = wall.CrossLayerNote,
+                Sure = wall.Sure,
+                Evidence = wall.Evidence,
+                Grid = wall.Grid,
             });
         }
 
