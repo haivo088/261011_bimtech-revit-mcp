@@ -32,7 +32,7 @@ public static class DwgImport
     {
         var result = new CadCase { CreatedAt = DateTimeOffset.Now };
         var builder = new Builder(result, UnitsToMm(document.Header.InsUnits.ToString()), category, maxEntities);
-        foreach (var entity in document.ModelSpace.Entities) builder.Add(entity, 0);
+        foreach (var entity in document.ModelSpace.Entities) builder.Add(entity, 0, Affine.Identity);
         return result;
     }
 
@@ -47,12 +47,17 @@ public static class DwgImport
         _ => 1,
     };
 
+    // Blocks are expanded here rather than with ACadSharp's Insert.Explode: Explode (3.8) gives a nested insert
+    // that is mirrored and rotated a different placement (R(-90)·S(-1,1) comes back as R(-90)·S(1,-1), half a turn
+    // off) and flips a mirrored hatch's normal without moving its points. Each entity is read in its own coordinates
+    // and placed with toWorld, composed from the raw values of the inserts above it.
     private sealed class Builder(CadCase result, double scale, string category, int maxEntities)
     {
         private readonly Dictionary<(string Layer, string? Pattern), int> _styles = [];
         private int _entities;
 
-        public void Add(Entity entity, int depth)
+        // toWorld: the entity's block coordinates to the drawing's world coordinates.
+        public void Add(Entity entity, int depth, Affine toWorld)
         {
             if (entity.IsInvisible) return;
             if (_entities >= maxEntities)
@@ -63,75 +68,81 @@ public static class DwgImport
             switch (entity)
             {
                 case Insert insert:
-                    // Attribute values are real texts (grid names in bubbles, marks); the block's attribute
-                    // definitions are only their templates.
-                    // A nested block's attributes come out of the outer block's Explode placed by their insert point only.
-                    foreach (var attribute in insert.Attributes) AddText(attribute, exploded: depth > 0);
+                    // Attribute values are real texts (grid names in bubbles, marks), stored where the insert sits;
+                    // the block's attribute definitions are only their templates.
+                    foreach (var attribute in insert.Attributes) AddText(attribute, toWorld);
                     if (depth >= MaxBlockDepth)
                     {
                         Skip("block nested too deep");
                         return;
                     }
-                    foreach (var part in insert.Explode())
-                    {
-                        // Explode (ACadSharp 3.8) moves a hatch's points but, for a mirrored insert, also flips its
-                        // normal, so the points read as mirrored once more: the block's own hatches are placed below.
-                        if (part is Hatch) continue;
-                        Add(part, depth + 1);
-                    }
-                    var transform = insert.GetTransform();
-                    foreach (var hatch in insert.Block.Entities.OfType<Hatch>().Where(hatch => !hatch.IsInvisible))
-                        AddHatch(hatch, p => transform.ApplyTransform(new CSMath.XYZ(hatch.Normal.Z < 0 ? -p.X : p.X, p.Y, 0)));
+                    if (insert.Block is null) return;
+                    foreach (var placement in Placements(insert))
+                        foreach (var part in insert.Block.Entities) Add(part, depth + 1, toWorld * placement);
                     return;
                 case AttributeDefinition:
                     return;
                 case Line line:
                     Count();
-                    result.Lines.Add(new CadLine
-                    {
-                        Style = Style(entity),
-                        X0 = Mm(line.StartPoint.X), Y0 = Mm(line.StartPoint.Y),
-                        X1 = Mm(line.EndPoint.X), Y1 = Mm(line.EndPoint.Y),
-                    });
+                    var (x0, y0) = Point(toWorld, line.StartPoint.X, line.StartPoint.Y);
+                    var (x1, y1) = Point(toWorld, line.EndPoint.X, line.EndPoint.Y);
+                    result.Lines.Add(new CadLine { Style = Style(entity), X0 = x0, Y0 = y0, X1 = x1, Y1 = y1 });
                     return;
                 case Arc arc:
                     Count();
-                    result.Arcs.Add(ToArc(arc, entity));
+                    AddArc(entity, toWorld * Ocs(arc.Normal.Z), arc.Center.X, arc.Center.Y, arc.Radius, arc.StartAngle, arc.EndAngle);
                     return;
                 case Circle circle:
                     Count();
-                    var (cx, cy) = Plan(circle.Center.X, circle.Center.Y, circle.Normal.Z);
-                    result.Arcs.Add(new CadArc { Style = Style(entity), Cx = cx, Cy = cy, R = Mm(circle.Radius), IsCircle = true });
+                    AddArc(entity, toWorld * Ocs(circle.Normal.Z), circle.Center.X, circle.Center.Y, circle.Radius, null, null);
                     return;
                 case Ellipse ellipse:
                     Count();
-                    AddEllipse(ellipse);
+                    AddEllipse(ellipse, toWorld);
                     return;
                 case LwPolyline polyline:
                     Count();
+                    var ocs = toWorld * Ocs(polyline.Normal.Z);
                     result.Polylines.Add(new CadPolyline
                     {
                         Style = Style(entity),
                         Closed = polyline.IsClosed,
                         Points = Bulged(polyline.Vertices.Select(v => (v.Location.X, v.Location.Y, v.Bulge)).ToList(), polyline.IsClosed)
-                            .Select(p => Plan(p.X, p.Y, polyline.Normal.Z)).Select(p => new[] { p.X, p.Y }).ToList(),
+                            .Select(p => Point(ocs, p.X, p.Y)).Select(p => new[] { p.X, p.Y }).ToList(),
                     });
                     return;
                 case Hatch hatch:
-                    AddHatch(hatch, p => new CSMath.XYZ(hatch.Normal.Z < 0 ? -p.X : p.X, p.Y, 0));
+                    Count();
+                    var plane = toWorld * Ocs(hatch.Normal.Z);
+                    var loops = hatch.Paths
+                        .Select(path => Loop(path.GetPoints(ArcPoints).Select(p => Point(plane, p.X, p.Y))))
+                        .Where(loop => loop.Count >= 3)
+                        .ToList();
+                    if (loops.Count == 0)
+                    {
+                        Skip("Hatch without boundary");
+                        return;
+                    }
+                    result.Hatches.Add(new CadHatch { Style = Style(entity, withPattern: false), Pattern = hatch.Pattern?.Name, IsSolid = hatch.IsSolid, Loops = loops });
                     return;
                 case TextEntity text:
-                    AddText(text, exploded: depth > 0);
+                    AddText(text, toWorld);
                     return;
                 case MText text:
                     Count();
                     var value = string.Join(" ", text.GetPlainTextLines().Select(line => line.Trim()).Where(line => line.Length > 0));
                     if (value.Length == 0) return;
-                    var (tx, ty) = Plan(text.InsertPoint.X, text.InsertPoint.Y, text.Normal.Z);
+                    // Unlike a text, an MText's insert point and direction are in block coordinates, not in its plane's.
+                    var (tx, ty) = Point(toWorld, text.InsertPoint.X, text.InsertPoint.Y);
+                    var direction = text.AlignmentPoint;
+                    var (dx, dy) = Math.Abs(direction.X) + Math.Abs(direction.Y) > 1e-9
+                        ? toWorld.Turn(direction.X, direction.Y)
+                        : (toWorld * Ocs(text.Normal.Z)).Turn(Math.Cos(text.Rotation), Math.Sin(text.Rotation));
                     result.Texts.Add(new CadText
                     {
                         Style = Style(entity, withPattern: false), Text = value, X = tx, Y = ty,
-                        HeightMm = Math.Round(text.Height * scale, 1), RotationDeg = Degrees(text.Rotation),
+                        HeightMm = Math.Round(text.Height * scale * Length(toWorld.Turn(0, 1)), 1),
+                        RotationDeg = Degrees(Math.Atan2(dy, dx)),
                     });
                     return;
                 default:
@@ -140,50 +151,85 @@ public static class DwgImport
             }
         }
 
-        // toWorld: a boundary point (in the hatch's own coordinates) to the drawing's world coordinates.
-        private void AddHatch(Hatch hatch, Func<CSMath.XYZ, CSMath.XYZ> toWorld)
+        // Where an insert puts its block's coordinates, in the coordinates the insert sits in: the block's base point
+        // to the insert point, scaled then rotated, in the insert's plane (x mirrored when its normal points down). A
+        // multiple insert (MINSERT) repeats that along its rotated rows and columns.
+        private static IEnumerable<Affine> Placements(Insert insert)
         {
-            if (_entities >= maxEntities)
-            {
-                Skip("over maxEntities");
-                return;
-            }
-            Count();
-            var loops = hatch.Paths
-                .Select(path => Loop(path.GetPoints(ArcPoints).Select(p => toWorld(new CSMath.XYZ(p.X, p.Y, 0))).Select(p => (Mm(p.X), Mm(p.Y)))))
-                .Where(loop => loop.Count >= 3)
-                .ToList();
-            if (loops.Count == 0)
-            {
-                Skip("Hatch without boundary");
-                return;
-            }
-            result.Hatches.Add(new CadHatch { Style = Style(hatch, withPattern: false), Pattern = hatch.Pattern?.Name, IsSolid = hatch.IsSolid, Loops = loops });
+            var basePoint = insert.Block.BlockEntity?.BasePoint ?? CSMath.XYZ.Zero;
+            var turn = Affine.Rotate(insert.Rotation);
+            var shape = turn * Affine.Scale(insert.XScale, insert.YScale) * Affine.Move(-basePoint.X, -basePoint.Y);
+            var plane = Ocs(insert.Normal.Z);
+            for (var row = 0; row < Math.Max(1, (int)insert.RowCount); row++)
+                for (var column = 0; column < Math.Max(1, (int)insert.ColumnCount); column++)
+                {
+                    var (ox, oy) = turn.Turn(column * insert.ColumnSpacing, row * insert.RowSpacing);
+                    yield return plane * Affine.Move(insert.InsertPoint.X + ox, insert.InsertPoint.Y + oy) * shape;
+                }
         }
 
-        private void AddText(TextEntity text, bool exploded)
+        // A 2D entity's own plane in its block's coordinates: drawn with the normal pointing down (mirrored in
+        // AutoCAD), its x runs the other way.
+        private static Affine Ocs(double normalZ) => normalZ < 0 ? Affine.Scale(-1, 1) : Affine.Identity;
+
+        // An arc (or a circle, without angles) in its own plane, angles counterclockwise there. Placed by a mirror its
+        // sense turns, so its ends swap; placed by an unequal scale it is an ellipse, kept as points.
+        private void AddArc(Entity entity, Affine toWorld, double cx, double cy, double radius, double? start, double? end)
+        {
+            if (!toWorld.KeepsShape)
+            {
+                var full = start is null || end is null;
+                var sweep = full ? 2 * Math.PI : end!.Value - start!.Value;
+                if (sweep <= 0) sweep += 2 * Math.PI;
+                var count = ArcPoints * 2;
+                result.Polylines.Add(new CadPolyline
+                {
+                    Style = Style(entity),
+                    Closed = full,
+                    Points = Enumerable.Range(0, full ? count : count + 1)
+                        .Select(k => (start ?? 0) + sweep * k / count)
+                        .Select(a => Point(toWorld, cx + radius * Math.Cos(a), cy + radius * Math.Sin(a)))
+                        .Select(p => new[] { p.X, p.Y }).ToList(),
+                });
+                return;
+            }
+            var (x, y) = Point(toWorld, cx, cy);
+            var arc = new CadArc { Style = Style(entity), Cx = x, Cy = y, R = Mm(radius * Math.Sqrt(Math.Abs(toWorld.Det))), IsCircle = start is null || end is null };
+            if (start is { } from && end is { } to)
+            {
+                double Angle(double a)
+                {
+                    var (dx, dy) = toWorld.Turn(Math.Cos(a), Math.Sin(a));
+                    return Degrees(Math.Atan2(dy, dx));
+                }
+                (arc.StartDeg, arc.EndDeg) = toWorld.Det < 0 ? (Angle(to), Angle(from)) : (Angle(from), Angle(to));
+            }
+            result.Arcs.Add(arc);
+        }
+
+        private void AddText(TextEntity text, Affine toWorld)
         {
             if (text.IsInvisible || string.IsNullOrWhiteSpace(text.Value)) return;
             Count();
-            // Left-baseline text sits at its insert point; any other justification at its alignment point. Explode
-            // (ACadSharp) moves a text's insert point but not its alignment point, so a text from a block (grid
-            // bubbles, marks) is placed by its insert point, within about one text height of its alignment point.
-            var anchor = exploded
-                || text.HorizontalAlignment == TextHorizontalAlignment.Left && text.VerticalAlignment == TextVerticalAlignmentType.Baseline
+            // Left-baseline text sits at its insert point; any other justification at its alignment point.
+            var anchor = text.HorizontalAlignment == TextHorizontalAlignment.Left && text.VerticalAlignment == TextVerticalAlignmentType.Baseline
                 ? text.InsertPoint
                 : text.AlignmentPoint;
-            var (x, y) = Plan(anchor.X, anchor.Y, text.Normal.Z);
+            var plane = toWorld * Ocs(text.Normal.Z);
+            var (x, y) = Point(plane, anchor.X, anchor.Y);
+            var (dx, dy) = plane.Turn(Math.Cos(text.Rotation), Math.Sin(text.Rotation));
             result.Texts.Add(new CadText
             {
                 Style = Style(text, withPattern: false), Text = text.Value.Trim(), X = x, Y = y,
-                HeightMm = Math.Round(text.Height * scale, 1), RotationDeg = Degrees(text.Rotation),
+                HeightMm = Math.Round(text.Height * scale * Length(plane.Turn(-Math.Sin(text.Rotation), Math.Cos(text.Rotation))), 1),
+                RotationDeg = Degrees(Math.Atan2(dy, dx)),
             });
         }
 
         // Some drawings make grid bubbles and round columns with ellipses of equal axes: those are circles (or arcs),
         // as Revit reports them. A true ellipse becomes a polyline. Unlike arcs and circles, an ellipse is stored in
-        // world coordinates, its parameter turning about the normal from the major axis.
-        private void AddEllipse(Ellipse ellipse)
+        // its block's coordinates, its parameter turning about the normal from the major axis.
+        private void AddEllipse(Ellipse ellipse, Affine toWorld)
         {
             var major = ellipse.MajorAxisEndPoint;
             var side = ellipse.Normal.Z < 0 ? -1 : 1;
@@ -191,24 +237,16 @@ public static class DwgImport
             if (sweep <= 0) sweep += 2 * Math.PI;
             var full = Math.Abs(sweep - 2 * Math.PI) < 1e-6;
             (double X, double Y) At(double t) => (
-                Mm(ellipse.Center.X + major.X * Math.Cos(t) - side * major.Y * ellipse.RadiusRatio * Math.Sin(t)),
-                Mm(ellipse.Center.Y + major.Y * Math.Cos(t) + side * major.X * ellipse.RadiusRatio * Math.Sin(t)));
+                ellipse.Center.X + major.X * Math.Cos(t) - side * major.Y * ellipse.RadiusRatio * Math.Sin(t),
+                ellipse.Center.Y + major.Y * Math.Cos(t) + side * major.X * ellipse.RadiusRatio * Math.Sin(t));
 
             if (Math.Abs(ellipse.RadiusRatio - 1) < 0.01)
             {
-                var arc = new CadArc
-                {
-                    Style = Style(ellipse), Cx = Mm(ellipse.Center.X), Cy = Mm(ellipse.Center.Y),
-                    R = Mm(Math.Sqrt(major.X * major.X + major.Y * major.Y)), IsCircle = full,
-                };
-                if (!full)
-                {
-                    // Counterclockwise seen from above: from the start point, or from the end point when the normal points down.
-                    var (a, b) = side > 0 ? (At(ellipse.StartParameter), At(ellipse.EndParameter)) : (At(ellipse.EndParameter), At(ellipse.StartParameter));
-                    arc.StartDeg = Degrees(Math.Atan2(a.Y - arc.Cy, a.X - arc.Cx));
-                    arc.EndDeg = Degrees(Math.Atan2(b.Y - arc.Cy, b.X - arc.Cx));
-                }
-                result.Arcs.Add(arc);
+                var (cx, cy) = (ellipse.Center.X, ellipse.Center.Y);
+                double? Angle((double X, double Y) p) => full ? null : Math.Atan2(p.Y - cy, p.X - cx);
+                // Counterclockwise seen from above: from the start point, or from the end point when the normal points down.
+                var (a, b) = side > 0 ? (At(ellipse.StartParameter), At(ellipse.EndParameter)) : (At(ellipse.EndParameter), At(ellipse.StartParameter));
+                AddArc(ellipse, toWorld, cx, cy, Math.Sqrt(major.X * major.X + major.Y * major.Y), Angle(a), Angle(b));
                 return;
             }
             var count = ArcPoints * 2;
@@ -218,18 +256,12 @@ public static class DwgImport
                 Closed = full,
                 Points = Enumerable.Range(0, full ? count : count + 1)
                     .Select(k => At(ellipse.StartParameter + sweep * k / count))
+                    .Select(p => Point(toWorld, p.X, p.Y))
                     .Select(p => new[] { p.X, p.Y }).ToList(),
             });
         }
 
-        private CadArc ToArc(Arc arc, Entity entity)
-        {
-            var (cx, cy) = Plan(arc.Center.X, arc.Center.Y, arc.Normal.Z);
-            var (start, end) = (arc.StartAngle, arc.EndAngle);
-            // Seen from below (normal down), counterclockwise there is clockwise from above, and x is mirrored.
-            if (arc.Normal.Z < 0) (start, end) = (Math.PI - end, Math.PI - start);
-            return new CadArc { Style = Style(entity), Cx = cx, Cy = cy, R = Mm(arc.Radius), StartDeg = Degrees(start), EndDeg = Degrees(end) };
-        }
+        private static double Length((double X, double Y) v) => Math.Sqrt(v.X * v.X + v.Y * v.Y);
 
         // Polyline vertices with bulges as points: each bulged segment becomes a few chords.
         private static List<(double X, double Y)> Bulged(IReadOnlyList<(double X, double Y, double Bulge)> vertices, bool closed)
@@ -273,9 +305,12 @@ public static class DwgImport
                 loop.RemoveAt(loop.Count - 1);
             return loop;
         }
-
-        // A 2D entity's point in plan, mm. Entities drawn with their normal pointing down (mirrored in AutoCAD)
-        // keep coordinates in a system whose x runs the other way.
+        // A point in plan, mm.
+        private (double X, double Y) Point(Affine toWorld, double x, double y)
+        {
+            var (wx, wy) = toWorld.Apply(x, y);
+            return (Mm(wx), Mm(wy));
+        }
         private (double X, double Y) Plan(double x, double y, double normalZ) => (Mm(normalZ < 0 ? -x : x), Mm(y));
 
         private double Mm(double value) => Math.Round(value * scale, 2);
@@ -327,5 +362,40 @@ public static class DwgImport
         private void Count() => _entities++;
 
         private void Skip(string kind) => result.Skipped[kind] = result.Skipped.GetValueOrDefault(kind) + 1;
+    }
+
+    // A plane's affine map: x' = A·x + C·y + E, y' = B·x + D·y + F. In m * n, n applies first.
+    private readonly record struct Affine(double A, double B, double C, double D, double E, double F)
+    {
+        public static readonly Affine Identity = new(1, 0, 0, 1, 0, 0);
+
+        public static Affine Move(double x, double y) => new(1, 0, 0, 1, x, y);
+
+        public static Affine Rotate(double radians) => new(Math.Cos(radians), Math.Sin(radians), -Math.Sin(radians), Math.Cos(radians), 0, 0);
+
+        public static Affine Scale(double x, double y) => new(x, 0, 0, y, 0, 0);
+
+        public static Affine operator *(Affine m, Affine n) => new(
+            m.A * n.A + m.C * n.B, m.B * n.A + m.D * n.B,
+            m.A * n.C + m.C * n.D, m.B * n.C + m.D * n.D,
+            m.A * n.E + m.C * n.F + m.E, m.B * n.E + m.D * n.F + m.F);
+
+        public (double X, double Y) Apply(double x, double y) => (A * x + C * y + E, B * x + D * y + F);
+
+        // A direction: the map without its move.
+        public (double X, double Y) Turn(double x, double y) => (A * x + C * y, B * x + D * y);
+
+        public double Det => A * D - B * C;
+
+        // Circles stay circles: both axes as long, and square to each other.
+        public bool KeepsShape
+        {
+            get
+            {
+                var (xx, yy) = (A * A + B * B, C * C + D * D);
+                var size = Math.Max(xx, yy);
+                return Math.Abs(xx - yy) <= 1e-9 * size && Math.Abs(A * C + B * D) <= 1e-9 * size;
+            }
+        }
     }
 }
