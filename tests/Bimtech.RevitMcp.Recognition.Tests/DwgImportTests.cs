@@ -103,6 +103,40 @@ public class DwgImportTests
         Assert.Equal(40000, loop.Max(p => p[0]), 6);
     }
 
+    // As in MB_KC_Tang2.dwg: column blocks inserted mirrored and turned (XScale -1, -90°) inside a plan block.
+    // R(-90°)·S(-1, 1) takes (x, y) to (y, x); ACadSharp's Explode placed these half a turn off.
+    [Fact]
+    public void Blocks_mirrored_and_rotated_inside_a_block_land_where_their_inserts_say()
+    {
+        var document = new CadDocument();
+        var block = new BlockRecord("COT");
+        block.Entities.Add(Rectangle(0, 0, 350, 1400));
+        var outline = new LwPolyline { IsClosed = true };
+        foreach (var (x, y) in new[] { (0.0, 0.0), (350.0, 0.0), (350.0, 1400.0), (0.0, 1400.0) })
+            outline.Vertices.Add(new LwPolyline.Vertex(new XY(x, y)));
+        block.Entities.Add(outline);
+        block.Entities.Add(new Arc { Center = new XYZ(0, 0, 0), Radius = 100, StartAngle = 0, EndAngle = Math.PI / 2 });
+        block.Entities.Add(new TextEntity { Value = "C1", InsertPoint = new XYZ(0, 0, 0), Height = 100 });
+        document.BlockRecords.Add(block);
+        var plan = new BlockRecord("2 cot2");
+        plan.Entities.Add(new Insert(block) { InsertPoint = new XYZ(36896, 41151, 0), XScale = -1, Rotation = -Math.PI / 2 });
+        document.BlockRecords.Add(plan);
+        document.Entities.Add(new Insert(plan) { InsertPoint = new XYZ(1000, 2000, 0) });
+
+        var data = DwgImport.ToCase(document, "plan.dwg");
+
+        var (x0, y0) = (37896.0, 43151.0);
+        var points = Assert.Single(data.Polylines).Points;
+        Assert.Equal((x0, x0 + 1400, y0, y0 + 350), (points.Min(p => p[0]), points.Max(p => p[0]), points.Min(p => p[1]), points.Max(p => p[1])));
+        var loop = Assert.Single(Assert.Single(data.Hatches).Loops);
+        Assert.Equal((x0, x0 + 1400, y0, y0 + 350), (loop.Min(p => p[0]), loop.Max(p => p[0]), loop.Min(p => p[1]), loop.Max(p => p[1])));
+        // The arc from +x to +y now runs from +y back to +x: counterclockwise still 0° to 90°.
+        var arc = Assert.Single(data.Arcs);
+        Assert.Equal((x0, y0, 100.0, 0.0, 90.0), (arc.Cx, arc.Cy, arc.R, arc.StartDeg, arc.EndDeg));
+        var text = Assert.Single(data.Texts);
+        Assert.Equal((x0, y0, 90.0, 100.0), (text.X, text.Y, text.RotationDeg, text.HeightMm));
+    }
+
     [Fact]
     public void Bulged_polyline_points_follow_the_arc()
     {
