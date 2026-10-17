@@ -41,7 +41,13 @@ public sealed class ReviewWindowHost : IDisposable
             _window = new ReviewWindow(_model, FocusElements);
             // Keeps the window above Revit and minimizes it together with Revit.
             _ = new WindowInteropHelper(_window) { Owner = application.MainWindowHandle };
-            _window.Closed += (_, _) => (_window, _model) = (null, null);
+            _window.Closed += (_, _) =>
+            {
+                (_window, _model) = (null, null);
+                // Nothing the window drew stays in the views.
+                _focus.RequestClear();
+                _focusEvent.Raise();
+            };
         }
         _model!.Load(plan);
         _window.Show();
@@ -49,10 +55,10 @@ public sealed class ReviewWindowHost : IDisposable
         _window.Activate();
     }
 
-    private void FocusElements(IReadOnlyList<string> elementIds)
+    private void FocusElements(IReadOnlyList<string> elementIds, IReadOnlyList<PreviewGroup> previews)
     {
         if (_model?.Plan is not { } plan) return;
-        _focus.Request(plan.Document, elementIds);
+        _focus.Request(plan.Document, elementIds, previews);
         _focusEvent.Raise();
     }
 
@@ -67,6 +73,7 @@ public sealed class ReviewWindowHost : IDisposable
     // Plans belong to one model, so the window closes with it. The plan itself stays.
     private void OnDocumentClosing(object? sender, DocumentClosingEventArgs e)
     {
+        _focus.ClearPreviewOf(e.Document);
         if (_model?.Plan is { } plan && PlanStorageLocation.IsSameModel(e.Document, plan.Document))
             _window?.Close();
     }
@@ -76,6 +83,7 @@ public sealed class ReviewWindowHost : IDisposable
         _plans.Changed -= OnPlanChanged;
         if (_application is not null) _application.DocumentClosing -= OnDocumentClosing;
         _window?.Close();
+        _focus.Unregister();
         _focusEvent.Dispose();
     }
 }

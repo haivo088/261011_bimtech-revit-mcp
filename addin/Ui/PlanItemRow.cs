@@ -17,6 +17,8 @@ public sealed class PlanItemRow : INotifyPropertyChanged
         Reasons = string.Join(" ", item.Reasons);
         Detail = ReadString(item.Params, "detail") ?? "";
         ElementIds = (ReadString(item.Params, "elementId") ?? ReadString(item.Source, "elementId")) is { } id ? [id] : [];
+        var shapes = PreviewShapes.From(item.Action, item.Params);
+        Preview = shapes.Count == 0 ? PreviewGroup.None : new PreviewGroup(PreviewShapes.LevelId(item.Params), shapes);
         _status = item.Status;
     }
 
@@ -30,6 +32,8 @@ public sealed class PlanItemRow : INotifyPropertyChanged
     public string Detail { get; }
     // Revit elements to select and zoom to when the row is selected.
     public IReadOnlyList<string> ElementIds { get; }
+    // Where the item's new elements will be, drawn in Revit while the row is selected. Empty for items on existing elements.
+    public PreviewGroup Preview { get; }
 
     public PlanItemStatus Status
     {

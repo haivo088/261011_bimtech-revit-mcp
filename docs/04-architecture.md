@@ -201,6 +201,7 @@ Annotations theo [03](03-add-a-tool.md#1-phía-server): `commit_plan` có `readO
 - **WPF modeless**: không khoá Revit, người dùng vẫn chọn, zoom, xoay mô hình khi cửa sổ đang mở.
 - Mở và cập nhật cửa sổ trên luồng giao diện của Revit (gọi từ trong `RevitRequestHandler.Execute`). Thao tác cần Revit API từ cửa sổ (chọn và zoom phần tử) đi qua một `ExternalEvent` riêng của cửa sổ.
 - Mỗi dòng là một mục: trạng thái, độ tin cậy, lý do, giá trị chính. Bấm vào dòng thì Revit chọn và zoom tới vị trí tương ứng (phần tử đã có, hoặc vùng toạ độ của phần tử sẽ tạo).
+- **Xem trước mục sẽ tạo**: khi chọn dòng `create_*` (cột, dầm, tường, đài cọc, sàn, trục), Revit vẽ tạm bằng nét cam vị trí các phần tử chưa có rồi zoom tới đó — đài cọc: đường bao và vòng tròn từng cọc; nhóm cột: hình chữ nhật từng cột; nhóm dầm, tường, trục: đường trục. Hình vẽ chỉ nằm trong đồ hoạ (`PreviewServer`, một server DirectContext3D), không ghi vào mô hình, không mở Transaction. Mặt bằng vẽ ở cao độ mặt cắt của khung nhìn, 3D vẽ ở cao độ level của mục. Hình biến mất khi đổi dòng chọn, đóng cửa sổ hoặc đóng mô hình. Đọc toạ độ từ `params` nằm ở `PreviewShapes` (không dùng Revit, có kiểm thử).
 - Thao tác: Duyệt / Bỏ từng mục, chọn nhiều dòng để duyệt hàng loạt, nút **Bỏ các mục còn chờ**, nút **Duyệt kế hoạch**, nút **Huỷ kế hoạch**. Sửa giá trị (`overrides`) để sang bước 2b.
 - Đóng cửa sổ **không** huỷ kế hoạch; mở lại bằng `open_plan_review`. Như vậy lỡ tay đóng thì không mất công duyệt.
 - Mục `blocked` hiển thị riêng ở tab **Câu hỏi cho thiết kế**, không duyệt được.
