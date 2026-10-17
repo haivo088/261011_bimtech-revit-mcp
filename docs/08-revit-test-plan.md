@@ -85,11 +85,16 @@ Kết quả này quyết định mốc cao độ cho bản nâng cấp U2 (nhậ
 
 ## 4. Cọc và đài: `scan_cad_piles` / `propose_piles`
 
-> Quét cọc và đài từ CAD móng bằng scan_cad_piles, rồi propose_piles với capLevelId là Tầng 1 (hoặc level đỉnh đài).
+Cọc và đài giờ **không cần chọn layer**: đọc mọi layer và cân bằng chứng (xem [05](05-cad-to-structure.md)). Dựng trục trước.
+
+> Quét cọc và đài từ CAD móng bằng scan_cad_piles (CAD import thì thêm dwgPath "<đường dẫn .dwg>"). Cho mình xem cọc, đài và bằng chứng, rồi propose_piles với capLevelId là Tầng 1 (hoặc level đỉnh đài).
 
 Đạt khi:
-- `scan_cad_piles` lượt hai có `capGroups`: mỗi nhóm có ký hiệu (`Đ1`) và `thicknessMm` nếu bản vẽ ghi (Text Note). Nhóm thiếu chiều dày thì Claude **hỏi bạn**, không tự chọn.
-- Bản vẽ đài vẽ bằng line rời (đã explode): vẫn ra đủ đài.
+- Gọi **một lần**, không hỏi layer. `sureCaps` và `surePiles` đúng số đài, số cọc của bản vẽ. Ghi lại: đài/cọc nào **sót**, hình nào **thừa**, cái gì nằm ở diện xem lại.
+- **Vòng tròn đầu trục** không thành cọc (nằm trong `droppedPiles` với lý do "vòng tròn đầu trục"). Khung nhà, ô phòng lớn không thành đài.
+- `capGroups`: mỗi nhóm có ký hiệu (`Đ1`) và `thicknessMm` nếu bản vẽ ghi (Text Note hoặc chữ DWG), kèm `evidence`. Nhóm thiếu chiều dày thì Claude **hỏi bạn**, không tự chọn.
+- Bản vẽ đài vẽ bằng line rời (đã explode): vẫn ra đủ đài chữ nhật.
+- Cửa sổ duyệt: mỗi mục đài có dòng "Vì sao: …"; đài chưa chắc ghi "Bằng chứng chưa đủ".
 - Cửa sổ duyệt: mỗi đài một mục `C1`, `C2`..., mô tả như `Đài Đ1 2000x2000 · BTC-DaiMong_1200 · cọc 4×D600 · lót`; đài thiếu chiều dày bị chặn với lý do. Cọc lạc ngoài đài nằm trong mục `P-NOCAP` (bị chặn).
 - Sau commit: đài đúng chiều dày theo từng loại; đỉnh cọc = đáy đài của **chính đài đó**; cạnh đài là số tròn 5 mm; khoảng cách tâm cọc và tâm đài tới trục là bội 5 mm (đo bằng Dimension).
 - Có lớp lót; cọc join với đài và lớp lót của nó; join của các đài khác có sẵn trong model **không bị đổi**.

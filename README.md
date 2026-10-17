@@ -29,7 +29,7 @@ Công cụ dựng model kết cấu từ CAD (xem [05 — Dựng model kết c�
 - `load_default_family`: nạp family chuẩn công ty (`kind`: column, beam, pile); với cọc còn tạo Type đài/lót mặc định.
 - `scan_cad_columns` / `propose_columns`: cột chữ nhật từ mọi layer, cân bằng chứng (giao trục, hatch, kích thước lặp, ký hiệu, cột tầng dưới), nhóm theo ký hiệu và kích thước, mỗi nhóm một mục duyệt; vị trí làm tròn 5 mm theo trục.
 - `propose_beams`: dầm chính lan từ cột đã dựng tới cột/vách kế tiếp, tim cột tới tim cột, chỉ chia tại gối tựa; ký hiệu và kích thước đọc từ Text Note; mỗi nhóm một mục duyệt; báo đầu dầm lơ lửng (dầm phụ, console).
-- `scan_cad_piles` / `propose_piles`: cọc tròn + đài móng, mỗi đài một mục duyệt; chiều dày đài theo ký hiệu bản vẽ hoặc người dùng; làm tròn 5 mm theo trục; lớp lót; join cọc với đài của nó.
+- `scan_cad_piles` / `propose_piles`: cọc tròn + đài móng từ mọi layer, cân bằng chứng (cọc trong đài, đài ở giao trục, ký hiệu; loại vòng tròn đầu trục), mỗi đài một mục duyệt; chiều dày đài theo ký hiệu bản vẽ hoặc người dùng; làm tròn 5 mm theo trục; lớp lót; join cọc với đài của nó.
 - Mọi `propose_*` chỉ đọc; model chỉ thay đổi qua `commit_plan` sau khi duyệt trong Revit.
 - `undo_batch`: xóa đúng những gì một lần ghi đã tạo.
 

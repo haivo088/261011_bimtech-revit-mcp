@@ -139,11 +139,15 @@ Type mỗi nhóm: mục trong `types` → Type có sẵn khớp b×h → Type `b
 
 `scan_cad_piles` → `propose_piles` → duyệt → `commit_plan`. Chỉ hỗ trợ **cọc tròn**; cọc vuông chưa hỗ trợ.
 
-**Quét** (`scan_cad_piles`, hai lượt như cột):
-- Cọc là hình tròn trên layer cọc; hai vòng đồng tâm (vẽ lồng) gộp thành một. Nhóm theo đường kính (`D600`).
-- Đài là PolyLine khép kín trên layer đài, **hoặc line rời** (bản vẽ đã explode) được ghép thành vòng kín. Hai đường bao vẽ trùng (ván khuôn và bê tông) gộp thành một.
+**Quét** (`scan_cad_piles`, `PileRecognizer`): **không cần chọn layer**, một lượt, đọc như kỹ sư. Dựng trục trước.
+- **Ứng viên** từ mọi layer: cọc là hình tròn đường kính 200–2000 mm (hai vòng đồng tâm gộp thành một, vòng nhỏ là ký hiệu); đài là PolyLine khép kín, hoặc hình chữ nhật vẽ bằng **line rời** (bản vẽ đã explode), cạnh 400 mm–20 m. Hai đường bao vẽ trùng gộp thành một.
+- **Bằng chứng đài**: +2 có cọc bên trong, +2 chứa giao trục (+1 có trục đi qua), +1 có ký hiệu đài, +1 kích thước lặp lại, +1 tên layer giống đài; −2 không có cọc bên trong, −3 **bao lấy đài khác** (khung nhà, ô phòng; đường bao lót chỉ lớn hơn đài dưới 400 mm thì không tính), −1 tên layer giống thứ khác.
+- **Bằng chứng cọc**: +2 nằm trong đài, +1 đường kính lặp lại ≥ 3 lần, +1 có ký hiệu cọc (nét chéo, hatch hay vòng thứ hai), +1 tên layer giống cọc; −4 **vòng tròn đầu trục** (ở đầu một trục, hay chứa tên trục), −1 tên layer giống thứ khác, −1 đơn lẻ.
+- Điểm ≥ 3 chắc chắn; 1–2 xem lại (đài ghi "Bằng chứng chưa đủ" trong cửa sổ duyệt); ≤ 0 bỏ, chỉ báo số lượng và lý do. `pileLayers` / `capLayers` chỉ còn để giới hạn khi cần.
+- Nhóm cọc theo đường kính (`D600`).
 - **Cọc thuộc đài** chứa nó; cọc ngoài biên trong 300 mm vẫn thuộc đài gần nhất (vẽ lệch nhẹ); **xa hơn thì không thuộc đài nào** và được báo ra, không bị gán bừa cho một đài ở xa.
-- **Ký hiệu đài** đọc từ Text Note trong hoặc cạnh đài: `Đ1 (2000x2000x1200)`, `ĐM2 h=1500`, `ĐC3 - 1500X2400 - H=1000`. Đài gom thành nhóm (`capGroups`) theo ký hiệu, không có ký hiệu thì theo kích thước (`2000x2000`), kèm chiều dày đọc được.
+- **Ký hiệu đài** đọc từ Text Note hoặc chữ trong file DWG (`dwgPath` cho CAD import), trong hoặc cạnh đài: `Đ1 (2000x2000x1200)`, `ĐM2 h=1500`, `ĐC3 - 1500X2400 - H=1000`. Đài gom thành nhóm (`capGroups`) theo ký hiệu, không có ký hiệu thì theo kích thước (`2000x2000`), kèm chiều dày đọc được và số đếm bằng chứng.
+- Đài vẽ bằng line rời chỉ nhận **hình chữ nhật**; đài đa giác (đài 3 cọc tam giác) phải là PolyLine khép kín.
 
 **Đề xuất** (`propose_piles`): **mỗi đài là một mục** gồm đài, các cọc của nó và lớp lót.
 - **Chiều dày đài theo từng nhóm**, theo thứ tự: `capTypes` → `capThicknessMm` → chiều dày ghi trong ký hiệu bản vẽ → `capFloorTypeId` (chung) → **chặn**, để Claude hỏi người dùng, không đoán. Có chiều dày mà chưa có Type thì lúc commit tạo `BTC-DaiMong_<h>` từ `capTemplateTypeId` (mặc định `BTC-DaiMong_1500`). Đỉnh cọc = cao độ level − chiều dày **của đài chứa nó**.

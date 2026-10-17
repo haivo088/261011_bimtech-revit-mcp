@@ -102,8 +102,11 @@ public sealed class ProposePilesCommand(PlanService plans, ReviewWindowHost revi
             var piles = scan.Groups
                 .SelectMany(group => group.Circles.Where(circle => circle.OwningBoundary == cap).Select(circle => (Group: group, Circle: circle)))
                 .ToList();
-            items.Add(CapItem(document, items.Count, cap, capLevel, thickness, capTemplate, piles, pileTypes, existingPiles,
-                gridTheta, snap, snapMm, lotType, lotOffsetMm, embedmentMm, pileLengthMm, join));
+            var item = CapItem(document, items.Count, cap, capLevel, thickness, capTemplate, piles, pileTypes, existingPiles,
+                gridTheta, snap, snapMm, lotType, lotOffsetMm, embedmentMm, pileLengthMm, join);
+            if (scan.MaybeCaps?.Contains(cap) == true) item.Reasons.Add("Bằng chứng chưa đủ, nên xem lại trên mặt bằng.");
+            if (scan.CapEvidence?.GetValueOrDefault(cap) is { Count: > 0 } evidence) item.Reasons.Add("Vì sao: " + string.Join("; ", evidence));
+            items.Add(item);
         }
 
         var orphans = scan.Groups.SelectMany(group => group.Circles.Where(circle => circle.OwningBoundary is null)).ToList();

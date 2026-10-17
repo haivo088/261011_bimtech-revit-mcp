@@ -354,22 +354,27 @@ export const scanCadPiles = defineTool({
   method: "scan_cad_piles",
   title: "Scan CAD for piles and caps",
   description:
-    "Read pile circles and pile cap outlines from a CAD drawing as shown in a plan view. Call first without layers"
-    + " to list layers with their circle, closed outline and loose line counts and ask the user which are piles and"
-    + " which are caps; then call again with pileLayers and capLayers. Caps drawn as loose lines are joined into loops."
-    + " Piles are grouped by diameter (key like \"D600\") and assigned to the cap containing them; piles further than"
-    + " 300 mm from every cap belong to none. Each cap's mark is read from a Text Note in or beside it, e.g."
-    + " \"Đ1 (2000x2000x1200)\" gives its thickness; caps are grouped by mark, else by size (capGroups). Round piles only."
-    + " Changes nothing in the model.",
+    "Read piles and pile caps from a CAD drawing as an engineer would, from every layer: circles of pile size"
+    + " (200-2000 mm) and closed outlines of cap size (400 mm-20 m; closed polylines, or rectangles of loose lines),"
+    + " each weighed on evidence. Caps: + piles inside, a grid crossing inside (or a grid through it), a cap mark, a"
+    + " repeated size, a cap-like layer; − no pile inside, an outline holding whole caps (building outline, room)."
+    + " Piles: + inside a cap, a repeated diameter, a pile symbol (cross, hatch or inner circle), a pile-like layer;"
+    + " − a grid bubble (at a grid's end or holding a grid's name), alone. Sure and to-review piles and caps are"
+    + " kept; each group and cap carries its evidence. Piles are grouped by diameter (key like \"D600\") and assigned"
+    + " to the cap containing them; piles further than 300 mm from every cap belong to none. Each cap's mark (Text"
+    + " Note or DWG text, e.g. \"Đ1 (2000x2000x1200)\") gives its thickness; caps are grouped by mark, else by size"
+    + " (capGroups). Model the grids first: the region defaults to their extent. Round piles only. Changes nothing.",
   inputSchema: {
     cadId: elementId.describe("CAD import or link ID from list_cad_sources."),
     viewId,
-    pileLayers: layerList("pile circles"),
-    capLayers: layerList("pile cap outlines"),
+    dwgPath: z.string().min(1).max(1024).optional()
+      .describe("Absolute path of the DWG/DXF file of an imported (not linked) CAD, for its hatches and texts. A linked CAD's own file is used by default."),
+    pileLayers: layerList("pile circles").describe("Optional: only piles on these CAD layers. Default: every layer, weighed on evidence."),
+    capLayers: layerList("pile cap outlines").describe("Optional: only caps on these CAD layers. Default: every layer, weighed on evidence."),
     region: regionMm.optional(),
   },
   annotations: readOnly,
-  timeoutMs: 120000,
+  timeoutMs: 300000,
 });
 
 export const proposePiles = defineTool({

@@ -1,4 +1,3 @@
-using System.IO;
 using Autodesk.Revit.DB;
 using Bimtech.RevitMcp.Cad;
 using Bimtech.RevitMcp.Commands.Common;
@@ -26,8 +25,6 @@ internal sealed record ColumnScan(
 // sure groups ("300x500") and groups to review ("300x500-maybe"). 'layers' only narrows the outlines read.
 public sealed class ScanCadColumnsCommand : IRevitCommand
 {
-    private const int MaxEntities = 300_000;
-    private const double GridMarginMm = 3000;
     private const int MaxListedLayers = 30;
     // A mark whose size differs from the drawn outline by more than this is reported.
     private const double TagSizeToleranceMm = 10;
@@ -47,13 +44,11 @@ public sealed class ScanCadColumnsCommand : IRevitCommand
             : view.GenLevel;
         var source = new { cad = StructuralJson.CadRef(document, cad), view = StructuralJson.Ref(view) };
 
-        var scene = CadExtractor.Extract(document, cad, view, new CadExtractor.Limits(MaxEntities));
-        context.Cancellation.ThrowIfCancellationRequested();
-        var dwg = ReadDwg(p, document, cad, scene);
+        var (scene, dwg) = CadScene.Read(p, document, cad, view);
         context.Cancellation.ThrowIfCancellationRequested();
 
         var grids = CadExtractor.ModelGrids(document);
-        var (region, regionFrom) = Region(p, grids);
+        var (region, regionFrom) = CadScene.Region(p, grids);
         var shapes = ColumnRecognizer.FindShapes(scene, region);
         var missing = layers.Where(layer => !shapes.Any(shape => !shape.IsHatch && shape.Layer == layer)).ToList();
         if (missing.Count > 0)
@@ -97,7 +92,7 @@ public sealed class ScanCadColumnsCommand : IRevitCommand
             scanId,
             dwg,
             level = level is null ? null : StructuralJson.Ref(level),
-            region = region is { } r ? new { minX = r.MinX, minY = r.MinY, maxX = r.MaxX, maxY = r.MaxY } : null,
+            region = CadScene.RegionJson(region),
             regionFrom,
             model = new { grids = grids.Count, supportsBelow = below.Count },
             read = new { outlines = result.Shapes, hatches = result.Hatches, hatchesWithoutOutline = result.HatchOnly },
@@ -142,36 +137,6 @@ public sealed class ScanCadColumnsCommand : IRevitCommand
         };
     }
 
-    // The DWG file's hatches and texts, added to the scene when the file is found and placed. Null when not tried.
-    private static object? ReadDwg(CommandParams p, Document document, ImportInstance cad, CadCase scene)
-    {
-        var path = p.GetString("dwgPath", 1024) ?? DwgSource.LinkedPath(document, cad);
-        if (path is null) return null;
-        if (!Path.IsPathFullyQualified(path)) throw RpcException.InvalidParams("dwgPath", "must be an absolute file path.");
-        var read = DwgSource.Read(cad, path, () => scene);
-        var attached = DwgSource.Attach(scene, read);
-        return new
-        {
-            path,
-            attached,
-            readSeconds = Math.Round(read.ReadMs / 1000.0, 1),
-            matchRate = read.Alignment is { } alignment ? Math.Round(alignment.MatchRate, 3) : (double?)null,
-            problem = read.Problem,
-        };
-    }
-
-    // 'region' if given, else the extent of the model's grids with a margin, else the whole CAD.
-    private static (WallRecognizer.Region? Value, string From) Region(CommandParams p, List<TruthGrid> grids)
-    {
-        if (StructuralJson.ReadRegion(p.GetObject("region")) is { } region)
-            return (new WallRecognizer.Region(Mm(region.MinX), Mm(region.MinY), Mm(region.MaxX), Mm(region.MaxY)), "region");
-        if (grids.Count == 0) return (null, "whole CAD (no grids in the model)");
-        var xs = grids.SelectMany(g => new[] { g.X0, g.X1 }).ToList();
-        var ys = grids.SelectMany(g => new[] { g.Y0, g.Y1 }).ToList();
-        return (new WallRecognizer.Region(xs.Min() - GridMarginMm, ys.Min() - GridMarginMm, xs.Max() + GridMarginMm, ys.Max() + GridMarginMm),
-            "grids");
-    }
-
     private static RawColumn ToRaw(ColumnRecognizer.Column column)
     {
         var center = new XYZ(Feet(column.Cx), Feet(column.Cy), 0);
@@ -199,5 +164,4 @@ public sealed class ScanCadColumnsCommand : IRevitCommand
     }
 
     private static double Feet(double mm) => UnitUtils.ConvertToInternalUnits(mm, UnitTypeId.Millimeters);
-    private static double Mm(double feet) => Math.Round(UnitUtils.ConvertFromInternalUnits(feet, UnitTypeId.Millimeters), 1);
 }
