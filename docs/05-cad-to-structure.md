@@ -80,24 +80,26 @@ Sau khi nhập CAD (`propose_levels`), kết quả commit có `cadWarning` khi C
 
 ```mermaid
 flowchart LR
-    A[list_cad_sources] --> B[scan_cad_columns<br/>không layers]
-    B -->|người dùng chọn layer| C[scan_cad_columns<br/>có layers → scanId]
-    C -->|chưa có Type b/h| L[load_default_family]
+    A[list_cad_sources] --> B[scan_cad_columns<br/>mọi layer → scanId]
+    B -->|chưa có Type b/h| L[load_default_family]
     L --> D
-    C --> D[propose_columns]
+    B --> D[propose_columns]
     D -->|duyệt trong Revit| E[commit_plan]
 ```
 
-1. `list_cad_sources`: ID các CAD trong model. CAD gắn riêng một view (`viewSpecific`) sẽ được quét trong view đó.
-2. `scan_cad_columns` lần 1 (không `layers`): các layer có đường bao chữ nhật kèm số lượng và số hình bị loại. Claude hỏi người dùng layer nào là cột.
-3. `scan_cad_columns` lần 2 (có `layers`):
-   - **Chỉ nhận hình chữ nhật thật** (PolyLine hoặc line rời), cạnh 100–2000 mm: mọi đầu mút nằm trên biên và bốn cạnh được vẽ đủ ít nhất 90%. Hatch bên trong không ảnh hưởng. Mũi tên, nét ghi chú, **cột chữ L**, **cột vẽ dính vách cùng layer** không thành cột mà nằm trong `notRectangles` để người dùng xem (không đặt).
-   - Line rời được gom bằng lưới không gian, nên layer hàng chục nghìn line (hatch) vẫn quét nhanh.
-   - **Ký hiệu cột** đọc từ Text Note gần nhất trong 1500 mm (`C1 300x500`); mỗi text chỉ gán cho cột gần nó nhất.
+1. `list_cad_sources`: ID các CAD trong model. CAD gắn riêng một view (`viewSpecific`) sẽ được quét trong view đó. Dựng **trục** (và cột, đài móng tầng dưới) trước: chúng là bằng chứng.
+2. `scan_cad_columns` (`ColumnRecognizer`): **không cần chọn layer**, đọc như kỹ sư.
+   - **Ứng viên** từ mọi layer: hình chữ nhật thật (PolyLine hoặc line rời) cạnh 100–2000 mm, mọi đầu mút nằm trên biên và bốn cạnh vẽ đủ ít nhất 90%. Cột chữ L, cột vẽ dính vách không thành ứng viên.
+   - **Hatch** đọc từ chính file DWG (CAD link tự lấy đường dẫn, CAD import truyền `dwgPath`) chỉ **xác nhận** một đường bao trùng khít; hatch đứng một mình không thành cột. Không đọc được file thì vẫn quét, ít bằng chứng hơn.
+   - Cùng một cột vẽ hai lần (đường bao và hatch, hay hai layer) tính một.
+   - **Bằng chứng** (có dấu, lý do ghi lại cho cửa sổ duyệt): +2 ở giao trục (+1 nằm trên 1 trục), +2 có hatch bên trong, +1 kích thước lặp lại ≥ 3 lần, +1 có ký hiệu cột bên cạnh, +2 có cột hoặc đài móng tầng dưới (`levelId`, mặc định tầng của view), +1 tên layer giống cột; −2 nằm trong hatch vách (không rộng hơn vách), −3 thẳng hàng với mảnh cùng bề dày cách nhau cỡ ô cửa (**đoạn vách bị cửa cắt**), −1 tên layer giống thứ khác (cửa, thiết bị, kích thước), −1 đơn lẻ (không trục, không hatch, không ký hiệu, kích thước không lặp).
+   - Điểm ≥ 3: **chắc chắn**; 1–2: **xem lại** (nhóm `"300x500-maybe"`); ≤ 0: bỏ, chỉ báo số lượng và lý do.
+   - **Ký hiệu cột** đọc từ Text Note và chữ trong file DWG, gần nhất trong 1500 mm (`C1 300x500`); mỗi text chỉ gán cho cột gần nó nhất.
    - Nhóm theo ký hiệu và kích thước: khóa `"C1"`, hoặc `"C1 300x500"` khi một ký hiệu có nhiều kích thước, hoặc kích thước **b×h cạnh nhỏ trước** `"300x500"` khi không có ký hiệu (trùng tên Type tạo mới). Ký hiệu ghi kích thước khác hình vẽ thì có `tagSizeMismatch`.
-   - Type khớp đúng (`exactType`) hoặc gần nhất (`nearestType`), và `scanId`. Hình học ở lại trong add-in.
+   - Mỗi nhóm có số đếm bằng chứng (`evidence`), Type khớp đúng (`exactType`) hoặc gần nhất (`nearestType`), và `scanId`. `layers` chỉ còn để giới hạn khi cần. Hình học ở lại trong add-in.
+   - Test hồi quy: mọi case trong `cases/` có cột trong model phải tìm lại ≥ 95% số cột đó ở mức chắc chắn (`CaseLibraryTests`).
 4. Nếu model chưa có Type cột nào có tham số b/h: `load_default_family` với `kind=column` nạp `BTC-CotCN_BeTong` và trả `familyId`.
-5. `propose_columns` với base/top level: **mỗi nhóm là một mục duyệt**.
+5. `propose_columns` với base/top level: **mỗi nhóm là một mục duyệt**, kèm "Vì sao" (số cột có từng bằng chứng). Nhóm `-maybe` ghi "Bằng chứng chưa đủ" và không bao giờ được tự duyệt.
    - **Cột thường đứng ở giao hai trục.** Xét từng phương: trục đi qua cột hoặc cách mặt cột không quá `gridMarginMm` (mặc định 300) là cột nằm trên trục đó. Khi đó độ lệch cách **đồng tâm** hoặc **mép trùng trục** không quá `gridToleranceMm` (mặc định 15) được đặt đúng vào đó; độ lệch khác **làm tròn 5 mm** (`snapMm`). Cột không nằm trên trục nào chỉ được làm tròn 5 mm.
    - Mục duyệt ghi các giao trục của nhóm (`tại A-1, A-2…`); cột chỉ nằm trên một trục (cột phụ, cột thang?) hoặc không nằm trên trục nào có ghi chú. Kết quả trả `emptyCrossings`: **giao trục không có cột** trong vùng các cột (ô thông tầng, hay cột vẽ ở layer khác) để người dùng kiểm tra.
    - Cột vẽ lệch dưới 2° so với phương trục được **đặt thẳng theo trục** (chọn hướng trục gần nhất, không đổi chỗ b/h).

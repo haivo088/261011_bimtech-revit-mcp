@@ -76,6 +76,33 @@ public class DwgImportTests
         Assert.Equal(600, loop.Min(p => p[1]), 6);
     }
 
+    // A column block inserted mirrored: its hatch lands on its outline, not mirrored a second time.
+    [Fact]
+    public void Hatches_of_mirrored_blocks_stay_on_their_outline()
+    {
+        var document = new CadDocument();
+        var block = new BlockRecord("COT");
+        block.Entities.Add(Rectangle(0, 0, 350, 1400));
+        var outline = new LwPolyline { IsClosed = true };
+        foreach (var (x, y) in new[] { (0.0, 0.0), (350.0, 0.0), (350.0, 1400.0), (0.0, 1400.0) })
+            outline.Vertices.Add(new LwPolyline.Vertex(new XY(x, y)));
+        block.Entities.Add(outline);
+        document.BlockRecords.Add(block);
+        var plan = new BlockRecord("MAT_BANG");
+        plan.Entities.Add(new Insert(block) { InsertPoint = new XYZ(40000, 40000, 0), XScale = -1 });
+        document.BlockRecords.Add(plan);
+        document.Entities.Add(new Insert(plan));
+
+        var data = DwgImport.ToCase(document, "plan.dwg");
+
+        var points = Assert.Single(data.Polylines).Points;
+        var loop = Assert.Single(Assert.Single(data.Hatches).Loops);
+        Assert.Equal(points.Min(p => p[0]), loop.Min(p => p[0]), 6);
+        Assert.Equal(points.Max(p => p[0]), loop.Max(p => p[0]), 6);
+        Assert.Equal(39650, loop.Min(p => p[0]), 6);
+        Assert.Equal(40000, loop.Max(p => p[0]), 6);
+    }
+
     [Fact]
     public void Bulged_polyline_points_follow_the_arc()
     {

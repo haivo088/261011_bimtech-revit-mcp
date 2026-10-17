@@ -98,11 +98,15 @@ Kết quả này quyết định mốc cao độ cho bản nâng cấp U2 (nhậ
 
 ## 5. Cột: `scan_cad_columns` / `propose_columns`
 
-> Quét cột từ CAD tầng 1 bằng scan_cad_columns, rồi propose_columns từ Tầng 1 lên Tầng 2.
+Cột giờ **không cần chọn layer**: đọc mọi layer và cân bằng chứng (xem [05](05-cad-to-structure.md)). Dựng trục trước.
+
+> Quét cột từ CAD tầng 1 bằng scan_cad_columns (CAD import thì thêm dwgPath "<đường dẫn .dwg>"). Cho mình xem các nhóm và bằng chứng, rồi propose_columns từ Tầng 1 lên Tầng 2.
 
 Đạt khi:
-- Nhóm theo ký hiệu (`C1`, `C2`) nếu ký hiệu là Text Note, không thì theo `300x500` (cạnh nhỏ trước). Nhóm có ký hiệu ghi kích thước khác hình vẽ thì có `tagSizeMismatch`. **Ghi lại `taggedColumns`**: bằng 0 nghĩa là chữ nằm trong DWG, Revit không đọc được.
-- `notRectangles` liệt kê cột chữ L, cột dính vách cùng layer, nét hở; không có "cột" nào từ mũi tên hay nét ghi chú.
+- Gọi **một lần**, không hỏi layer. `dwg.attached: true`, `read.hatches` > 0. Ghi lại `read.hatchesWithoutOutline` (hatch không trùng đường bao: hatch của block lật và xoay bị ACadSharp đặt sai, xem mục "còn lại").
+- Nhóm chắc chắn đúng các cột của bản vẽ, mỗi nhóm có `evidence` hợp lý (giao trục, hatch, lặp kích thước). Ghi lại: cột nào **sót**, hình nào **thừa** (mảnh vách, ô ký hiệu), nhóm `-maybe` có gì. Các mảnh vách lõi bị cửa cắt phải nằm ở `-maybe` hoặc bị bỏ, không ở nhóm chắc chắn.
+- Nhóm theo ký hiệu (`C1`, `C2`) nếu có ký hiệu (Text Note hoặc chữ trong DWG), không thì theo `300x500` (cạnh nhỏ trước). Nhóm có ký hiệu ghi kích thước khác hình vẽ thì có `tagSizeMismatch`.
+- Cửa sổ duyệt: nhóm chắc chắn, ở giao trục, Type có sẵn thì **Tự duyệt**; nhóm `-maybe` ghi "Bằng chứng chưa đủ" và ở trạng thái Chờ; mỗi mục có dòng "Vì sao: …".
 - Cửa sổ duyệt: mỗi nhóm một mục, mô tả như `C1 · 300x500 · 12 cột · Type 300x500 (BTC-CotCN_BeTong) · tại A-1, A-2…`.
 - Sau commit: cột đúng tâm, khoảng cách tới trục là bội 5 mm (đo bằng Dimension); cột vẽ lệch nhẹ được đặt thẳng theo trục; **cột chữ nhật đúng hướng b/h** (không bị xoay 90°); tham số Mark có ký hiệu.
 - **Giao trục:** cột vẽ lệch vài mm so với tâm giao trục được đặt đúng tâm; cột biên có mép vẽ gần trục được đặt mép trùng trục. So `tại A-1…` với tham số **Column Location Mark** của Revit. `emptyCrossings` liệt kê đúng các giao trục không có cột. Ghi lại cột nào bị nắn sai (ví dụ cột cố ý lệch 10 mm).

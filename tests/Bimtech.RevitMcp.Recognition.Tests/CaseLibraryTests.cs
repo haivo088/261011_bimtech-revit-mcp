@@ -50,6 +50,40 @@ public sealed class CaseLibraryTests(ITestOutputHelper output)
         Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
     }
 
+    // Every saved case with the model's columns at its level: at least 95% of those columns must be found as sure
+    // columns (centre within 100 mm). The columns reaching a level were built from one storey's plan, and the plan of
+    // the storey next to it may move a column or two. Extra sure columns are listed, not failed: the model's columns
+    // were built from one layer and may miss some.
+    [Fact]
+    public void Every_saved_case_with_model_columns_gives_them_back_as_sure_columns()
+    {
+        var failures = new List<string>();
+        var checkedCases = 0;
+        foreach (var path in CasePaths())
+        {
+            var data = CadCase.Load(path);
+            var truth = data.Model?.Supports.Where(s => s.Kind == "column").ToList() ?? [];
+            if (truth.Count == 0 || data.Truth is not { Grids.Count: > 0 }) continue;
+            checkedCases++;
+            var result = ColumnRecognizer.Run(data);
+            var sure = result.Columns.Where(c => c.Sure).ToList();
+            static bool Near(ColumnRecognizer.Column c, CaseSupport s) => Math.Sqrt(Math.Pow(c.Cx - s.Cx, 2) + Math.Pow(c.Cy - s.Cy, 2)) <= 100;
+            var missing = truth.Where(s => !sure.Any(c => Near(c, s))).Select(s => $"#{s.Id} ({s.Cx:0}, {s.Cy:0})").ToList();
+            var extra = sure.Where(c => !truth.Any(s => Near(c, s)))
+                .Select(c => $"{c.SizeA:0}x{c.SizeB:0} ({c.Cx:0}, {c.Cy:0}) [{string.Join("; ", c.Reasons)}]").ToList();
+            var review = result.Columns.Where(c => !c.Sure).ToList();
+            output.WriteLine($"{data.CaseId}: {truth.Count - missing.Count}/{truth.Count} columns sure, {extra.Count} extra, "
+                + $"{review.Count} to review, {result.Dropped.Count} dropped ({result.Shapes} outlines, {result.Hatches} hatches)");
+            foreach (var line in extra) output.WriteLine($"  extra {line}");
+            foreach (var c in review)
+                output.WriteLine($"  review {c.SizeA:0}x{c.SizeB:0} ({c.Cx:0}, {c.Cy:0}) {string.Join(", ", c.Layers)}: {string.Join("; ", c.Reasons)}");
+            foreach (var line in missing) output.WriteLine($"  missing {line}");
+            if (missing.Count > 0.05 * truth.Count) failures.Add($"{data.CaseId}: missing [{string.Join("; ", missing)}]");
+        }
+        output.WriteLine($"{checkedCases} case(s) with model columns checked.");
+        Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
+    }
+
     private static IEnumerable<string> CasePaths()
     {
         var root = Environment.GetEnvironmentVariable("BIMTECH_CASES_DIR") ?? FindRepositoryCases();

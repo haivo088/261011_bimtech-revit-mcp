@@ -11,9 +11,11 @@ public static class ConfidenceRules
 
     // Columns: every column at a grid crossing, an existing type of exactly b×h (or one the person assigned), and the
     // tag in the drawing agrees with the drawn size. A type created from a template family is checked by eye first.
-    public static double Columns(int count, int atCrossings, bool existingType, bool tagMismatch)
+    // A group ColumnRecognizer found without enough evidence ("-maybe") never gets past 0.6.
+    public static double Columns(int count, int atCrossings, bool existingType, bool tagMismatch, bool evidenceSure = true)
     {
         if (count <= 0) return 0;
+        if (!evidenceSure) return Math.Round(Math.Min(0.6, 0.6 * atCrossings / count), 2);
         if (atCrossings == count && existingType && !tagMismatch) return Sure;
         return Math.Round(Close * atCrossings / count * (existingType ? 1 : 0.9) * (tagMismatch ? 0.8 : 1), 2);
     }

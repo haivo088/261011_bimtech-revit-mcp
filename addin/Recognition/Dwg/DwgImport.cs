@@ -72,7 +72,16 @@ public static class DwgImport
                         Skip("block nested too deep");
                         return;
                     }
-                    foreach (var part in insert.Explode()) Add(part, depth + 1);
+                    foreach (var part in insert.Explode())
+                    {
+                        // Explode (ACadSharp 3.8) moves a hatch's points but, for a mirrored insert, also flips its
+                        // normal, so the points read as mirrored once more: the block's own hatches are placed below.
+                        if (part is Hatch) continue;
+                        Add(part, depth + 1);
+                    }
+                    var transform = insert.GetTransform();
+                    foreach (var hatch in insert.Block.Entities.OfType<Hatch>().Where(hatch => !hatch.IsInvisible))
+                        AddHatch(hatch, p => transform.ApplyTransform(new CSMath.XYZ(hatch.Normal.Z < 0 ? -p.X : p.X, p.Y, 0)));
                     return;
                 case AttributeDefinition:
                     return;
@@ -109,17 +118,7 @@ public static class DwgImport
                     });
                     return;
                 case Hatch hatch:
-                    Count();
-                    var loops = hatch.Paths
-                        .Select(path => Loop(path.GetPoints(ArcPoints).Select(p => Plan(p.X, p.Y, hatch.Normal.Z))))
-                        .Where(loop => loop.Count >= 3)
-                        .ToList();
-                    if (loops.Count == 0)
-                    {
-                        Skip("Hatch without boundary");
-                        return;
-                    }
-                    result.Hatches.Add(new CadHatch { Style = Style(entity, withPattern: false), Pattern = hatch.Pattern?.Name, IsSolid = hatch.IsSolid, Loops = loops });
+                    AddHatch(hatch, p => new CSMath.XYZ(hatch.Normal.Z < 0 ? -p.X : p.X, p.Y, 0));
                     return;
                 case TextEntity text:
                     AddText(text, exploded: depth > 0);
@@ -139,6 +138,27 @@ public static class DwgImport
                     Skip(entity.GetType().Name);
                     return;
             }
+        }
+
+        // toWorld: a boundary point (in the hatch's own coordinates) to the drawing's world coordinates.
+        private void AddHatch(Hatch hatch, Func<CSMath.XYZ, CSMath.XYZ> toWorld)
+        {
+            if (_entities >= maxEntities)
+            {
+                Skip("over maxEntities");
+                return;
+            }
+            Count();
+            var loops = hatch.Paths
+                .Select(path => Loop(path.GetPoints(ArcPoints).Select(p => toWorld(new CSMath.XYZ(p.X, p.Y, 0))).Select(p => (Mm(p.X), Mm(p.Y)))))
+                .Where(loop => loop.Count >= 3)
+                .ToList();
+            if (loops.Count == 0)
+            {
+                Skip("Hatch without boundary");
+                return;
+            }
+            result.Hatches.Add(new CadHatch { Style = Style(hatch, withPattern: false), Pattern = hatch.Pattern?.Name, IsSolid = hatch.IsSolid, Loops = loops });
         }
 
         private void AddText(TextEntity text, bool exploded)

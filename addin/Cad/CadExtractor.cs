@@ -56,23 +56,48 @@ internal static class CadExtractor
             .OrderBy(column => Math.Abs(column.get_BoundingBox(null)!.Max.Z - elevation));
         foreach (var column in columns)
         {
-            var hull = Bimtech.StructuralCore.Cad.CadGeometry.ConvexHull(SolidPoints(column));
-            if (hull.Count < 3) continue;
-            var center = column.Location is LocationPoint location
-                ? location.Point
-                : new XYZ(hull.Average(p => p.X), hull.Average(p => p.Y), 0);
-            var (cx, cy) = (Mm(center.X), Mm(center.Y));
-            if (supports.Any(other => Math.Abs(other.Cx - cx) <= 50 && Math.Abs(other.Cy - cy) <= 50)) continue;
-            supports.Add(new CaseSupport
-            {
-                Kind = "column", Id = RevitJson.Id(column.Id), Mark = Mark(column), Cx = cx, Cy = cy,
-                Points = hull.Select(p => new[] { Mm(p.X), Mm(p.Y) }).ToList(),
-            });
+            if (Outline(column, "column") is not { } support) continue;
+            if (supports.Any(other => Math.Abs(other.Cx - support.Cx) <= 50 && Math.Abs(other.Cy - support.Cy) <= 50)) continue;
+            supports.Add(support);
         }
 
         supports.AddRange(new FilteredElementCollector(document).OfClass(typeof(Wall)).Cast<Wall>().Where(Reaches)
             .Select(WallSupport).OfType<CaseSupport>());
         return supports;
+    }
+
+    // What a column of the storey starting at the elevation (feet) stands on: columns ending there, and pile caps or
+    // footings whose top is at most 2.5 m below it (caps sit under the ground floor).
+    public static List<CaseSupport> ModelSupportsBelow(Document document, double elevation)
+    {
+        var tolerance = UnitUtils.ConvertToInternalUnits(100, UnitTypeId.Millimeters);
+        var depth = UnitUtils.ConvertToInternalUnits(2500, UnitTypeId.Millimeters);
+        var columns = new FilteredElementCollector(document).OfCategory(BuiltInCategory.OST_StructuralColumns)
+            .OfClass(typeof(FamilyInstance)).Cast<FamilyInstance>()
+            .Where(column => column.get_BoundingBox(null) is { } box
+                && Math.Abs(box.Max.Z - elevation) <= tolerance && box.Min.Z < elevation - tolerance)
+            .Select(column => Outline(column, "column"));
+        var caps = new FilteredElementCollector(document).OfCategory(BuiltInCategory.OST_StructuralFoundation)
+            .OfClass(typeof(FamilyInstance)).Cast<FamilyInstance>()
+            .Where(cap => cap.get_BoundingBox(null) is { } box && box.Max.Z <= elevation + tolerance && box.Max.Z >= elevation - depth)
+            .Select(cap => Outline(cap, "cap"));
+        return columns.Concat(caps).OfType<CaseSupport>().ToList();
+    }
+
+    // An element's plan outline: the convex hull of its solids (its real shape, whatever its family calls its
+    // parameters), centred on its insertion point.
+    private static CaseSupport? Outline(FamilyInstance element, string kind)
+    {
+        var hull = Bimtech.StructuralCore.Cad.CadGeometry.ConvexHull(SolidPoints(element));
+        if (hull.Count < 3) return null;
+        var center = element.Location is LocationPoint location
+            ? location.Point
+            : new XYZ(hull.Average(p => p.X), hull.Average(p => p.Y), 0);
+        return new CaseSupport
+        {
+            Kind = kind, Id = RevitJson.Id(element.Id), Mark = Mark(element), Cx = Mm(center.X), Cy = Mm(center.Y),
+            Points = hull.Select(p => new[] { Mm(p.X), Mm(p.Y) }).ToList(),
+        };
     }
 
     // The straight walls whose top is at the elevation (feet), i.e. the walls of the storey below it.

@@ -223,21 +223,29 @@ export const scanCadColumns = defineTool({
   method: "scan_cad_columns",
   title: "Scan CAD for columns",
   description:
-    "Read rectangular column outlines (100-2000 mm, possibly rotated) from a CAD drawing as shown in a plan view,"
-    + " drawn as polylines or loose lines. Call first without layers to see which layers contain outlines and ask the"
-    + " user which are columns. Call again with layers to group columns by mark and size: each column's mark is read"
-    + " from the nearest Text Note (\"C1 300x500\"), key \"C1\", or the size b×h small side first (\"300x500\") when"
-    + " unmarked. Shapes of column size that are not rectangles (L-shaped columns, columns drawn touching a wall) are"
-    + " listed in notRectangles and never placed; tell the user. Returns type suggestions (exactType or nearestType),"
-    + " mark/size mismatches, and a scanId for propose_columns. Round columns are not supported. Changes nothing.",
+    "Read structural columns from a CAD drawing as an engineer would, from every layer: rectangles of column size"
+    + " (100-2000 mm, possibly rotated) drawn as polylines or loose lines, each weighed on evidence: at a grid crossing"
+    + " or on a grid, filled with a hatch of the DWG file, its size repeated, a mark beside it (\"C1 300x500\"), a column"
+    + " or pile cap of the storey below, a column-like layer name; against: inside a wall hatch, a row of pieces of one"
+    + " thickness a door apart (a wall cut by doors), a layer named like doors or furniture, alone off every grid."
+    + " Hatches come from the DWG file on disk (a linked CAD's own file, or dwgPath for an imported one); without it"
+    + " the scan still works, with less evidence. Groups by mark (\"C1\") or size small side first (\"300x500\"): sure"
+    + " groups, and \"300x500-maybe\" groups to review. Model the grids (and the storey below) first: the region"
+    + " defaults to the grids' extent and they add evidence. Returns each group's evidence counts, type suggestions"
+    + " (exactType or nearestType), mark/size mismatches and a scanId for propose_columns. Round columns are not"
+    + " supported. Changes nothing.",
   inputSchema: {
     cadId: elementId.describe("CAD import or link ID from list_cad_sources."),
     viewId,
-    layers: layerList("column outlines"),
+    levelId: elementId.optional()
+      .describe("Base level of the columns, whose columns and pile caps below add evidence. Default: the plan view's level."),
+    dwgPath: z.string().min(1).max(1024).optional()
+      .describe("Absolute path of the DWG/DXF file of an imported (not linked) CAD, for hatch evidence. A linked CAD's own file is used by default."),
+    layers: layerList("column outlines").describe("Optional: only outlines on these CAD layers. Default: every layer, weighed on evidence."),
     region: regionMm.optional(),
   },
   annotations: readOnly,
-  timeoutMs: 120000,
+  timeoutMs: 300000,
 });
 
 export const loadDefaultFamily = defineTool({
