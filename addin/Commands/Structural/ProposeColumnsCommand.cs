@@ -192,6 +192,9 @@ public sealed class ProposeColumnsCommand(PlanService plans, ReviewWindowHost re
                     columns,
                 }),
                 Tier = type.Problem is null ? PlanTier.Review : PlanTier.Blocked,
+                // No grids in the view: no crossings to judge positions by, so no confidence.
+                Confidence = frame is null ? null
+                    : ConfidenceRules.Columns(columns.Count, crossings.Count, type.Symbol is not null, mismatch is not null),
                 Reasons = reasons,
                 Source = JsonSerializer.SerializeToElement(new { name = group.Key, category = "Structural Columns", count = columns.Count }),
             });

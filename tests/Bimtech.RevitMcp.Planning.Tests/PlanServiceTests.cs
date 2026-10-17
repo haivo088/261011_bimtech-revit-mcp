@@ -306,6 +306,39 @@ public sealed class PlanServiceTests : IDisposable
         return _plans.Approve(_document, plan.PlanId);
     }
 
+    [Fact]
+    public void Sure_items_start_approved_but_the_plan_still_needs_the_person()
+    {
+        var sure = Item("E1", "A");
+        sure.Confidence = 0.95;
+        var unsure = Item("E2", "A");
+        unsure.Confidence = 0.89;
+        var blocked = Item("E3", "A");
+        blocked.Confidence = 0.99;
+        blocked.Tier = PlanTier.Blocked;
+
+        var plan = _plans.Create(_document, "set_parameters", "Đặt Comments", scope: null, [sure, unsure, blocked, Item("E4", "A")]);
+
+        Assert.Equal(PlanStatus.InReview, plan.Status);
+        Assert.Null(plan.Approval);
+        Assert.Equal([PlanTier.Auto, PlanTier.Review, PlanTier.Blocked, PlanTier.Review], plan.Items.Select(item => item.Tier));
+        Assert.Equal([PlanItemStatus.Approved, PlanItemStatus.Pending, PlanItemStatus.Pending, PlanItemStatus.Pending],
+            plan.Items.Select(item => item.Status));
+    }
+
+    [Fact]
+    public void Reviewer_can_undo_an_automatic_approval()
+    {
+        var sure = Item("E1", "A");
+        sure.Confidence = 0.95;
+        var plan = _plans.Create(_document, "set_parameters", "Đặt Comments", scope: null, [sure, Item("E2", "A")]);
+
+        plan = _plans.SetItemStatus(_document, plan.PlanId, ["E1"], PlanItemStatus.Rejected);
+        plan = _plans.SetItemStatus(_document, plan.PlanId, ["E2"], PlanItemStatus.Approved);
+
+        Assert.Equal(["E2"], _plans.Approve(_document, plan.PlanId).Approval!.ApprovedItemIds);
+    }
+
     private static PlanItem Item(string itemId, string value) => new()
     {
         ItemId = itemId,

@@ -37,6 +37,7 @@ public sealed class PlanService(IPlanStore store, TimeProvider? clock = null)
             ModelStamp = modelStamp,
         };
         Validate(plan);
+        PlanConfidence.Apply(plan.Items);
         lock (_lock) store.Save(plan);
         Changed?.Invoke(plan);
         return plan;

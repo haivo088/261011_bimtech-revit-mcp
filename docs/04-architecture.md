@@ -101,7 +101,12 @@ Mỗi loại công việc mới (cột, dầm, móng…) chỉ cần thêm **m�
 }
 ```
 
-- `confidence` và `tier` để sẵn chỗ cho phần chấm độ tin cậy. Ở giai đoạn đầu mọi mục có `tier: "review"`, tức là đều phải duyệt.
+- `confidence` (0..1) và `tier`. Mục có độ tin cậy từ **0,9** (`PlanConfidence.AutoApproveFrom`) thành `tier: "auto"` và **bắt đầu ở trạng thái đã duyệt** ("Tự duyệt"); người dùng vẫn phải bấm "Duyệt kế hoạch" và có thể bỏ duyệt từng mục. Mục bị chặn không bao giờ tự duyệt. Luật chấm (`addin/Recognition/ConfidenceRules.cs`, chỉ cho điểm 0,95 khi mọi phần tử của nhóm đạt):
+  - **Trục**: kiểu nét trục, vòng tròn đầu trục, tên đọc được (`GridRecognizer`).
+  - **Cột**: mọi cột ở giao trục, Type có sẵn đúng b×h (hoặc người dùng gán), ký hiệu khớp kích thước vẽ.
+  - **Vách**: nhóm "chắc chắn", mỗi vách có hatch, dày đúng cỡ vách bê tông và ít nhất 3 bằng chứng thuận; không có vách ghép từ nét mồ côi.
+  - **Dầm**: kích thước đọc từ ký hiệu (không phải bề rộng đo hay chiều cao người dùng nhập), không dầm nào mượn ký hiệu, lệch bề rộng hay nét đứt. Hai đầu dầm luôn tựa lên cột hoặc vách vì bộ nhận diện chỉ giữ nhịp từ gối tới gối.
+  - Cọc, sàn, tầng, đặt tham số: chưa có luật, luôn phải duyệt.
 - `tier` có ba giá trị: `auto` (được ghi không cần duyệt từng mục), `review` (cần duyệt), `blocked` (không được ghi; chuyển thành câu hỏi cho thiết kế).
 - `overrides` chứa giá trị người dùng sửa trong cửa sổ duyệt; khi commit, `overrides` được gộp đè lên `params`.
 - `result` sau khi commit chứa ID phần tử Revit đã tạo, hoặc thông báo lỗi.

@@ -43,6 +43,43 @@
         <Style TargetType="TabItem">
             <Setter Property="Padding" Value="8,2" />
         </Style>
+
+        <SolidColorBrush x:Key="ApprovedBrush" Color="#2E9E44" />
+        <SolidColorBrush x:Key="RejectedBrush" Color="#D64545" />
+        <SolidColorBrush x:Key="PendingBrush" Color="#E08A1E" />
+
+        <!-- Status as an icon and a word: green tick approved or written, red cross rejected or failed, orange ring pending. -->
+        <DataTemplate x:Key="StatusCell">
+            <StackPanel Orientation="Horizontal">
+                <Grid Width="12" Height="12" Margin="0,0,4,0" VerticalAlignment="Center">
+                    <Path x:Name="Tick" Data="M1.5,6.5 L4.5,9.5 L10.5,2.5" Stroke="{StaticResource ApprovedBrush}"
+                          StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                          Visibility="Collapsed" />
+                    <Path x:Name="Cross" Data="M2.5,2.5 L9.5,9.5 M9.5,2.5 L2.5,9.5" Stroke="{StaticResource RejectedBrush}"
+                          StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Visibility="Collapsed" />
+                    <Ellipse x:Name="Ring" Width="10" Height="10" Stroke="{StaticResource PendingBrush}"
+                             StrokeThickness="2" Visibility="Collapsed" />
+                </Grid>
+                <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center" />
+            </StackPanel>
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding Status}" Value="Approved">
+                    <Setter TargetName="Tick" Property="Visibility" Value="Visible" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Status}" Value="Applied">
+                    <Setter TargetName="Tick" Property="Visibility" Value="Visible" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Status}" Value="Rejected">
+                    <Setter TargetName="Cross" Property="Visibility" Value="Visible" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Status}" Value="Failed">
+                    <Setter TargetName="Cross" Property="Visibility" Value="Visible" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Status}" Value="Pending">
+                    <Setter TargetName="Ring" Property="Visibility" Value="Visible" />
+                </DataTrigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
     </Window.Resources>
 
     <DockPanel Margin="6">
@@ -100,7 +137,8 @@
                     </TextBox>
                     <DataGrid x:Name="ItemsGrid" ItemsSource="{Binding Items}" SelectionChanged="Grid_SelectionChanged">
                         <DataGrid.Columns>
-                            <DataGridTextColumn Header="Trạng thái" Binding="{Binding StatusText}" Width="64" />
+                            <DataGridTemplateColumn Header="Trạng thái" CellTemplate="{StaticResource StatusCell}" Width="84" />
+                            <DataGridTextColumn Header="Tin cậy" Binding="{Binding ConfidenceText}" Width="52" />
                             <DataGridTextColumn Header="Phần tử" Binding="{Binding Element}" Width="3*" />
                             <DataGridTextColumn Header="Thay đổi" Binding="{Binding Change}" Width="3*" />
                             <DataGridTextColumn Header="Lý do" Binding="{Binding Reasons}" Width="2*" />

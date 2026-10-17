@@ -220,6 +220,8 @@ public sealed class ProposeBeamsCommand(PlanService plans, ReviewWindowHost revi
                     beams,
                 }),
                 Tier = problem is null ? PlanTier.Review : PlanTier.Blocked,
+                Confidence = ConfidenceRules.Beams(group.Count(), first.Name is not null && first.HMm is not null,
+                    inherited, widthNotes.Count, broken.Count),
                 Reasons = reasons,
                 Source = JsonSerializer.SerializeToElement(new { name = group.Key, category = "Structural Framing", count = beams.Count }),
             });

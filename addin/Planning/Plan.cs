@@ -47,7 +47,8 @@ public sealed class PlanItem
     // What the executor will do, e.g. "set_parameter". Each action has its own params shape.
     public string Action { get; set; } = "";
     public JsonElement Params { get; set; }
-    // 0..1, or null until confidence rules exist. Every item is reviewed for now.
+    // 0..1, or null when the command has no confidence rule. From PlanConfidence.AutoApproveFrom up, the item
+    // starts approved (Tier Auto); the person still approves the plan and may undo the item's approval.
     public double? Confidence { get; set; }
     public PlanTier Tier { get; set; } = PlanTier.Review;
     // Plain-language reasons the reviewer and Claude can read, e.g. why an item is blocked.
@@ -110,9 +111,28 @@ public enum PlanStatus { InReview, Approved, Committed, Stale, Cancelled }
 [JsonConverter(typeof(JsonStringEnumConverter<PlanItemStatus>))]
 public enum PlanItemStatus { Pending, Approved, Rejected, Applied, Failed }
 
-// Auto: may be written without per-item review. Review: needs a person. Blocked: never written.
+// Auto: sure enough to start approved; still written only after the person approves the plan.
+// Review: needs a person's decision. Blocked: never written.
 [JsonConverter(typeof(JsonStringEnumConverter<PlanTier>))]
 public enum PlanTier { Auto, Review, Blocked }
+
+public static class PlanConfidence
+{
+    // Items at least this sure start approved. High on purpose: a wrong auto-approval costs more than a click.
+    public const double AutoApproveFrom = 0.9;
+
+    // Turns sure Review items into pre-approved Auto items. Blocked items stay blocked whatever their confidence.
+    public static void Apply(IEnumerable<PlanItem> items)
+    {
+        foreach (var item in items)
+        {
+            if (item.Tier != PlanTier.Review || item.Status != PlanItemStatus.Pending) continue;
+            if (item.Confidence is not { } confidence || confidence < AutoApproveFrom) continue;
+            item.Tier = PlanTier.Auto;
+            item.Status = PlanItemStatus.Approved;
+        }
+    }
+}
 
 [JsonConverter(typeof(JsonStringEnumConverter<PlanQuestionStatus>))]
 public enum PlanQuestionStatus { Open, Answered }

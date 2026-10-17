@@ -28,13 +28,21 @@ public sealed class ReviewViewModel(PlanService plans) : INotifyPropertyChanged
         && Items.All(row => row.Status != PlanItemStatus.Pending)
         && Items.Any(row => row.Status == PlanItemStatus.Approved);
 
-    // e.g. "DuAn_KetCau · Đang duyệt · 3 duyệt · 1 bỏ · 2 chờ".
-    public string StatusLine => Plan is null ? "" : string.Join(" · ",
-        Plan.Document.Title,
-        StatusName(Plan.Status),
-        $"{Count(PlanItemStatus.Approved)} duyệt",
-        $"{Count(PlanItemStatus.Rejected)} bỏ",
-        $"{Count(PlanItemStatus.Pending)} chờ");
+    // e.g. "DuAn_KetCau · Đang duyệt · 3 duyệt (2 tự duyệt) · 1 bỏ · 2 chờ".
+    public string StatusLine
+    {
+        get
+        {
+            if (Plan is null) return "";
+            var auto = Items.Count(row => row.IsAuto && row.Status == PlanItemStatus.Approved);
+            return string.Join(" · ",
+                Plan.Document.Title,
+                StatusName(Plan.Status),
+                $"{Count(PlanItemStatus.Approved)} duyệt" + (auto > 0 ? $" ({auto} tự duyệt)" : ""),
+                $"{Count(PlanItemStatus.Rejected)} bỏ",
+                $"{Count(PlanItemStatus.Pending)} chờ");
+        }
+    }
 
     public string Message
     {

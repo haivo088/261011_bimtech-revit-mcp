@@ -17,6 +17,8 @@ public sealed class PlanItemRow : INotifyPropertyChanged
         Reasons = string.Join(" ", item.Reasons);
         Detail = ReadString(item.Params, "detail") ?? "";
         ElementIds = (ReadString(item.Params, "elementId") ?? ReadString(item.Source, "elementId")) is { } id ? [id] : [];
+        IsAuto = item.Tier == PlanTier.Auto;
+        ConfidenceText = item.Confidence is { } confidence ? $"{Math.Round(confidence * 100):0}%" : "";
         _status = item.Status;
     }
 
@@ -30,6 +32,10 @@ public sealed class PlanItemRow : INotifyPropertyChanged
     public string Detail { get; }
     // Revit elements to select and zoom to when the row is selected.
     public IReadOnlyList<string> ElementIds { get; }
+    // Approved automatically because its confidence reached PlanConfidence.AutoApproveFrom.
+    public bool IsAuto { get; }
+    // e.g. "95%"; empty when the command gives no confidence.
+    public string ConfidenceText { get; }
 
     public PlanItemStatus Status
     {
@@ -46,7 +52,7 @@ public sealed class PlanItemRow : INotifyPropertyChanged
     public string StatusText => Status switch
     {
         PlanItemStatus.Pending => "Chờ",
-        PlanItemStatus.Approved => "Duyệt",
+        PlanItemStatus.Approved => IsAuto ? "Tự duyệt" : "Duyệt",
         PlanItemStatus.Rejected => "Bỏ",
         PlanItemStatus.Applied => "Đã ghi",
         _ => "Lỗi",

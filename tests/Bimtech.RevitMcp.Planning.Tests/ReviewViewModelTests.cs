@@ -50,6 +50,20 @@ public sealed class ReviewViewModelTests : IDisposable
     }
 
     [Fact]
+    public void Automatic_approvals_show_their_confidence_and_are_counted()
+    {
+        var sure = Item("E1", PlanTier.Review);
+        sure.Confidence = 0.954;
+        var document = new PlanDocument { Title = "DuAn", Path = @"D:\DuAn.rvt", StorageFolder = _folder };
+        _model.Load(_plans.Create(document, "set_parameters", "Đặt Comments", scope: null, [sure, Item("E2", PlanTier.Review)]));
+
+        Assert.Equal("Tự duyệt", _model.Items[0].StatusText);
+        Assert.Equal("95%", _model.Items[0].ConfidenceText);
+        Assert.Equal("", _model.Items[1].ConfidenceText);
+        Assert.Equal("DuAn · Đang duyệt · 1 duyệt (1 tự duyệt) · 0 bỏ · 1 chờ", _model.StatusLine);
+    }
+
+    [Fact]
     public void Rows_show_the_summary_of_items_that_have_one()
     {
         var row = new PlanItemRow(new PlanItem

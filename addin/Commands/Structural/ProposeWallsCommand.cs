@@ -5,6 +5,7 @@ using Bimtech.RevitMcp.Commands.Common;
 using Bimtech.RevitMcp.Commands.Plans;
 using Bimtech.RevitMcp.Planning;
 using Bimtech.RevitMcp.Protocol;
+using Bimtech.RevitMcp.Recognition;
 using Bimtech.RevitMcp.Ui;
 using Bimtech.StructuralCore.Walls;
 
@@ -222,6 +223,8 @@ public sealed class ProposeWallsCommand(PlanService plans, ReviewWindowHost revi
                 }).ToList(),
             }),
             Tier = problem is null ? PlanTier.Review : PlanTier.Blocked,
+            Confidence = ConfidenceRules.Walls(group.Sure,
+                group.Walls.Select(wall => (IReadOnlyList<string>)(wall.Evidence ?? [])).ToList(), repaired > 0),
             Reasons = reasons,
             Source = JsonSerializer.SerializeToElement(new
             {
