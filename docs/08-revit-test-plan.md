@@ -144,10 +144,20 @@ Vách giờ đọc từ **hatch của file DWG** (xem [05](05-cad-to-structure.m
 - Mỗi nhịp giữa hai cột liền nhau có dầm; dầm đặt **từ tim cột tới tim cột**; giao trục không có cột thì dầm chạy liền qua, không bị chia.
 - Dầm biên lệch trục (mép ngoài bằng mặt cột) đúng vị trí; tim dầm cách trục là bội 5 mm hoặc đúng 0 / mép trùng trục.
 - Mục duyệt ghi nhịp kiểu `A-1 → A-2 (trục A)`; ký hiệu dầm (Text Note) gán đúng dầm cùng phương, lan sang các nhịp thẳng hàng; Mark có ký hiệu.
-- `report.dangling` liệt kê dầm phụ/console (chưa dựng); `report.unusedMarks` liệt kê ký hiệu không gán được. Ghi lại dầm chính nào bị sót và vì sao (nét vẽ, khoảng đứt, layer).
+- `report.dangling` liệt kê dầm phụ/console (dựng ở bước 7b); `report.unusedMarks` liệt kê ký hiệu không gán được. Ghi lại dầm chính nào bị sót và vì sao (nét vẽ, khoảng đứt, layer).
 - Nhóm không có h (không có ký hiệu kích thước) bị chặn và Claude hỏi chiều cao.
 - **Kiểm chứng**: CAD import có Text Note không, hay chữ nằm trong DWG (Revit không đọc được) — khi đó dầm không có ký hiệu.
 - Kiểm chứng tên tham số tiết diện của family `BTC-DamCN_BeTong` đúng là `b`/`h`; dầm Revit tự cắt tại mặt cột khi join.
+
+### 7b. Dầm phụ: `propose_beams secondary=true`
+
+> Dầm chính Tầng 2 đã commit (đúng b×h theo ký hiệu). Đề xuất dầm phụ Tầng 2 bằng propose_beams với secondary=true.
+
+Đạt khi:
+- `report.supports.beams` bằng số dầm chính đã dựng; `report.secondaryBeams` có số dầm phụ tìm được và số chắc chắn.
+- Các dải dầm phụ giữa ô (ví dụ `D2-X15 (220x600)` ở giữa nhịp) ra đủ, **đầu dầm ở tim dầm chính**, không trùng dầm chính đã có.
+- Mỗi mục có dòng "Vì sao"; dầm phụ chia đôi nhịp dầm chính có "+1 chia đều nhịp dầm gối". Ghi lại: dầm phụ nào **sót**, đoạn nào **thừa** (tường xây, nét mép sàn), dầm nào bị "−3 to hơn dầm gối" (thường do dầm chính dựng sai kích thước).
+- Sau commit: Revit nối dầm phụ vào dầm chính (join), đỉnh dầm phụ bằng đỉnh dầm chính.
 
 ## 8. Sàn: `propose_floors`
 

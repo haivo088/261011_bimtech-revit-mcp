@@ -62,7 +62,7 @@ public static class BeamCase
         return frame with { AlongU = alongU, AlongV = alongV };
     }
 
-    // Supports in the frame, labelled "A-1" at a grid crossing, else by mark or id.
+    // Supports in the frame, labelled "A-1" at a grid crossing, else by mark or id. A beam runs along its longer side.
     public static List<BeamRecognizer.Support> Supports(IEnumerable<CaseSupport> supports, Frame frame) =>
         supports.Where(s => s.Points.Count > 0).Select(s =>
         {
@@ -70,10 +70,25 @@ public static class BeamCase
             var vs = s.Points.Select(p => frame.V(p[0], p[1])).ToList();
             var (minU, maxU, minV, maxV) = (us.Min(), us.Max(), vs.Min(), vs.Max());
             var (cu, cv) = (frame.U(s.Cx, s.Cy), frame.V(s.Cx, s.Cy));
-            var isColumn = s.Kind != "wall";
+            var isColumn = s.Kind is not ("wall" or "beam");
+            bool? beamAlongU = s.Kind == "beam" ? maxU - minU >= maxV - minV : null;
             return new BeamRecognizer.Support(Label(s, frame, cu, cv, maxU - minU, maxV - minV, isColumn),
-                minU, maxU, minV, maxV, cu, cv, isColumn);
+                minU, maxU, minV, maxV, cu, cv, isColumn, s.Kind, beamAlongU, s.HeightMm);
         }).ToList();
+
+    // A beam of the model as a support for secondary beams: the rectangle of its axis and width b.
+    public static CaseSupport BeamSupport(TruthBeam beam, string? id = null)
+    {
+        var (dx, dy) = (beam.X1 - beam.X0, beam.Y1 - beam.Y0);
+        var length = Math.Max(Math.Sqrt(dx * dx + dy * dy), 1e-9);
+        var half = (beam.BMm ?? 200) / 2;
+        var (nx, ny) = (-dy / length * half, dx / length * half);
+        return new CaseSupport
+        {
+            Kind = "beam", Id = id, Mark = beam.Mark, Cx = (beam.X0 + beam.X1) / 2, Cy = (beam.Y0 + beam.Y1) / 2, HeightMm = beam.HMm,
+            Points = [[beam.X0 + nx, beam.Y0 + ny], [beam.X1 + nx, beam.Y1 + ny], [beam.X1 - nx, beam.Y1 - ny], [beam.X0 - nx, beam.Y0 - ny]],
+        };
+    }
 
     public static Result Run(CadCase data, BeamRecognizer.Options? options = null)
     {
@@ -130,7 +145,7 @@ public static class BeamCase
             var fitV = GridIntersections.Fit(v, sizeV / 2, frame.AlongU, 0);
             if (fitU.OnGrid && fitV.OnGrid) return GridIntersections.Label(fitU.GridName!, fitV.GridName!);
         }
-        var kind = isColumn ? "cột" : "vách";
+        var kind = isColumn ? "cột" : support.Kind == "beam" ? "dầm" : "vách";
         return support.Mark is not null ? $"{kind} {support.Mark}" : $"{kind} #{support.Id ?? "?"}";
     }
 

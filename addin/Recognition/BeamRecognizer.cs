@@ -13,12 +13,22 @@ namespace Bimtech.RevitMcp.Recognition;
 //      or console, handled later).
 //   4. Marks ("D1 (220x600)") go to the nearest beam parallel to the text within tagDistanceMm, then spread to the
 //      beams continuing it in line (same width, through a shared support) until another mark.
+// Secondary beams (Options.Secondary) are the next round: the beams already in the model become supports too, and a
+// beam also starts at the side face of a beam (or at a wall), so a pair of edges leaving a main beam and reaching the
+// next beam, column or wall is a secondary beam. Its ends sit on the supports' centre lines, as for main beams.
 public static class BeamRecognizer
 {
-    public sealed record Line(double U0, double V0, double U1, double V1);
+    // Dashed: drawn with a hidden-line pattern, as beams under a slab often are.
+    public sealed record Line(double U0, double V0, double U1, double V1, bool Dashed = false);
 
-    // A column or wall in the model: its extent in the frame and its centre. Label: "A-1", a mark, or a position.
-    public sealed record Support(string Label, double MinU, double MaxU, double MinV, double MaxV, double CenterU, double CenterV, bool IsColumn);
+    // A column, wall or beam in the model: its extent in the frame and its centre. Label: "A-1", a mark, or a position.
+    // A beam support also says which way it runs and its depth (from its type), when known.
+    public sealed record Support(string Label, double MinU, double MaxU, double MinV, double MaxV, double CenterU, double CenterV, bool IsColumn,
+        string Kind = "", bool? BeamAlongU = null, double? HeightMm = null)
+    {
+        public bool IsBeam => Kind == "beam";
+        public double WidthMm => BeamAlongU == true ? MaxV - MinV : MaxU - MinU;
+    }
 
     // A text in the view. AngleRad: direction of the text in the frame (null when unknown).
     public sealed record Text(string Content, double U, double V, double? AngleRad);
@@ -34,13 +44,21 @@ public static class BeamRecognizer
         public double EdgeToleranceMm { get; init; } = 5;
         public double TagDistanceMm { get; init; } = 1000;
         public double MinDanglingMm { get; init; } = 500;
+        // The secondary round: beams also start at walls and at the side faces of beam supports.
+        public bool Secondary { get; init; }
     }
 
     // A beam from one support to the next. AlongU: runs along u at v = Cross; else along v at u = Cross.
     // Start/End: the supports' centres along the beam. Coverage: share of the span drawn by the two edges.
+    // Dashed: most of its edge segments are drawn dashed.
     public sealed record Beam(
         Support From, Support To, bool AlongU, double Cross, double Start, double End, double WidthMm, double Coverage,
-        BeamTag? Tag, bool TagInherited);
+        BeamTag? Tag, bool TagInherited, bool Dashed = false)
+    {
+        // Rests on at least one beam: a secondary beam.
+        public bool IsSecondary => From.IsBeam || To.IsBeam;
+        public double SpanMm => Math.Abs(End - Start);
+    }
 
     // Edges leaving a column that reach no support. Length: how far they were followed.
     public sealed record Dangling(Support From, bool AlongU, double Cross, double LengthMm);
@@ -67,9 +85,9 @@ public static class BeamRecognizer
                 continue;
             }
             if (Math.Abs(dv) / length <= tolerance)
-                alongU.Add(new Seg((line.V0 + line.V1) / 2, Math.Min(line.U0, line.U1), Math.Max(line.U0, line.U1)));
+                alongU.Add(new Seg((line.V0 + line.V1) / 2, Math.Min(line.U0, line.U1), Math.Max(line.U0, line.U1), line.Dashed));
             else if (Math.Abs(du) / length <= tolerance)
-                alongV.Add(new Seg((line.U0 + line.U1) / 2, Math.Min(line.V0, line.V1), Math.Max(line.V0, line.V1)));
+                alongV.Add(new Seg((line.U0 + line.U1) / 2, Math.Min(line.V0, line.V1), Math.Max(line.V0, line.V1), line.Dashed));
             else
                 skewed++;
         }
@@ -85,7 +103,7 @@ public static class BeamRecognizer
     }
 
     // A line in a beam's direction: Y across it, X0 < X1 along it. Box: a support seen the same way.
-    private sealed record Seg(double Y, double X0, double X1);
+    private sealed record Seg(double Y, double X0, double X1, bool Dashed = false);
 
     private sealed record Box(double MinX, double MaxX, double MinY, double MaxY, double CenterX, Support Support);
 
@@ -103,7 +121,14 @@ public static class BeamRecognizer
         }
 
         var found = new Dictionary<(int, int, long), Beam>();
-        foreach (var box in boxes.Where(b => b.Support.IsColumn))
+        // Main beams leave columns. Secondary beams leave walls and the side faces of beams running across this direction
+        // (a beam's own ends sit inside its columns); not columns, where a main beam would stop at the first beam it
+        // crosses. One resting on a column is found from its other end.
+        bool Starts(Support s) => o.Secondary ? s.Kind == "wall" || (s.IsBeam && s.BeamAlongU != alongU) : s.IsColumn;
+        // Along a beam already there (its own edges, drawn on), never a new beam.
+        bool AlongBeam(Beam beam) => boxes.Any(b => b.Support.IsBeam && b.Support.BeamAlongU == alongU
+            && (beam.Start + beam.End) / 2 >= b.MinX && (beam.Start + beam.End) / 2 <= b.MaxX && beam.Cross >= b.MinY && beam.Cross <= b.MaxY);
+        foreach (var box in boxes.Where(b => Starts(b.Support)))
         foreach (var dir in new[] { 1, -1 })
         {
             var face = dir > 0 ? box.MaxX : -box.MinX;
@@ -129,8 +154,10 @@ public static class BeamRecognizer
                 {
                     var coverage = (Covered(edge1, face, targetFace, dir) + Covered(edge2, face, targetFace, dir)) / (2 * (targetFace - face));
                     if (coverage < o.MinCoverage) continue;
+                    var spanSegs = edge1.Concat(edge2).Where(s => P1(s, dir) > face && P0(s, dir) < targetFace).ToList();
+                    var dashed = spanSegs.Count > 0 && spanSegs.Count(s => s.Dashed) * 2 > spanSegs.Count;
                     var beam = new Beam(box.Support, target.Support, alongU, middle, box.CenterX, target.CenterX, y2 - y1,
-                        Math.Min(1, coverage), null, false);
+                        Math.Min(1, coverage), null, false, dashed);
                     if (best is null || beam.Coverage > best.Coverage + 1e-9
                         || (Math.Abs(beam.Coverage - best.Coverage) <= 1e-9 && Math.Abs(middle - Mid(box)) < Math.Abs(best.Cross - Mid(box))))
                         best = beam;
@@ -138,6 +165,7 @@ public static class BeamRecognizer
                 else if (reach - face >= o.MinDanglingMm && (longest is null || reach - face > longest.LengthMm))
                     longest = new Dangling(box.Support, alongU, middle, Math.Min(reach, targetFace) - face);
             }
+            if (best is not null && o.Secondary && AlongBeam(best)) best = null;
             if (best is not null)
             {
                 var (a, b) = (boxes.IndexOf(box), boxes.FindIndex(x => x.Support == best.To));

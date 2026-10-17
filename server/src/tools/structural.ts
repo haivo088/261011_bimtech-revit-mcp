@@ -312,7 +312,13 @@ export const proposeBeams = defineTool({
     + " along the beams in line); b comes from the mark, else from the lines; h only from the mark or heightsMm, else"
     + " the group is Blocked: ask the user. The offset from the grid is set like columns (centred or face on the grid"
     + " within gridToleranceMm, else rounded to snapMm). One review item per group (mark and size); beams already in"
-    + " the model are skipped. Reports dangling edges (secondary beams or consoles, not placed yet) and unused marks."
+    + " the model are skipped. Reports dangling edges (secondary beams or consoles) and unused marks."
+    + " Secondary beams are a second step: after the main beams are committed, call again with secondary=true. The"
+    + " beams in the model at the level then become supports: a pair of lines leaving a beam's side face (or a wall)"
+    + " and reaching the next beam, column or wall is a secondary beam, its ends on the supporting beams' centre lines."
+    + " Each is weighed on evidence (mark \"DP1\" or \"D2-X3\", an even division of the supporting span or a grid, dashed"
+    + " lines, continuing in line; against: wider or deeper than its support, on a wall hatch, under 1 m, broken lines);"
+    + " groups not all sure are never auto-approved. Consoles are not placed."
     + " Opens the review window and returns a planId at once; then get_plan_status and commit_plan.",
   inputSchema: {
     cadId: elementId.describe("CAD import or link ID from list_cad_sources."),
@@ -328,6 +334,8 @@ export const proposeBeams = defineTool({
     templateFamilyId: elementId.optional()
       .describe("Beam family in which to create b×h types. Default: BTC-DamCN_BeTong when loaded (load_default_family kind=beam)."),
     writeMark: z.boolean().optional().describe("Write the beam mark to the Mark parameter (default true)."),
+    secondary: z.boolean().optional()
+      .describe("Second step, after the main beams are committed: find beams resting on the beams in the model (default false)."),
     snapMm: z.number().min(0).max(100).optional()
       .describe("Round each beam's offset from the nearest grid to this (default 5); 0 keeps the drawing's position."),
     gridToleranceMm: z.number().min(0).max(100).optional()

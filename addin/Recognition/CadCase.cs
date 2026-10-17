@@ -152,11 +152,12 @@ public sealed class CaseModel
     public List<CaseSupport> Supports { get; set; } = [];
 }
 
-// A column or wall in the model: its plan outline (convex, [x, y] points) and its centre (a column's insertion
-// point, a wall's mid-point).
+// A column, wall or beam in the model: its plan outline (convex, [x, y] points) and its centre (a column's insertion
+// point, a wall's or beam's mid-point). HeightMm: a beam's depth h, when its type says.
 public sealed class CaseSupport
 {
-    public string Kind { get; set; } = "column"; // "column" or "wall"
+    public string Kind { get; set; } = "column"; // "column", "wall", "cap" or "beam"
+    public double? HeightMm { get; set; }
     public string? Id { get; set; }
     public string? Mark { get; set; }
     public double Cx { get; set; }

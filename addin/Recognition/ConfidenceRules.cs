@@ -37,10 +37,12 @@ public static class ConfidenceRules
     // Beams: the size comes from a mark, not from the drawn width or a height the person typed, and it agrees with
     // the drawn width; every beam is well drawn. Both ends sit on a column or wall by construction (BeamRecognizer only
     // keeps support-to-support spans), so supports need no check here.
-    public static double Beams(int count, bool sizeFromMark, int inheritedMarks, int widthMismatches, int brokenLines)
+    // Secondary beams (SecondaryBeams.Weigh) not all sure ("evidenceSure" false) never get past 0.6.
+    public static double Beams(int count, bool sizeFromMark, int inheritedMarks, int widthMismatches, int brokenLines, bool evidenceSure = true)
     {
         if (count <= 0) return 0;
         if (!sizeFromMark) return 0.5;
+        if (!evidenceSure) return 0.6;
         var doubtful = Math.Min(count, inheritedMarks + widthMismatches + brokenLines);
         if (doubtful == 0) return Sure;
         return Math.Round(0.6 + (Close - 0.6) * (count - doubtful) / count, 2);

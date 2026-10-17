@@ -26,6 +26,9 @@ namespace Bimtech.RevitMcp.Commands.Structural;
 //     (default: BTC-DamCN_BeTong when loaded). Beams already in the model at that spot are skipped.
 //   - Reported, not placed: edges leaving a column that reach no support (secondary beams, consoles), marks that
 //     went to no beam, skewed lines.
+//   - secondary=true, after the main beams are committed: the beams in the model at the level become supports and
+//     beams start at their side faces (and at walls), so beams resting on beams are found, their ends on the supporting
+//     beams' centre lines. Each is weighed on evidence (SecondaryBeams); groups not all sure never auto-approve.
 public sealed class ProposeBeamsCommand(PlanService plans, ReviewWindowHost review, ModelChangeTracker changes) : IRevitCommand
 {
     public string Method => "propose_beams";
@@ -59,6 +62,7 @@ public sealed class ProposeBeamsCommand(PlanService plans, ReviewWindowHost revi
             ? StructuralJson.RequireFamily(document, p.RequireElementId("templateFamilyId"), BuiltInCategory.OST_StructuralFraming)
             : DefaultFamilies.Find(document, DefaultFamilies.BeamFamilyName);
         var writeMark = p.GetBool("writeMark", true);
+        var secondary = p.GetBool("secondary", false);
         var snapMm = p.GetDouble("snapMm", 5, 0, 100);
         var toleranceMm = p.GetDouble("gridToleranceMm", GridIntersections.DefaultToleranceMm, 0, 100);
         var marginMm = p.GetDouble("gridMarginMm", GridIntersections.DefaultMarginMm, 0, 5000);
@@ -70,6 +74,7 @@ public sealed class ProposeBeamsCommand(PlanService plans, ReviewWindowHost revi
             MaxGapMm = p.GetDouble("maxGapMm", 1500, 0, 10_000),
             MinCoverage = p.GetDouble("minCoverage", 0.6, 0.1, 1),
             TagDistanceMm = p.GetDouble("tagDistanceMm", 1000, 0, 10_000),
+            Secondary = secondary,
         };
         if (options.MinWidthMm >= options.MaxWidthMm)
             throw RpcException.InvalidParams("minWidthMm", "must be smaller than maxWidthMm.");
@@ -80,12 +85,17 @@ public sealed class ProposeBeamsCommand(PlanService plans, ReviewWindowHost revi
         double V(XYZ point) => UnitConvert.Length(point.DotProduct(vAxis));
 
         var caseFrame = frame is null ? BeamCase.Frame.Plain : new BeamCase.Frame(uAxis.X, uAxis.Y, frame.AlongU, frame.AlongV);
-        var supports = BeamCase.Supports(CadExtractor.ModelSupports(document, level.Elevation), caseFrame);
+        // Secondary beams rest on the beams already in the model at this level: main beams are committed first.
+        var beamSupports = secondary ? CadExtractor.ModelBeamSupports(document, level) : [];
+        if (secondary && beamSupports.Count == 0)
+            throw RpcException.InvalidParams("secondary",
+                "no beam is in the model at this level. Propose and commit the main beams first (propose_beams without secondary).");
+        var supports = BeamCase.Supports(CadExtractor.ModelSupports(document, level.Elevation).Concat(beamSupports), caseFrame);
         if (!supports.Any(support => support.IsColumn))
             throw RpcException.InvalidParams("levelId",
                 "no structural column reaches this level. Model the columns below it first (propose_columns).");
         var lines = CadLines.Read(document, cad, view, layers)
-            .Select(line => new BeamRecognizer.Line(U(line.A), V(line.A), U(line.B), V(line.B)))
+            .Select(line => new BeamRecognizer.Line(U(line.A), V(line.A), U(line.B), V(line.B), line.Dashed))
             .ToList();
         if (layers.Count > 0 && lines.Count == 0)
             throw RpcException.InvalidParams("layers", "no line of the CAD is on these layers in this view.");
@@ -96,9 +106,10 @@ public sealed class ProposeBeamsCommand(PlanService plans, ReviewWindowHost revi
             .ToList();
         // Marks are usually texts in the DWG ("D2-X1(350x600)"), not Text Notes: read the file and add its texts.
         object? dwg = null;
+        CadCase? data = null;
         if (texts.Count == 0 || p.Has("dwgPath"))
         {
-            var data = CadExtractor.Extract(document, cad, view, new CadExtractor.Limits(AlignmentEntities));
+            data = CadExtractor.Extract(document, cad, view, new CadExtractor.Limits(AlignmentEntities));
             var revitTexts = data.Texts.Count;
             dwg = DwgOverlay.Attach(context, document, cad, data, "beam marks are not read, so h is unknown", circles: false);
             texts.AddRange(data.Texts.Skip(revitTexts).Select(text =>
@@ -114,6 +125,10 @@ public sealed class ProposeBeamsCommand(PlanService plans, ReviewWindowHost revi
 
         var result = BeamRecognizer.Recognize(lines, supports, texts, options);
         context.Cancellation.ThrowIfCancellationRequested();
+        // Secondary beams are weighed on evidence; walls and masonry from the DWG's hatches when it was read.
+        var wallLoops = data is null ? [] : SecondaryBeams.WallLoops(data.Hatches.SelectMany(ColumnRecognizer.OuterLoops), caseFrame);
+        var weights = result.Beams.Where(beam => beam.IsSecondary)
+            .ToDictionary(beam => beam, beam => SecondaryBeams.Weigh(beam, result.Beams, caseFrame, wallLoops));
 
         var z = level.Elevation + Feet(offsetMm);
         XYZ Model(double u, double v) => uAxis * Feet(u) + vAxis * Feet(v) + new XYZ(0, 0, z);
@@ -199,6 +214,14 @@ public sealed class ProposeBeamsCommand(PlanService plans, ReviewWindowHost revi
             if (broken.Count > 0)
                 reasons.Add($"{broken.Count} dầm nét vẽ đứt nhiều (phủ dưới {WellDrawn:P0} nhịp), kiểm tra: {List(broken.Select(beam => beam.At))}");
             if (duplicates > 0) reasons.Add($"{duplicates} dầm đã có trong model, bỏ qua.");
+            var weighed = group.Where(beam => weights.ContainsKey(beam.Beam)).Select(beam => weights[beam.Beam]).ToList();
+            var evidenceSure = weighed.All(weight => weight.Sure);
+            if (weighed.Count > 0)
+            {
+                if (!evidenceSure) reasons.Add($"{weighed.Count(weight => !weight.Sure)} dầm phụ bằng chứng chưa đủ, nên xem lại trên mặt bằng.");
+                reasons.Add("Vì sao: " + string.Join("; ", weighed.SelectMany(weight => weight.Reasons)
+                    .GroupBy(reason => reason).OrderByDescending(g => g.Count()).Select(g => $"{g.Key} ({g.Count()}/{weighed.Count})")));
+            }
 
             var spans = group.Select(beam => beam.At).ToList();
             items.Add(new PlanItem
@@ -221,7 +244,7 @@ public sealed class ProposeBeamsCommand(PlanService plans, ReviewWindowHost revi
                 }),
                 Tier = problem is null ? PlanTier.Review : PlanTier.Blocked,
                 Confidence = ConfidenceRules.Beams(group.Count(), first.Name is not null && first.HMm is not null,
-                    inherited, widthNotes.Count, broken.Count),
+                    inherited, widthNotes.Count, broken.Count, evidenceSure),
                 Reasons = reasons,
                 Source = JsonSerializer.SerializeToElement(new { name = group.Key, category = "Structural Framing", count = beams.Count }),
             });
@@ -233,7 +256,8 @@ public sealed class ProposeBeamsCommand(PlanService plans, ReviewWindowHost revi
 
         var report = new
         {
-            supports = new { columns = supports.Count(s => s.IsColumn), walls = supports.Count(s => !s.IsColumn) },
+            supports = new { columns = supports.Count(s => s.IsColumn), walls = supports.Count(s => s.Kind == "wall"), beams = supports.Count(s => s.IsBeam) },
+            secondaryBeams = new { found = weights.Count, sure = weights.Values.Count(weight => weight.Sure) },
             dangling = new
             {
                 count = result.Dangling.Count,
@@ -263,7 +287,7 @@ public sealed class ProposeBeamsCommand(PlanService plans, ReviewWindowHost revi
         var plan = plans.Create(
             PlanStorageLocation.For(document),
             kind: "create_beams",
-            title: $"Dựng dầm chính {level.Name}, {items.Count} nhóm",
+            title: $"Dựng dầm {(secondary ? "phụ" : "chính")} {level.Name}, {items.Count} nhóm",
             scope: JsonSerializer.SerializeToElement(new
             {
                 cadId = RevitJson.Id(cad.Id),

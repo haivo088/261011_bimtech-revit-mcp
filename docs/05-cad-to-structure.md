@@ -111,7 +111,7 @@ Type cho mỗi nhóm: mục trong `types` → Type có sẵn khớp b/h → Type
 
 ## Dầm
 
-`propose_beams` → duyệt → `commit_plan`. Hiện chỉ **dầm chính** (nối cột với cột hoặc vách); dầm phụ, dầm console làm sau.
+`propose_beams` → duyệt → `commit_plan` (dầm chính), rồi `propose_beams secondary=true` → duyệt → `commit_plan` (dầm phụ). Dầm console làm sau.
 
 **Lan từ cột, trục làm thước.** Dựng cột (và vách) bên dưới tầng trước: chúng là gối tựa. Không cần bước quét riêng, không cần chọn layer (`layers` chỉ để giới hạn khi cần).
 
@@ -134,6 +134,17 @@ Type cho mỗi nhóm: mục trong `types` → Type có sẵn khớp b/h → Type
 Type mỗi nhóm: mục trong `types` → Type có sẵn khớp b×h → Type `b×h` tạo trong `templateFamilyId` (mặc định `BTC-DamCN_BeTong` nếu đã nạp; `load_default_family kind=beam`) → chưa có Type (mục bị chặn).
 
 **Giới hạn đã biết**: Revit API không đọc được chữ bên trong file DWG import/link, chỉ đọc Text Note của Revit. Nếu bản vẽ chưa có Text Note, dầm vẫn được nhận nhưng không có ký hiệu (cần `heightsMm` hoặc `types`).
+
+### Dầm phụ (`secondary=true`)
+
+**Lan dần từ gối, theo cách truyền lực**: dầm chính gác lên cột và vách, dầm phụ gác lên dầm chính. Làm **hai bước**: duyệt và commit dầm chính trước, rồi mới gọi `propose_beams secondary=true`, để dầm phụ chỉ gác lên dầm người dùng đã duyệt.
+
+1. Gối tựa: cột, vách, và **dầm đã có trong model ở tầng đó** (mỗi dầm là hình chữ nhật dọc trục, rộng b, sâu h theo Type). Mép của chính các dầm này nằm trong thân dầm nên bị bỏ.
+2. Dầm phụ **xuất phát từ mặt bên của dầm gối** (dầm chạy ngang phương đang dò) hoặc từ mặt vách. Không xuất phát từ cột, vì ở vòng này dầm chính sẽ bị cắt ngắn tại dầm đầu tiên nó gặp; dầm phụ một đầu gác lên cột vẫn được tìm, dò từ đầu bên dầm sang.
+3. Dò hai mép như dầm chính tới gối đầu tiên (dầm, cột, vách). Đoạn nằm dọc thân một dầm đã có thì bỏ.
+4. Đầu dầm phụ đặt ở **tim dầm gối**, đỉnh bằng tầng + `offsetMm` như dầm chính. Ký hiệu nhận cả `DP1` lẫn `D2-X3 (220x600)`, từ Text Note và chữ trong DWG.
+5. **Bằng chứng** (`SecondaryBeams`): +2 hai đầu tựa lên gối, +1 có ký hiệu, +1 chia đều nhịp dầm gối (1/2, 1/3, 1/4) hoặc nằm trên trục, +1 vẽ nét khuất, +1 nối tiếp thành dải với dầm phụ khác; −3 **to hơn dầm gối** (b hay h lớn hơn), −2 trùng hatch tường hay vách (cặp nét tường xây 220 trông như dầm 220), −1 nhịp dưới 1 m, −1 nét đứt nhiều. Điểm ≥ 3 chắc chắn; nhóm có dầm phụ chưa chắc ghi "bằng chứng chưa đủ" và **không bao giờ tự duyệt**. Mục duyệt có dòng "Vì sao".
+6. Chưa làm: dầm console (một đầu tự do), dầm phụ cấp 2 trong cùng một lượt (gọi lại `secondary=true` sau khi commit cấp 1).
 
 ## Cọc và đài
 

@@ -84,6 +84,47 @@ public sealed class CaseLibraryTests(ITestOutputHelper output)
         Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
     }
 
+    // The secondary round on every case with approved beams: those beams become supports, and the secondary beams
+    // found are listed with their evidence. Each must start and end on a support and never repeat an approved beam.
+    [Fact]
+    public void Every_saved_case_with_truth_beams_gives_secondary_beams_resting_on_them()
+    {
+        var failures = new List<string>();
+        foreach (var path in CasePaths())
+        {
+            var data = CadCase.Load(path);
+            if (data.Model is null || data.Truth is not { Beams.Count: > 0 }) continue;
+            var supported = new CadCase
+            {
+                CaseId = data.CaseId, Styles = data.Styles, Lines = data.Lines, Polylines = data.Polylines, Texts = data.Texts,
+                Hatches = data.Hatches, Truth = new CadTruth { Grids = data.Truth.Grids },
+                Model = new CaseModel { Supports = [.. data.Model.Supports, .. data.Truth.Beams.Select(beam => BeamCase.BeamSupport(beam))] },
+            };
+            var result = BeamCase.Run(supported, new BeamRecognizer.Options { Secondary = true });
+            var frame = BeamCase.FrameOf(data.Truth.Grids);
+            var walls = SecondaryBeams.WallLoops(data.Hatches.SelectMany(ColumnRecognizer.OuterLoops), frame);
+            var secondary = result.Beams.Where(found => found.Beam.IsSecondary).ToList();
+            var repeated = secondary.Where(found => data.Truth.Beams.Any(truth => Same(found, truth))).ToList();
+            output.WriteLine($"{data.CaseId}: {secondary.Count} secondary beams ({repeated.Count} repeat an approved beam)");
+            foreach (var found in secondary.Except(repeated))
+            {
+                var weight = SecondaryBeams.Weigh(found.Beam, result.Recognition.Beams, frame, walls);
+                output.WriteLine($"  {(weight.Sure ? "sure  " : "review")} {found.Span} b={found.Beam.WidthMm:0} {found.Beam.Tag?.Text}"
+                    + $" ({found.X0:0}, {found.Y0:0}) → ({found.X1:0}, {found.Y1:0}): {string.Join("; ", weight.Reasons)}");
+            }
+            if (repeated.Count > 0 && repeated.Count == secondary.Count && secondary.Count > 0)
+                failures.Add($"{data.CaseId}: every secondary beam repeats an approved beam");
+        }
+        Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
+    }
+
+    private static bool Same(BeamCase.Found found, TruthBeam truth)
+    {
+        bool Near(double x0, double y0, double x1, double y1) => Math.Sqrt((x0 - x1) * (x0 - x1) + (y0 - y1) * (y0 - y1)) <= BeamCase.MatchToleranceMm;
+        return (Near(found.X0, found.Y0, truth.X0, truth.Y0) && Near(found.X1, found.Y1, truth.X1, truth.Y1))
+            || (Near(found.X0, found.Y0, truth.X1, truth.Y1) && Near(found.X1, found.Y1, truth.X0, truth.Y0));
+    }
+
     private static IEnumerable<string> CasePaths()
     {
         var root = Environment.GetEnvironmentVariable("BIMTECH_CASES_DIR") ?? FindRepositoryCases();

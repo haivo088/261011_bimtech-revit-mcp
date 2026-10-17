@@ -127,6 +127,13 @@ internal static class CadExtractor
 
     // The beams placed on the level, as the person approved them: the truth a case's beams are checked against.
     public static List<TruthBeam> ModelBeams(Document document, Level level) =>
+        LevelBeams(document, level).Select(beam => beam.Truth).ToList();
+
+    // The beams placed on the level as supports of secondary beams: each the rectangle of its axis and width b.
+    public static List<CaseSupport> ModelBeamSupports(Document document, Level level) =>
+        LevelBeams(document, level).Select(beam => BeamCase.BeamSupport(beam.Truth, RevitJson.Id(beam.Id))).ToList();
+
+    private static IEnumerable<(ElementId Id, TruthBeam Truth)> LevelBeams(Document document, Level level) =>
         new FilteredElementCollector(document).OfCategory(BuiltInCategory.OST_StructuralFraming)
             .OfClass(typeof(FamilyInstance)).Cast<FamilyInstance>()
             .Where(beam => beam.StructuralType == Autodesk.Revit.DB.Structure.StructuralType.Beam
@@ -136,13 +143,12 @@ internal static class CadExtractor
             {
                 var line = (Line)((LocationCurve)beam.Location).Curve;
                 var (start, end) = (line.GetEndPoint(0), line.GetEndPoint(1));
-                return new TruthBeam
+                return (beam.Id, new TruthBeam
                 {
                     Mark = Mark(beam), X0 = Mm(start.X), Y0 = Mm(start.Y), X1 = Mm(end.X), Y1 = Mm(end.Y),
                     BMm = TypeLength(beam.Symbol, "b"), HMm = TypeLength(beam.Symbol, "h"),
-                };
-            })
-            .ToList();
+                });
+            });
 
     private static string? Mark(Element element) =>
         element.get_Parameter(BuiltInParameter.ALL_MODEL_MARK)?.AsString() is { Length: > 0 } mark ? mark : null;
