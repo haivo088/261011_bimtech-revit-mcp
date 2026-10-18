@@ -9,7 +9,9 @@ namespace Bimtech.RevitMcp.Recognition;
 //     wall of the storey below, part of a cluster of walls (a core), lift text inside that core, a wall-like layer name;
 //   − thickness of a masonry wall, short for its thickness (a flat column), layer off in the DWG, a column or masonry
 //     layer name.
-// A hatch no longer than a column (ColumnMaxLengthMm) is a column, never a wall. Layer names are a hint, never a gate. Score ≥ SureScore: proposed and ticked; 1..SureScore-1: proposed unticked; ≤ 0: dropped,
+// A hatch no longer than a column (ColumnMaxLengthMm) is a column, never a wall. Layer names are a hint, never a gate. Weighed on the
+// Evidence scale: a hatched strip starts at 50% (the hatch is why it is a candidate), a wall below +20%, other relations
+// ±10%, layer names ±5%, masonry thickness −20%, layer off −30%; sure from 50%, to review from 20%, dropped below,
 // still reported with its reasons.
 //
 // Geometry: each hatch's outer loop is cut into thin strips along the grid frame (or its own longest edge), so an
@@ -32,7 +34,6 @@ public static partial class WallRecognizer
         public double JoinGapMm { get; init; } = 10;
         public double ColumnContactMm { get; init; } = 50;
         public double BelowOffsetMm { get; init; } = 50;
-        public int SureScore { get; init; } = 3;
     }
 
     public sealed record Region(double MinX, double MinY, double MaxX, double MaxY)
@@ -40,7 +41,7 @@ public static partial class WallRecognizer
         public bool Contains(double x, double y) => x >= MinX && x <= MaxX && y >= MinY && y <= MaxY;
     }
 
-    public sealed class Wall
+    public sealed class Wall : Weighed
     {
         public double X0 { get; set; }
         public double Y0 { get; set; }
@@ -50,16 +51,6 @@ public static partial class WallRecognizer
         public string Layer { get; init; } = "";
         public string? Pattern { get; init; }
         public bool LayerOff { get; init; }
-        public int Score { get; private set; }
-        public bool Sure { get; set; }
-        // Signed evidence, e.g. "+2 cùng kiểu hatch với cột".
-        public List<string> Reasons { get; } = [];
-
-        internal void Add(int points, string reason)
-        {
-            Score += points;
-            Reasons.Add($"{(points > 0 ? "+" : "")}{points} {reason}");
-        }
         public string? Grid { get; set; }
 
         public double Length => Math.Sqrt((X1 - X0) * (X1 - X0) + (Y1 - Y0) * (Y1 - Y0));
@@ -85,6 +76,7 @@ public static partial class WallRecognizer
     public const string LayerOffReason = "layer đang tắt trong DWG";
     public const string WallLayerReason = "tên layer giống vách";
     public const string OtherLayerReason = "tên layer giống cột hoặc tường xây";
+    public const string UnsupportedReason = "không nối cột, không có vách tầng dưới";
 
     private static readonly double[] MasonrySizes = [100, 105, 110, 115, 120, 210, 220, 230];
 
@@ -136,8 +128,7 @@ public static partial class WallRecognizer
 
         foreach (var wall in walls) Score(wall, frame, columns, wallsBelow, columnPatterns, fromModel, options);
         ScoreCores(walls, scene.Texts, options);
-        foreach (var wall in walls) wall.Sure = wall.Score >= options.SureScore;
-        return new Result(walls.Where(wall => wall.Score > 0).ToList(), walls.Where(wall => wall.Score <= 0).ToList(),
+        return new Result(walls.Where(wall => Evidence.IsKept(wall.Percent)).ToList(), walls.Where(wall => !Evidence.IsKept(wall.Percent)).ToList(),
             hatches.Count, skipped, columnPatterns, fromModel);
     }
 
@@ -298,30 +289,29 @@ public static partial class WallRecognizer
     private static void Score(Wall wall, BeamCase.Frame frame, IReadOnlyList<CaseSupport> columns,
         IReadOnlyList<CaseSupport> wallsBelow, List<string> columnPatterns, bool fromModel, Options options)
     {
-        void Add(int points, string reason) => wall.Add(points, reason);
-        Add(1, HatchReason);
+        void Add(int percent, string reason) => wall.Add(percent, reason);
         // Patterns read off the modeled columns are sure; guessed from squarish hatches, only a hint.
-        if (columnPatterns.Contains(wall.Pattern ?? "")) Add(fromModel ? 2 : 1, ColumnPatternReason);
-        if (WallLayer().IsMatch(wall.Layer)) Add(1, WallLayerReason);
-        else if (OtherLayer().IsMatch(wall.Layer)) Add(-1, OtherLayerReason);
+        if (columnPatterns.Contains(wall.Pattern ?? "")) Add(fromModel ? 20 : 10, ColumnPatternReason);
+        if (WallLayer().IsMatch(wall.Layer)) Add(5, WallLayerReason);
+        else if (OtherLayer().IsMatch(wall.Layer)) Add(-5, OtherLayerReason);
 
         var t = wall.ThicknessMm;
-        if (MasonrySizes.Any(size => Math.Abs(size - t) < 3)) Add(-2, MasonrySizeReason);
-        else if (t < 150) Add(-1, ThinReason);
-        else if (t <= 500 && Math.Abs(t / 50 - Math.Round(t / 50)) < 0.01) Add(1, ConcreteSizeReason);
+        if (MasonrySizes.Any(size => Math.Abs(size - t) < 3)) Add(-20, MasonrySizeReason);
+        else if (t < 150) Add(-10, ThinReason);
+        else if (t <= 500 && Math.Abs(t / 50 - Math.Round(t / 50)) < 0.01) Add(10, ConcreteSizeReason);
 
-        if (wall.Length < options.WallElongation * t) Add(-1, ShortReason);
-        if (wall.LayerOff) Add(-3, LayerOffReason);
+        if (wall.Length < options.WallElongation * t) Add(-10, ShortReason);
+        if (wall.LayerOff) Add(-30, LayerOffReason);
 
         if (OnGrid(wall, frame, options) is { } grid)
         {
             wall.Grid = grid;
-            Add(1, GridReason);
+            Add(10, GridReason);
         }
         var touchesColumn = columns.Where(c => c.Kind == "column").Any(column =>
             new[] { (wall.X0, wall.Y0), (wall.X1, wall.Y1) }.Any(end =>
                 Inside(column.Points, end.Item1, end.Item2) || Distance(column.Points, end.Item1, end.Item2) <= options.ColumnContactMm + t / 2));
-        if (touchesColumn) Add(1, ColumnReason);
+        if (touchesColumn) Add(10, ColumnReason);
 
         var (dx, dy) = wall.Direction;
         var onWallBelow = wallsBelow.Where(s => s.Kind == "wall" && s.Points.Count == 4).Any(below =>
@@ -339,7 +329,8 @@ public static partial class WallRecognizer
             var overlap = Math.Min(Math.Max(a, b), length) - Math.Max(Math.Min(a, b), 0);
             return overlap >= 0.5 * wall.Length;
         });
-        if (onWallBelow) Add(2, BelowReason);
+        if (onWallBelow) Add(20, BelowReason);
+        if (!touchesColumn && !onWallBelow) Add(-20, UnsupportedReason);
     }
 
     // Walls joined end to face form clusters; a cluster of three or more walls in both directions is a core, and
@@ -358,11 +349,11 @@ public static partial class WallRecognizer
             if (cluster.Count < 3) continue;
             var (dx, dy) = cluster[0].Direction;
             if (!cluster.Any(wall => Math.Abs(wall.Direction.X * dx + wall.Direction.Y * dy) < 0.035)) continue;
-            foreach (var wall in cluster) wall.Add(1, CoreReason);
+            foreach (var wall in cluster) wall.Add(10, CoreReason);
             var (minX, maxX) = (cluster.Min(w => Math.Min(w.X0, w.X1)), cluster.Max(w => Math.Max(w.X0, w.X1)));
             var (minY, maxY) = (cluster.Min(w => Math.Min(w.Y0, w.Y1)), cluster.Max(w => Math.Max(w.Y0, w.Y1)));
             if (texts.Any(text => text.X >= minX && text.X <= maxX && text.Y >= minY && text.Y <= maxY && LiftText().IsMatch(text.Text)))
-                foreach (var wall in cluster) wall.Add(1, LiftTextReason);
+                foreach (var wall in cluster) wall.Add(10, LiftTextReason);
         }
     }
 

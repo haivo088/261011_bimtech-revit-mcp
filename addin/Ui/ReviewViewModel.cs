@@ -12,6 +12,7 @@ namespace Bimtech.RevitMcp.Ui;
 public sealed class ReviewViewModel(PlanService plans) : INotifyPropertyChanged
 {
     private string _message = "";
+    private bool _showAutoItems;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -21,7 +22,41 @@ public sealed class ReviewViewModel(PlanService plans) : INotifyPropertyChanged
     public ObservableCollection<PlanItemRow> BlockedItems { get; } = [];
 
     public string Title => Plan?.Title ?? "";
-    public string ItemsHeader => $"Mục cần duyệt ({Items.Count})";
+    // The window's title bar names the plan, so a window left on an older plan is never mistaken for the new one.
+    public string WindowTitle => Plan is null ? "BIMTECH · Duyệt kế hoạch" : $"BIMTECH · Duyệt kế hoạch {Plan.PlanId}";
+    public string ItemsHeader
+    {
+        get
+        {
+            var auto = Items.Count(IsAutoApproved);
+            return auto == 0 ? $"Mục cần duyệt ({Items.Count})" : $"Cần xem ({Items.Count - auto}) · tự duyệt {auto}";
+        }
+    }
+
+    // Items approved by their confidence are hidden unless the reviewer asks to see them: the list shows what needs a look.
+    public bool ShowAutoItems
+    {
+        get => _showAutoItems;
+        set
+        {
+            if (_showAutoItems == value) return;
+            _showAutoItems = value;
+            PropertyChanged?.Invoke(this, new(nameof(ShowAutoItems)));
+        }
+    }
+
+    public bool IsVisible(PlanItemRow row) => ShowAutoItems || !IsAutoApproved(row);
+
+    private static bool IsAutoApproved(PlanItemRow row) => row.IsAuto && row.Status == PlanItemStatus.Approved;
+
+    // Why the plan can no longer be edited; empty while it can.
+    public string ReadOnlyNotice => Plan?.Status switch
+    {
+        PlanStatus.Committed => "Kế hoạch này đã ghi vào mô hình, không sửa được nữa.",
+        PlanStatus.Cancelled => "Kế hoạch này đã huỷ, không sửa được nữa.",
+        PlanStatus.Stale => "Kế hoạch này đã cũ vì mô hình đổi sau khi đề xuất. Nhờ Claude đề xuất lại.",
+        _ => "",
+    };
     public string BlockedHeader => $"Câu hỏi cho thiết kế ({BlockedItems.Count})";
     public bool CanEdit => Plan?.Status is PlanStatus.InReview or PlanStatus.Approved;
     public bool CanApprovePlan => Plan?.Status == PlanStatus.InReview

@@ -151,7 +151,6 @@ export const scanCadWalls = defineTool({
     gridToleranceMm: z.number().min(0).max(200).optional().describe("How close to a grid a wall face or centre counts as on it (default 15)."),
     columnMaxLengthMm: z.number().min(0).max(5000).optional()
       .describe("Hatches no longer than this are columns, not walls (default 1000)."),
-    sureScore: z.number().int().min(1).max(20).optional().describe("Evidence score from which a wall is proposed by default (default 3)."),
     layers: layerList("wall outlines").describe("Only for drawings without hatches: layers holding wall outlines as line pairs."),
     textSearchMm: z.number().min(1).max(20000).optional()
       .describe("With layers only: how far from a wall to look for its text."),

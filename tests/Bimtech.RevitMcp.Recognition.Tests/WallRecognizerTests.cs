@@ -123,7 +123,7 @@ public class WallRecognizerTests
         Assert.False(result.ColumnPatternsFromModel);
         var shared = Near(result, 400, 0);
         // Guessed from shape only: a hint.
-        Assert.Contains(shared.Reasons, r => r == "+1 " + WallRecognizer.ColumnPatternReason);
+        Assert.Contains(shared.Reasons, r => r == "+10% " + WallRecognizer.ColumnPatternReason);
         Assert.True(shared.Sure);
         var other = Near(result, 0, 3150);
         Assert.DoesNotContain(other.Reasons, r => r.EndsWith(WallRecognizer.ColumnPatternReason));
@@ -141,7 +141,7 @@ public class WallRecognizerTests
 
         Assert.True(result.ColumnPatternsFromModel);
         var wall = Assert.Single(result.Walls);
-        Assert.Contains(wall.Reasons, r => r == "+2 " + WallRecognizer.ColumnPatternReason);
+        Assert.Contains(wall.Reasons, r => r == "+20% " + WallRecognizer.ColumnPatternReason);
     }
 
     [Fact]
@@ -171,7 +171,7 @@ public class WallRecognizerTests
         Assert.Equal("A", wall.Grid);
         Assert.Contains(wall.Reasons, r => r.EndsWith(WallRecognizer.GridReason));
         Assert.Contains(wall.Reasons, r => r.EndsWith(WallRecognizer.ColumnReason));
-        Assert.Contains(wall.Reasons, r => r == "+2 " + WallRecognizer.BelowReason);
+        Assert.Contains(wall.Reasons, r => r == "+20% " + WallRecognizer.BelowReason);
         Assert.True(wall.Sure);
     }
 

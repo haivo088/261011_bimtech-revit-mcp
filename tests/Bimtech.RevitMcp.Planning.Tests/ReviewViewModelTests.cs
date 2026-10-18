@@ -61,6 +61,36 @@ public sealed class ReviewViewModelTests : IDisposable
         Assert.Equal("95%", _model.Items[0].ConfidenceText);
         Assert.Equal("", _model.Items[1].ConfidenceText);
         Assert.Equal("DuAn · Đang duyệt · 1 duyệt (1 tự duyệt) · 0 bỏ · 1 chờ", _model.StatusLine);
+        Assert.Equal("Cần xem (1) · tự duyệt 1", _model.ItemsHeader);
+    }
+
+    [Fact]
+    public void The_list_hides_automatic_approvals_until_asked()
+    {
+        var sure = Item("E1", PlanTier.Review);
+        sure.Confidence = 0.8;
+        var document = new PlanDocument { Title = "DuAn", Path = @"D:\DuAn.rvt", StorageFolder = _folder };
+        _model.Load(_plans.Create(document, "set_parameters", "Đặt Comments", scope: null, [sure, Item("E2", PlanTier.Review)]));
+
+        Assert.False(_model.IsVisible(_model.Items[0]));
+        Assert.True(_model.IsVisible(_model.Items[1]));
+        _model.ShowAutoItems = true;
+        Assert.True(_model.IsVisible(_model.Items[0]));
+        // An automatic approval the reviewer undoes needs a look again.
+        _model.ShowAutoItems = false;
+        _model.SetStatus([_model.Items[0]], PlanItemStatus.Rejected);
+        Assert.True(_model.IsVisible(_model.Items[0]));
+    }
+
+    [Fact]
+    public void A_plan_that_can_no_longer_change_says_so()
+    {
+        Assert.Equal("", _model.ReadOnlyNotice);
+        Assert.Contains(_model.Plan!.PlanId, _model.WindowTitle);
+
+        _model.CancelPlan();
+
+        Assert.Equal("Kế hoạch này đã huỷ, không sửa được nữa.", _model.ReadOnlyNotice);
     }
 
     [Fact]

@@ -12,7 +12,7 @@ namespace Bimtech.RevitMcp.Planning.Actions;
 //     "piles": [{ "x": .., "y": .., "diameterMm": 600, "typeId": "..." | null, "templateTypeId": "..." | null }] }   (mm)
 // The cap type is the given one, else a type of that thickness (reused or created as BTC-DaiMong_<h>). Pile tops sit at
 // the cap level minus that cap's thickness. Piles and the cap are joined with each other only, never with the rest of
-// the model. A cap or pile already modelled at that spot is skipped, not duplicated.
+// the model. A cap of about that size already modelled at that spot, or a pile there, is skipped, not duplicated.
 public sealed class CreatePileCapAction : IPlanAction
 {
     public string Action => "create_pile_cap";
@@ -31,7 +31,9 @@ public sealed class CreatePileCapAction : IPlanAction
               ?? throw new PlanActionException("The lean-concrete type no longer exists.");
 
         var center = Center(outline);
-        if (PileFoundationPlacer.FindDuplicate(center, PileFoundationPlacer.ExistingCapBoxes(document, lotType?.Id)) is { } existing)
+        var corners = outline.Select(curve => curve.GetEndPoint(0)).ToList();
+        var (sizeX, sizeY) = (corners.Max(p => p.X) - corners.Min(p => p.X), corners.Max(p => p.Y) - corners.Min(p => p.Y));
+        if (PileFoundationPlacer.FindDuplicateCap(center, sizeX, sizeY, PileFoundationPlacer.ExistingCapBoxes(document, lotType?.Id)) is { } existing)
             return new { skipped = $"A cap already exists here ({RevitJson.Id(existing)}); nothing was added." };
 
         try

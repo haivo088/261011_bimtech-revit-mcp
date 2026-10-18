@@ -5,6 +5,7 @@ using Bimtech.RevitMcp.Commands.Common;
 using Bimtech.RevitMcp.Commands.Plans;
 using Bimtech.RevitMcp.Planning;
 using Bimtech.RevitMcp.Protocol;
+using Bimtech.RevitMcp.Recognition;
 using Bimtech.RevitMcp.Ui;
 using Bimtech.StructuralCore.Piles;
 
@@ -93,7 +94,7 @@ public sealed class ProposePilesCommand(PlanService plans, ReviewWindowHost revi
         foreach (var cap in ordered)
         {
             context.Cancellation.ThrowIfCancellationRequested();
-            if (PileFoundationPlacer.FindDuplicate(cap.Boundary.Center, existingCaps) is { } existingId)
+            if (PileFoundationPlacer.FindDuplicateCap(cap.Boundary.Center, cap.Boundary.LengthFeet, cap.Boundary.WidthFeet, existingCaps) is { } existingId)
             {
                 alreadyModeled.Add($"{cap.Label} (đài {RevitJson.Id(existingId)})");
                 continue;
@@ -106,6 +107,18 @@ public sealed class ProposePilesCommand(PlanService plans, ReviewWindowHost revi
                 gridTheta, snap, snapMm, lotType, lotOffsetMm, embedmentMm, pileLengthMm, join);
             if (scan.MaybeCaps?.Contains(cap) == true) item.Reasons.Add("Bằng chứng chưa đủ, nên xem lại trên mặt bằng.");
             if (scan.CapEvidence?.GetValueOrDefault(cap) is { Count: > 0 } evidence) item.Reasons.Add("Vì sao: " + string.Join("; ", evidence));
+            // As sure as the cap and its least sure pile; a cap type to create needs a look.
+            if (scan.CapPercents is { } capPercents && capPercents.TryGetValue(cap, out var capPercent) && item.Tier == PlanTier.Review)
+                item.Confidence = ConfidenceRules.Group(
+                    piles.Select(pile => scan.PilePercents?.GetValueOrDefault(pile.Circle, Evidence.BasePercent) ?? Evidence.BasePercent).Append(capPercent),
+                    needsLook: thickness.Type is null);
+            // Named by where it is, so the reviewer finds it on the plan: "Đài #37 · 4900x4500 · B-2".
+            var at = scan.CapGrids?.GetValueOrDefault(cap);
+            item.Source = JsonSerializer.SerializeToElement(new
+            {
+                name = $"{cap.Label} · {PileScan.SizeKey(cap)}" + (at is null ? "" : $" · {at}"),
+                category = "Structural Foundations",
+            });
             items.Add(item);
         }
 

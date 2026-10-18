@@ -51,7 +51,7 @@ public sealed class PileRecognizerTests
         {
             Assert.True(pile.Sure);
             Assert.NotNull(pile.Cap);
-            Assert.Contains("+2 " + PileRecognizer.InCapReason, pile.Reasons);
+            Assert.Contains("+20% " + PileRecognizer.InCapReason, pile.Reasons);
         });
     }
 
@@ -68,7 +68,7 @@ public sealed class PileRecognizerTests
 
         Assert.Equal(8, result.Piles.Count);
         Assert.Equal(2, result.DroppedPiles.Count);
-        Assert.All(result.DroppedPiles, pile => Assert.Contains("-4 " + PileRecognizer.BubbleReason, pile.Reasons));
+        Assert.All(result.DroppedPiles, pile => Assert.Contains("-60% " + PileRecognizer.BubbleReason, pile.Reasons));
     }
 
     [Fact]
@@ -81,7 +81,7 @@ public sealed class PileRecognizerTests
 
         var empty = result.Caps.Concat(result.DroppedCaps).Single(cap => cap.Cx == 3000);
         Assert.False(empty.Sure);
-        Assert.Contains("-2 " + PileRecognizer.NoPileReason, empty.Reasons);
+        Assert.Contains("-20% " + PileRecognizer.NoPileReason, empty.Reasons);
     }
 
     [Fact]
@@ -94,8 +94,23 @@ public sealed class PileRecognizerTests
 
         var frame = result.Caps.Concat(result.DroppedCaps).Single(cap => cap.Length > 8000);
         Assert.False(frame.Sure);
-        Assert.Contains("-3 " + PileRecognizer.HoldsCapsReason, frame.Reasons);
+        Assert.Contains(Evidence.VetoReason(PileRecognizer.HoldsCapsReason), frame.Reasons);
         Assert.All(result.Piles, pile => Assert.True(pile.Cap!.Length < 3000));
+    }
+
+    // The column drawn on a cap (a 1000 x 1000 square at the crossing, no pile of its own) is not a second cap.
+    [Fact]
+    public void A_column_outline_inside_a_cap_is_not_a_cap()
+    {
+        var scene = TwoCaps();
+        Cap(scene, 0, 0, 250);
+
+        var result = PileRecognizer.Recognize(scene, Grids, null);
+
+        Assert.DoesNotContain(result.Caps, cap => cap.Length < 1500);
+        var column = Assert.Single(result.DroppedCaps, cap => cap.Length < 1500);
+        Assert.Contains(Evidence.VetoReason(PileRecognizer.InsideCapReason), column.Reasons);
+        Assert.Equal(2, result.Caps.Count);
     }
 
     [Fact]
@@ -123,6 +138,6 @@ public sealed class PileRecognizerTests
         var cap = result.Caps.OrderBy(c => c.Cx).First();
         Assert.Equal("Đ1", cap.Tag?.Name);
         Assert.Equal(1200, cap.Tag?.ThicknessMm);
-        Assert.Contains("+1 " + PileRecognizer.CapTagReason, cap.Reasons);
+        Assert.Contains("+10% " + PileRecognizer.CapTagReason, cap.Reasons);
     }
 }

@@ -39,6 +39,7 @@ public partial class SettingsWindow : Window
         PortBox.Text = settings.Port.ToString();
         MaxElementsBox.Text = settings.MaxElementsPerWrite.ToString();
         AutoStartCheck.IsChecked = settings.AutoStartBridge;
+        AutoCommitCheck.IsChecked = settings.AutoCommitSure;
         FilePathText.Text = "Lưu tại: " + SettingsStore.FilePath;
 
         _rows = registry.Commands.Select(command => new CommandRow(
@@ -97,6 +98,7 @@ public partial class SettingsWindow : Window
                 Port = port,
                 MaxElementsPerWrite = maxElements,
                 AutoStartBridge = AutoStartCheck.IsChecked == true,
+                AutoCommitSure = AutoCommitCheck.IsChecked == true,
             });
         }
         catch (Exception exception) when (exception is System.IO.IOException or UnauthorizedAccessException)

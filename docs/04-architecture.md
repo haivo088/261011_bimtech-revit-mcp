@@ -101,12 +101,13 @@ Mỗi loại công việc mới (cột, dầm, móng…) chỉ cần thêm **m�
 }
 ```
 
-- `confidence` (0..1) và `tier`. Mục có độ tin cậy từ **0,9** (`PlanConfidence.AutoApproveFrom`) thành `tier: "auto"` và **bắt đầu ở trạng thái đã duyệt** ("Tự duyệt"); người dùng vẫn phải bấm "Duyệt kế hoạch" và có thể bỏ duyệt từng mục. Mục bị chặn không bao giờ tự duyệt. Luật chấm (`addin/Recognition/ConfidenceRules.cs`, chỉ cho điểm 0,95 khi mọi phần tử của nhóm đạt):
-  - **Trục**: kiểu nét trục, vòng tròn đầu trục, tên đọc được (`GridRecognizer`).
-  - **Cột**: mọi cột ở giao trục, Type có sẵn đúng b×h (hoặc người dùng gán), ký hiệu khớp kích thước vẽ.
-  - **Vách**: nhóm "chắc chắn", mỗi vách có hatch, dày đúng cỡ vách bê tông và ít nhất 3 bằng chứng thuận; không có vách ghép từ nét mồ côi.
-  - **Dầm**: kích thước đọc từ ký hiệu (không phải bề rộng đo hay chiều cao người dùng nhập), không dầm nào mượn ký hiệu, lệch bề rộng hay nét đứt. Hai đầu dầm luôn tựa lên cột hoặc vách vì bộ nhận diện chỉ giữ nhịp từ gối tới gối.
-  - Cọc, sàn, tầng, đặt tham số: chưa có luật, luôn phải duyệt.
+- `confidence` (0..1) và `tier`, trên **một thang tin cậy chung** (`addin/Recognition/Evidence.cs`):
+  - Mỗi ứng viên (cột, vách, cọc, đài, dầm) **bắt đầu từ 50%**: chưa có bằng chứng nào thuận hay nghịch.
+  - Bằng chứng cộng trừ theo trọng số: quan hệ kết cấu mạnh ±20% (giao trục, cọc trong đài, gối bên dưới, hatch, dầm tựa hai đầu), bằng chứng phụ ±10% (kích thước lặp, ký hiệu, chia đều nhịp, nét khuất), tên layer ±5% (chỉ là gợi ý). Lý do ghi dạng `+20% ở giao trục`.
+  - **Loại trừ là phủ quyết**, không phải điểm trừ (`loại trừ: …`): mảnh vách bị cửa cắt, đài bao lấy đài khác, dầm phụ to hơn dầm gối bị giữ tối đa **40%** (luôn phải xem); đường bao cột vẽ trong đài và dải tường mảnh bị giữ ở 10% (bỏ). Vòng tròn đầu trục −60%.
+  - **≥ 50%: tự duyệt** (`PlanConfidence.AutoApproveFrom`, `tier: "auto"`, bắt đầu ở trạng thái "Tự duyệt"); 20–50%: cần xem (nhóm `-maybe` riêng, để một phần tử nghi ngờ không giữ lại cả nhóm); dưới 20%: bỏ, chỉ báo số lượng và lý do.
+  - Một mục duyệt chứa cả nhóm, nên **bằng phần tử kém chắc nhất** (`ConfidenceRules.Group`). Mục sắp **tạo Type mới**, hay ký hiệu và hình vẽ lệch nhau, luôn phải xem (giữ dưới 50%). Dầm chính: 50% +20% hai gối +10% kích thước từ ký hiệu, −10% mỗi điều lệch (mượn ký hiệu, lệch bề rộng, nét đứt, không trên trục). Trục: theo `GridRecognizer`. Sàn, tầng, đặt tham số: chưa có luật, luôn phải duyệt.
+  - **Tự commit** (BIMTECH MCP Settings, "Tự commit kế hoạch khi mọi mục đủ tin cậy", mặc định tắt): khi bật, kế hoạch mà **mọi mục đều tự duyệt** và không có mục bị chặn được duyệt thay người dùng ngay khi đề xuất (`approval.automatic`, kết quả có `autoApproved: true`), không mở cửa sổ duyệt; Claude gọi `commit_plan` luôn. Quyền này thuộc cài đặt người dùng bật trong Revit; không lệnh JSON-RPC nào tự duyệt (test hợp đồng vẫn kiểm).
 - `tier` có ba giá trị: `auto` (được ghi không cần duyệt từng mục), `review` (cần duyệt), `blocked` (không được ghi; chuyển thành câu hỏi cho thiết kế).
 - `overrides` chứa giá trị người dùng sửa trong cửa sổ duyệt; khi commit, `overrides` được gộp đè lên `params`.
 - `result` sau khi commit chứa ID phần tử Revit đã tạo, hoặc thông báo lỗi.

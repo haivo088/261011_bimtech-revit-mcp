@@ -70,6 +70,8 @@ public sealed class PlanApproval
     public DateTimeOffset ApprovedAt { get; set; }
     public List<string> ApprovedItemIds { get; set; } = [];
     public string ItemsHash { get; set; } = "";
+    // Approved by the person's auto-commit setting (every item sure) rather than in the review window.
+    public bool Automatic { get; set; }
 
     // SHA-256 over each item's ID, action, params and overrides, in the order given.
     public static string HashItems(IEnumerable<PlanItem> items)
@@ -118,8 +120,9 @@ public enum PlanTier { Auto, Review, Blocked }
 
 public static class PlanConfidence
 {
-    // Items at least this sure start approved. High on purpose: a wrong auto-approval costs more than a click.
-    public const double AutoApproveFrom = 0.9;
+    // Items at least this sure start approved: the Evidence scale starts here (no evidence either way), so an item is
+    // approved unless something speaks against it. Recognition::Evidence.AutoFromPercent is the same threshold.
+    public const double AutoApproveFrom = 0.5;
 
     // Turns sure Review items into pre-approved Auto items. Blocked items stay blocked whatever their confidence.
     public static void Apply(IEnumerable<PlanItem> items)

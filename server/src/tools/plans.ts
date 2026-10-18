@@ -58,8 +58,10 @@ export const commitPlan = defineTool({
   method: "commit_plan",
   title: "Commit approved plan",
   description:
-    "Write the items the user approved in the Revit review window into the model. Call it only after the user "
-    + "says they finished reviewing and get_plan_status shows status Approved; pass that approvalId. "
+    "Write the items the user approved in the Revit review window into the model. Call it after the user says they "
+    + "finished reviewing and get_plan_status shows status Approved, or at once when a propose result says "
+    + "autoApproved: true (the user turned on auto-commit in the Revit settings and every item was sure, so there is "
+    + "nothing to review); pass that approvalId. "
     + "Rejected items are never written. The whole commit is one undo step in Revit. Errors: -32022 the model "
     + "changed since the plan was proposed (plan becomes Stale; propose again), -32023 the approvalId is not the "
     + "latest (read get_plan_status again). Calling it again on a committed plan returns the same results.",

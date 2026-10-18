@@ -54,7 +54,6 @@ public sealed class ScanCadWallsCommand : IRevitCommand
         {
             GridToleranceMm = p.GetDouble("gridToleranceMm", 15, 0, 200),
             ColumnMaxLengthMm = p.GetDouble("columnMaxLengthMm", 1000, 0, 5000),
-            SureScore = p.GetInt("sureScore", 3, 1, 20),
         };
 
         var path = p.GetString("dwgPath", 1024) ?? DwgSource.LinkedPath(document, cad)
@@ -168,6 +167,7 @@ public sealed class ScanCadWallsCommand : IRevitCommand
             Segments = [(start + half, end + half), (start - half, end - half)],
             Sure = wall.Sure,
             Evidence = wall.Reasons,
+            Percent = wall.Percent,
             Grid = wall.Grid,
         };
     }

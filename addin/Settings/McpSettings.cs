@@ -23,6 +23,10 @@ public sealed record McpSettings
     // Blocks every command that changes the model, whatever DisabledCommands says.
     public bool ReadOnlyMode { get; init; }
 
+    // A plan whose every item is sure (nothing to review, nothing blocked) is approved on the person's behalf as soon as
+    // it is proposed, so Claude commits it without the review window. The person turns it on; Claude never approves.
+    public bool AutoCommitSure { get; init; }
+
     // Upper bound for elements one write call may create, e.g. beams in propose_beams.
     public int MaxElementsPerWrite { get; init; } = DefaultMaxElementsPerWrite;
 

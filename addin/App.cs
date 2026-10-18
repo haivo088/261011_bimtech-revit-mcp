@@ -17,7 +17,8 @@ public class App : IExternalApplication
     internal const string Version = "0.5.0";
     internal static TcpBridge? Bridge { get; private set; }
     // Shared by every bridge session; plans themselves live in JSON files.
-    internal static PlanService Plans { get; } = new(new JsonPlanStore());
+    // Sure plans are approved at once when the person turned on AutoCommitSure in the settings window.
+    internal static PlanService Plans { get; } = new(new JsonPlanStore(), autoApproveSure: () => SettingsStore.Current.AutoCommitSure);
     // Created in a Revit API context the first time it is needed; outlives the bridge,
     // so an open review window keeps working while the bridge is stopped and restarted.
     internal static ReviewWindowHost? Review { get; private set; }

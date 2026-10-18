@@ -3,43 +3,41 @@ using Xunit;
 
 namespace Bimtech.RevitMcp.Recognition.Tests;
 
-// Only groups that pass every check reach 0.9, where the review window ticks them; the rest stay below.
+// One scale: 50% means no evidence either way, which is also where items start approved.
 public sealed class ConfidenceRulesTests
 {
-    private const double AutoApproveFrom = 0.9;
+    private const double AutoApproveFrom = Evidence.AutoFromPercent / 100.0;
 
     [Fact]
-    public void Columns_are_sure_only_at_crossings_with_an_existing_type()
+    public void An_item_is_as_sure_as_its_least_sure_element()
     {
-        Assert.Equal(ConfidenceRules.Sure, ConfidenceRules.Columns(18, 18, existingType: true, tagMismatch: false));
-        Assert.True(ConfidenceRules.Columns(18, 17, existingType: true, tagMismatch: false) < AutoApproveFrom);
-        Assert.True(ConfidenceRules.Columns(18, 18, existingType: false, tagMismatch: false) < AutoApproveFrom);
-        Assert.True(ConfidenceRules.Columns(18, 18, existingType: true, tagMismatch: true) < AutoApproveFrom);
-        Assert.Equal(0, ConfidenceRules.Columns(4, 0, existingType: true, tagMismatch: false));
+        Assert.Equal(0.6, ConfidenceRules.Group([90, 60, 100]));
+        Assert.Equal(0.5, ConfidenceRules.Group([]));
+        Assert.True(ConfidenceRules.Group([90, 45]) < AutoApproveFrom);
     }
 
     [Fact]
-    public void Walls_are_sure_with_hatch_concrete_thickness_and_three_reasons_each()
+    public void A_type_to_create_always_needs_a_look()
     {
-        string[] strong = ["+1 có hatch", "+1 dày đúng cỡ vách bê tông", "+1 thuộc cụm vách (lõi)"];
-        string[] noConcrete = ["+1 có hatch", "+1 nối vào cột", "+1 thuộc cụm vách (lõi)"];
-        string[] twoReasons = ["+1 có hatch", "+1 dày đúng cỡ vách bê tông", "-1 ngắn so với bề dày, có thể là cột dẹt"];
-
-        Assert.Equal(ConfidenceRules.Sure, ConfidenceRules.Walls(true, [strong, strong], repaired: false));
-        Assert.True(ConfidenceRules.Walls(true, [strong, noConcrete], repaired: false) < AutoApproveFrom);
-        Assert.True(ConfidenceRules.Walls(true, [twoReasons], repaired: false) < AutoApproveFrom);
-        Assert.True(ConfidenceRules.Walls(true, [strong], repaired: true) < AutoApproveFrom);
-        Assert.True(ConfidenceRules.Walls(false, [strong], repaired: false) < AutoApproveFrom);
-        Assert.Null(ConfidenceRules.Walls(null, [strong], repaired: false));
+        Assert.True(ConfidenceRules.Group([100, 95], needsLook: true) < AutoApproveFrom);
+        Assert.Equal(0.3, ConfidenceRules.Group([30], needsLook: true));
     }
 
     [Fact]
-    public void Beams_are_sure_only_when_the_mark_gives_the_size_and_every_beam_is_clean()
+    public void Main_beams_are_sure_unless_several_things_are_off()
     {
-        Assert.Equal(ConfidenceRules.Sure, ConfidenceRules.Beams(12, sizeFromMark: true, 0, 0, 0));
-        Assert.True(ConfidenceRules.Beams(12, sizeFromMark: false, 0, 0, 0) < AutoApproveFrom);
-        Assert.True(ConfidenceRules.Beams(12, sizeFromMark: true, inheritedMarks: 1, 0, 0) < AutoApproveFrom);
-        Assert.True(ConfidenceRules.Beams(12, sizeFromMark: true, 0, widthMismatches: 1, 0) < AutoApproveFrom);
-        Assert.True(ConfidenceRules.Beams(12, sizeFromMark: true, 0, 0, brokenLines: 1) < AutoApproveFrom);
+        Assert.Equal(80, ConfidenceRules.MainBeam(sizeFromMark: true, inheritedMark: false, widthMismatch: false, broken: false, onGrid: true));
+        Assert.Equal(70, ConfidenceRules.MainBeam(sizeFromMark: false, inheritedMark: false, widthMismatch: false, broken: false, onGrid: true));
+        Assert.True(Evidence.IsSure(ConfidenceRules.MainBeam(true, inheritedMark: true, widthMismatch: true, broken: false, onGrid: true)));
+        Assert.False(Evidence.IsSure(ConfidenceRules.MainBeam(true, inheritedMark: true, widthMismatch: true, broken: true, onGrid: false)));
+    }
+
+    [Fact]
+    public void Evidence_reasons_carry_their_weight_in_percent()
+    {
+        Assert.Equal("+20% ở giao trục", Evidence.Reason(20, "ở giao trục"));
+        Assert.Equal("-50% đoạn vách", Evidence.Reason(-50, "đoạn vách"));
+        Assert.True(Evidence.IsKept(20));
+        Assert.False(Evidence.IsKept(19));
     }
 }

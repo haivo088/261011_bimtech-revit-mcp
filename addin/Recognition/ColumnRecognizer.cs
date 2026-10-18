@@ -9,7 +9,9 @@ namespace Bimtech.RevitMcp.Recognition;
 //     it, a column or pile cap of the storey below under it, a column-like layer name;
 //   − inside a wall hatch, a layer named like something else (doors, furniture, dimensions...), and alone: on no
 //     grid, without hatch and of a size found nowhere else.
-// Layer names are a hint, never a gate. Score ≥ SureScore: sure; 1..SureScore-1: to review; ≤ 0: dropped, still
+// Layer names are a hint, never a gate. Weighed on the Evidence scale: from 50% (no evidence either way), strong
+// relations ±20%, supporting evidence ±10%, layer names ±5%, a wall cut by doors −50%; sure from 50%, to review from
+// 20%, dropped below, still
 // reported with its reasons. The same column drawn twice (outline and hatch, or on two layers) counts once.
 // All lengths are model mm.
 public static partial class ColumnRecognizer
@@ -32,13 +34,13 @@ public static partial class ColumnRecognizer
         public double MaxWallMm { get; init; } = 600;
         // Pieces of a wall further apart than this are not one wall cut by a door.
         public double MaxOpeningMm { get; init; } = 2500;
-        public int SureScore { get; init; } = 3;
     }
 
     // A rectangle found in the drawing: from an outline (polyline or touching lines) or from a hatch's outer loop.
     public sealed record Shape(string Layer, double Cx, double Cy, double Length, double Width, double AngleRadians, bool IsHatch);
 
-    public sealed class Column
+    // Percent and signed reasons, e.g. "+20% ở giao trục", from Weighed.
+    public sealed class Column : Weighed
     {
         public double Cx { get; init; }
         public double Cy { get; init; }
@@ -52,19 +54,9 @@ public static partial class ColumnRecognizer
         // "A-1" at a grid crossing, "trục 3" on one grid, else null.
         public string? Grid { get; set; }
         public ColumnTag? Tag { get; set; }
-        public int Score { get; private set; }
-        public bool Sure { get; set; }
-        // Signed evidence, e.g. "+2 ở giao trục".
-        public List<string> Reasons { get; } = [];
 
         public double SizeA => Math.Round(Math.Min(Length, Width) / 5) * 5;
         public double SizeB => Math.Round(Math.Max(Length, Width) / 5) * 5;
-
-        internal void Add(int points, string reason)
-        {
-            Score += points;
-            Reasons.Add($"{(points > 0 ? "+" : "")}{points} {reason}");
-        }
     }
 
     // HatchOnly: hatches of column size on no outline, not taken as columns.
@@ -161,25 +153,24 @@ public static partial class ColumnRecognizer
             var column = columns[i];
             column.Tag = tags[i];
             var onGrid = Grid(column, frame, options);
-            if (onGrid == 2) column.Add(2, CrossingReason);
-            else if (onGrid == 1) column.Add(1, OneGridReason);
-            if (column.HasHatch) column.Add(2, HatchReason);
+            if (onGrid == 2) column.Add(20, CrossingReason);
+            else if (onGrid == 1) column.Add(10, OneGridReason);
+            if (column.HasHatch) column.Add(20, HatchReason);
             var repeated = sizes[(column.SizeA, column.SizeB)] >= options.RepeatCount;
-            if (repeated) column.Add(1, RepeatReason);
-            if (column.Tag?.Name is not null) column.Add(1, TagReason);
+            if (repeated) column.Add(10, RepeatReason);
+            if (column.Tag?.Name is not null) column.Add(10, TagReason);
             var onSupport = below.Any(support => Contains(support.Points, column.Cx, column.Cy, options.SupportOffsetMm));
-            if (onSupport) column.Add(2, BelowReason);
-            if (column.Layers.Any(layer => ColumnLayer().IsMatch(layer))) column.Add(1, ColumnLayerReason);
-            else if (column.Layers.Count > 0 && column.Layers.All(layer => OtherLayer().IsMatch(layer))) column.Add(-1, OtherLayerReason);
+            if (onSupport) column.Add(20, BelowReason);
+            if (column.Layers.Any(layer => ColumnLayer().IsMatch(layer))) column.Add(5, ColumnLayerReason);
+            else if (column.Layers.Count > 0 && column.Layers.All(layer => OtherLayer().IsMatch(layer))) column.Add(-5, OtherLayerReason);
             // A piece of the wall: no wider than the wall it sits in. A wider column is one the wall runs into.
             if (wallLoops.Any(wall => Math.Min(column.Length, column.Width) <= wall.Thickness + options.SameSizeMm
                     && Contains(wall.Loop, column.Cx, column.Cy, 0)))
-                column.Add(-2, InWallReason);
-            if (onGrid == 0 && !column.HasHatch && !repeated && column.Tag?.Name is null && !onSupport) column.Add(-1, AloneReason);
-            if (InWallRun(column, columns, options)) column.Add(-3, WallRunReason);
-            column.Sure = column.Score >= options.SureScore;
+                column.Add(-20, InWallReason);
+            if (onGrid == 0 && !column.HasHatch && !repeated && column.Tag?.Name is null && !onSupport) column.Add(-10, AloneReason);
+            if (InWallRun(column, columns, options)) column.Veto(WallRunReason);
         }
-        return new Result(columns.Where(column => column.Score > 0).ToList(), columns.Where(column => column.Score <= 0).ToList(),
+        return new Result(columns.Where(column => Evidence.IsKept(column.Percent)).ToList(), columns.Where(column => !Evidence.IsKept(column.Percent)).ToList(),
             shapes.Count(shape => !shape.IsHatch), shapes.Count(shape => shape.IsHatch), hatchOnly);
     }
 

@@ -28,8 +28,10 @@ public sealed class ReviewWindowHost : IDisposable
 
     // Opens the window, or brings it forward with this plan. Returns at once;
     // the person reviews while Claude and Revit carry on.
-    public void Show(Plan plan, UIApplication application)
+    // A plan the auto-commit setting already approved has nothing to review: no window. open_plan_review still shows it.
+    public void Show(Plan plan, UIApplication application, bool evenIfAutoApproved = false)
     {
+        if (plan.Approval?.Automatic == true && !evenIfAutoApproved) return;
         if (_application is null)
         {
             _application = application.Application;

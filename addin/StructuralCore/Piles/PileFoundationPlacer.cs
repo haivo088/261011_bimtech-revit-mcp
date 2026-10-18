@@ -11,6 +11,7 @@ internal static class PileFoundationPlacer
 
     /// <summary>Ngưỡng mở rộng bounding box (X/Y) khi chống đặt trùng.</summary>
     private const double DuplicateExpandMm = 5.0;
+    private const double CapSizeToleranceMm = 300;
 
     /// <summary>Tên tham số family cọc quyết định chiều cao cọc ăn vào đài — set trực tiếp vào biến này thay vì cộng dồn vào cao độ đặt cọc.</summary>
     private const string PileEmbedmentParam = "Minimum Embedment";
@@ -458,6 +459,24 @@ internal static class PileFoundationPlacer
         }
 
         return boxes;
+    }
+
+    /// <summary>Đài đã có trùng đài sắp dựng: box chứa tâm VÀ hai cạnh gần bằng (lệch không quá 300 mm hay 20%). Một hình
+    /// nhỏ ở cùng tâm (cột, cổ móng vẽ trên đài) không chặn đài thật, và đài thật không chặn nó. sizeA/sizeB: cạnh box
+    /// trục X/Y của đài sắp dựng (feet, thứ tự tuỳ ý).</summary>
+    internal static ElementId? FindDuplicateCap(XYZ center, double sizeAFeet, double sizeBFeet, List<(PlanBox Box, ElementId Id)> boxes)
+    {
+        var expand = UnitUtils.ConvertToInternalUnits(DuplicateExpandMm, UnitTypeId.Millimeters);
+        var tolerance = UnitUtils.ConvertToInternalUnits(CapSizeToleranceMm, UnitTypeId.Millimeters);
+        bool Close(double a, double b) => Math.Abs(a - b) <= Math.Max(tolerance, 0.2 * Math.Max(a, b));
+        var (small, large) = (Math.Min(sizeAFeet, sizeBFeet), Math.Max(sizeAFeet, sizeBFeet));
+        foreach (var (box, id) in boxes)
+        {
+            if (!box.Contains(center)) continue;
+            var (dx, dy) = (box.MaxX - box.MinX - 2 * expand, box.MaxY - box.MinY - 2 * expand);
+            if (Close(Math.Min(dx, dy), small) && Close(Math.Max(dx, dy), large)) return id;
+        }
+        return null;
     }
 
     /// <summary>Tìm ElementId của box đã có chứa điểm cho trước — null nếu không trùng box nào.</summary>

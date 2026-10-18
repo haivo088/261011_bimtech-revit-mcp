@@ -92,14 +92,14 @@ flowchart LR
    - **Ứng viên** từ mọi layer: hình chữ nhật thật (PolyLine hoặc line rời) cạnh 100–2000 mm, mọi đầu mút nằm trên biên và bốn cạnh vẽ đủ ít nhất 90%. Cột chữ L, cột vẽ dính vách không thành ứng viên.
    - **Hatch** đọc từ chính file DWG (CAD link tự lấy đường dẫn, CAD import truyền `dwgPath`) chỉ **xác nhận** một đường bao trùng khít; hatch đứng một mình không thành cột. Không đọc được file thì vẫn quét, ít bằng chứng hơn.
    - Cùng một cột vẽ hai lần (đường bao và hatch, hay hai layer) tính một.
-   - **Bằng chứng** (có dấu, lý do ghi lại cho cửa sổ duyệt): +2 ở giao trục (+1 nằm trên 1 trục), +2 có hatch bên trong, +1 kích thước lặp lại ≥ 3 lần, +1 có ký hiệu cột bên cạnh, +2 có cột hoặc đài móng tầng dưới (`levelId`, mặc định tầng của view), +1 tên layer giống cột; −2 nằm trong hatch vách (không rộng hơn vách), −3 thẳng hàng với mảnh cùng bề dày cách nhau cỡ ô cửa (**đoạn vách bị cửa cắt**), −1 tên layer giống thứ khác (cửa, thiết bị, kích thước), −1 đơn lẻ (không trục, không hatch, không ký hiệu, kích thước không lặp).
-   - Điểm ≥ 3: **chắc chắn**; 1–2: **xem lại** (nhóm `"300x500-maybe"`); ≤ 0: bỏ, chỉ báo số lượng và lý do.
+   - **Bằng chứng** (có dấu, lý do ghi lại cho cửa sổ duyệt): +20% ở giao trục (+10% nằm trên 1 trục), +20% có hatch bên trong, +10% kích thước lặp lại ≥ 3 lần, +10% có ký hiệu cột bên cạnh, +20% có cột hoặc đài móng tầng dưới (`levelId`, mặc định tầng của view), +5% tên layer giống cột; −20% nằm trong hatch vách (không rộng hơn vách), **loại trừ** (giữ ≤ 40%): thẳng hàng với mảnh cùng bề dày cách nhau cỡ ô cửa (**đoạn vách bị cửa cắt**), −5% tên layer giống thứ khác (cửa, thiết bị, kích thước), −10% đơn lẻ (không trục, không hatch, không ký hiệu, kích thước không lặp).
+   - Thang tin cậy chung (xem [04](04-architecture.md)): bắt đầu 50%; **từ 50% tự duyệt**; 20–50% **xem lại** (nhóm `"300x500-maybe"`); dưới 20% bỏ, chỉ báo số lượng và lý do.
    - **Ký hiệu cột** đọc từ Text Note và chữ trong file DWG, gần nhất trong 1500 mm (`C1 300x500`); mỗi text chỉ gán cho cột gần nó nhất.
    - Nhóm theo ký hiệu và kích thước: khóa `"C1"`, hoặc `"C1 300x500"` khi một ký hiệu có nhiều kích thước, hoặc kích thước **b×h cạnh nhỏ trước** `"300x500"` khi không có ký hiệu (trùng tên Type tạo mới). Ký hiệu ghi kích thước khác hình vẽ thì có `tagSizeMismatch`.
    - Mỗi nhóm có số đếm bằng chứng (`evidence`), Type khớp đúng (`exactType`) hoặc gần nhất (`nearestType`), và `scanId`. `layers` chỉ còn để giới hạn khi cần. Hình học ở lại trong add-in.
    - Test hồi quy: mọi case trong `cases/` có cột trong model phải tìm lại ≥ 95% số cột đó ở mức chắc chắn (`CaseLibraryTests`).
 4. Nếu model chưa có Type cột nào có tham số b/h: `load_default_family` với `kind=column` nạp `BTC-CotCN_BeTong` và trả `familyId`.
-5. `propose_columns` với base/top level: **mỗi nhóm là một mục duyệt**, kèm "Vì sao" (số cột có từng bằng chứng). Nhóm `-maybe` ghi "Bằng chứng chưa đủ" và không bao giờ được tự duyệt.
+5. `propose_columns` với base/top level: **mỗi nhóm là một mục duyệt**, kèm "Vì sao" (số cột có từng bằng chứng). Nhóm `-maybe` (dưới 50%) ghi "Bằng chứng chưa đủ" và không tự duyệt. Mục lấy độ tin cậy của cột kém chắc nhất; mục sắp tạo Type mới luôn phải xem.
    - **Cột thường đứng ở giao hai trục.** Xét từng phương: trục đi qua cột hoặc cách mặt cột không quá `gridMarginMm` (mặc định 300) là cột nằm trên trục đó. Khi đó độ lệch cách **đồng tâm** hoặc **mép trùng trục** không quá `gridToleranceMm` (mặc định 15) được đặt đúng vào đó; độ lệch khác **làm tròn 5 mm** (`snapMm`). Cột không nằm trên trục nào chỉ được làm tròn 5 mm.
    - Mục duyệt ghi các giao trục của nhóm (`tại A-1, A-2…`); cột chỉ nằm trên một trục (cột phụ, cột thang?) hoặc không nằm trên trục nào có ghi chú. Kết quả trả `emptyCrossings`: **giao trục không có cột** trong vùng các cột (ô thông tầng, hay cột vẽ ở layer khác) để người dùng kiểm tra.
    - Cột vẽ lệch dưới 2° so với phương trục được **đặt thẳng theo trục** (chọn hướng trục gần nhất, không đổi chỗ b/h).
@@ -143,7 +143,7 @@ Type mỗi nhóm: mục trong `types` → Type có sẵn khớp b×h → Type `b
 2. Dầm phụ **xuất phát từ mặt bên của dầm gối** (dầm chạy ngang phương đang dò) hoặc từ mặt vách. Không xuất phát từ cột, vì ở vòng này dầm chính sẽ bị cắt ngắn tại dầm đầu tiên nó gặp; dầm phụ một đầu gác lên cột vẫn được tìm, dò từ đầu bên dầm sang.
 3. Dò hai mép như dầm chính tới gối đầu tiên (dầm, cột, vách). Đoạn nằm dọc thân một dầm đã có thì bỏ.
 4. Đầu dầm phụ đặt ở **tim dầm gối**, đỉnh bằng tầng + `offsetMm` như dầm chính. Ký hiệu nhận cả `DP1` lẫn `D2-X3 (220x600)`, từ Text Note và chữ trong DWG.
-5. **Bằng chứng** (`SecondaryBeams`): +2 hai đầu tựa lên gối, +1 có ký hiệu, +1 chia đều nhịp dầm gối (1/2, 1/3, 1/4) hoặc nằm trên trục, +1 vẽ nét khuất, +1 nối tiếp thành dải với dầm phụ khác; −3 **to hơn dầm gối** (b hay h lớn hơn), −2 trùng hatch tường hay vách (cặp nét tường xây 220 trông như dầm 220), −1 nhịp dưới 1 m, −1 nét đứt nhiều. Điểm ≥ 3 chắc chắn; nhóm có dầm phụ chưa chắc ghi "bằng chứng chưa đủ" và **không bao giờ tự duyệt**. Mục duyệt có dòng "Vì sao".
+5. **Bằng chứng** (`SecondaryBeams`): +20% hai đầu tựa lên gối, +10% có ký hiệu, +10% chia đều nhịp dầm gối (1/2, 1/3, 1/4) hoặc nằm trên trục, +10% vẽ nét khuất, +10% nối tiếp thành dải với dầm phụ khác; **loại trừ** (giữ ≤ 40%): **to hơn dầm gối** (b hay h lớn hơn), −20% trùng hatch tường hay vách (cặp nét tường xây 220 trông như dầm 220), −10% nhịp dưới 1 m, −10% nét đứt nhiều. Từ 50% tự duyệt; dầm phụ dưới 50% vào nhóm `-maybe` riêng, ghi "bằng chứng chưa đủ". Mục duyệt có dòng "Vì sao".
 6. Chưa làm: dầm console (một đầu tự do), dầm phụ cấp 2 trong cùng một lượt (gọi lại `secondary=true` sau khi commit cấp 1).
 
 ## Cọc và đài
@@ -152,9 +152,9 @@ Type mỗi nhóm: mục trong `types` → Type có sẵn khớp b×h → Type `b
 
 **Quét** (`scan_cad_piles`, `PileRecognizer`): **không cần chọn layer**, một lượt, đọc như kỹ sư. Dựng trục trước.
 - **Ứng viên** từ mọi layer: cọc là hình tròn đường kính 200–2000 mm (hai vòng đồng tâm gộp thành một, vòng nhỏ là ký hiệu); đài là PolyLine khép kín, hoặc hình chữ nhật vẽ bằng **line rời** (bản vẽ đã explode), cạnh 400 mm–20 m. Hai đường bao vẽ trùng gộp thành một.
-- **Bằng chứng đài**: +2 có cọc bên trong, +2 chứa giao trục (+1 có trục đi qua), +1 có ký hiệu đài, +1 kích thước lặp lại, +1 tên layer giống đài; −2 không có cọc bên trong, −3 **bao lấy đài khác** (khung nhà, ô phòng; đường bao lót chỉ lớn hơn đài dưới 400 mm thì không tính), −1 tên layer giống thứ khác.
-- **Bằng chứng cọc**: +2 nằm trong đài, +1 đường kính lặp lại ≥ 3 lần, +1 có ký hiệu cọc (nét chéo, hatch hay vòng thứ hai), +1 tên layer giống cọc; −4 **vòng tròn đầu trục** (ở đầu một trục, hay chứa tên trục), −1 tên layer giống thứ khác, −1 đơn lẻ.
-- Điểm ≥ 3 chắc chắn; 1–2 xem lại (đài ghi "Bằng chứng chưa đủ" trong cửa sổ duyệt); ≤ 0 bỏ, chỉ báo số lượng và lý do. `pileLayers` / `capLayers` chỉ còn để giới hạn khi cần.
+- **Bằng chứng đài**: +20% có cọc bên trong, +20% chứa giao trục (+10% có trục đi qua), +10% có ký hiệu đài, +10% kích thước lặp lại, +5% tên layer giống đài; −20% không có cọc bên trong, **loại trừ** (giữ ≤ 40%): **bao lấy đài khác** (khung nhà, ô phòng; đường bao lót chỉ lớn hơn đài dưới 400 mm thì không tính), **loại trừ** (bỏ): **nằm trong đài có cọc** mà không có cọc riêng (cột, cổ móng vẽ trên đài), −5% tên layer giống thứ khác.
+- **Bằng chứng cọc**: +20% nằm trong đài, +10% đường kính lặp lại ≥ 3 lần, +10% có ký hiệu cọc (nét chéo, hatch hay vòng thứ hai), +5% tên layer giống cọc; −60% **vòng tròn đầu trục** (ở đầu một trục, hay chứa tên trục), −5% tên layer giống thứ khác, −10% đơn lẻ.
+- Thang tin cậy chung: bắt đầu 50%, **từ 50% tự duyệt**, 20–50% xem lại (đài ghi "Bằng chứng chưa đủ"), dưới 20% bỏ. Thêm **loại trừ** (bỏ): dải mảnh (tường lõi vẽ trên mặt bằng móng). Mục đài lấy độ tin cậy thấp nhất giữa đài và các cọc của nó; mục tên theo vị trí: `Đài #37 · 4900x4500 · B-2`. `pileLayers` / `capLayers` chỉ còn để giới hạn khi cần.
 - Nhóm cọc theo đường kính (`D600`).
 - **Cọc thuộc đài** chứa nó; cọc ngoài biên trong 300 mm vẫn thuộc đài gần nhất (vẽ lệch nhẹ); **xa hơn thì không thuộc đài nào** và được báo ra, không bị gán bừa cho một đài ở xa.
 - **Ký hiệu đài** đọc từ Text Note hoặc chữ trong file DWG (`dwgPath` cho CAD import), trong hoặc cạnh đài: `Đ1 (2000x2000x1200)`, `ĐM2 h=1500`, `ĐC3 - 1500X2400 - H=1000`. Đài gom thành nhóm (`capGroups`) theo ký hiệu, không có ký hiệu thì theo kích thước (`2000x2000`), kèm chiều dày đọc được và số đếm bằng chứng.
@@ -166,7 +166,7 @@ Type mỗi nhóm: mục trong `types` → Type có sẵn khớp b×h → Type `b
 - Lớp lót dưới mỗi đài (`withLot`, mặc định có, rộng thêm `lotOffsetMm` = 50).
 - **Join chỉ giữa cọc với đài và lớp lót của chính nó**, không đụng join có sẵn trong model.
 - `pileLengthMm`: đặt chiều dài cọc vào tham số `Length` (hoặc `Pile Length`, `Chiều dài`, `L`) nếu family có; không có thì kết quả có cảnh báo.
-- Đài đã có ở vị trí đó thì bỏ qua (`alreadyModeledCaps`); cọc đã có thì bỏ qua từng cọc.
+- Đài đã có ở vị trí đó **và cỡ gần bằng** (lệch ≤ 300 mm hay 20%) thì bỏ qua (`alreadyModeledCaps`); hình nhỏ cùng tâm (cột vẽ trên đài) không chặn đài thật. Cọc đã có thì bỏ qua từng cọc.
 - Cọc không thuộc đài nào gom thành một mục `P-NOCAP` bị chặn, liệt kê vị trí để kiểm tra.
 
 `load_default_family kind=pile` nạp `BTC-CocTron_BeTong` và tạo `BTC-DaiMong_1500` / `BTC-BeTongLot_100` khi chưa có (cần sẵn ít nhất 1 Type Foundation Slab làm mẫu). Type cọc thiếu chỉ được tạo khi `createMissingTypes=true`, nhân bản từ Type gần nhất, tên theo đường kính. Gốc chèn của family cọc (đỉnh hay mũi cọc) cần kiểm chứng trong Revit.

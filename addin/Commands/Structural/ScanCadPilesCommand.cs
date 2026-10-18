@@ -10,10 +10,13 @@ using Bimtech.StructuralCore.Piles;
 namespace Bimtech.RevitMcp.Commands.Structural;
 
 // A pile scan kept in SessionStore; propose_piles reads it back by scanId.
-// CapEvidence: each cap's signed reasons. MaybeCaps: caps without enough evidence, proposed for review.
+// CapEvidence: each cap's signed reasons. MaybeCaps: caps below the automatic threshold, proposed for review.
+// CapPercents, PilePercents: each cap's and pile's confidence (Evidence scale). CapGrids: "B-2" or "trục A" per cap.
 internal sealed record PileScan(
     ElementId CadId, ElementId ViewId, IReadOnlyList<PileSizeGroup> Groups, IReadOnlyList<BoundaryRow> Caps,
-    IReadOnlyDictionary<BoundaryRow, IReadOnlyList<string>>? CapEvidence = null, IReadOnlySet<BoundaryRow>? MaybeCaps = null)
+    IReadOnlyDictionary<BoundaryRow, IReadOnlyList<string>>? CapEvidence = null, IReadOnlySet<BoundaryRow>? MaybeCaps = null,
+    IReadOnlyDictionary<BoundaryRow, int>? CapPercents = null, IReadOnlyDictionary<RawCircle, int>? PilePercents = null,
+    IReadOnlyDictionary<BoundaryRow, string>? CapGrids = null)
 {
     public const string Kind = "scan";
 
@@ -64,10 +67,13 @@ public sealed class ScanCadPilesCommand : IRevitCommand
         if (capLayers.Count > 0) caps = caps.Where(cap => cap.Layers.Any(capLayers.Contains)).ToList();
 
         var boundaries = caps.ToDictionary(ToBoundary, cap => cap);
-        var circles = piles.Select(pile => new RawCircle
+        var pilePercents = piles.ToDictionary(pile => new RawCircle
         {
             Center = new XYZ(Feet(pile.Cx), Feet(pile.Cy), 0), RadiusFeet = Feet(pile.DiameterMm / 2),
-        }).ToList();
+        }, pile => pile.Percent);
+        var circles = pilePercents.Keys.ToList();
+        var capPercents = new Dictionary<BoundaryRow, int>();
+        var capGrids = new Dictionary<BoundaryRow, string>();
         var rows = PileFoundationPlacer.BuildCapRows(boundaries.Keys, circles);
         var capEvidence = new Dictionary<BoundaryRow, IReadOnlyList<string>>();
         var maybeCaps = new HashSet<BoundaryRow>();
@@ -75,6 +81,8 @@ public sealed class ScanCadPilesCommand : IRevitCommand
         {
             var cap = boundaries[row.Boundary];
             capEvidence[row] = cap.Reasons;
+            capPercents[row] = cap.Percent;
+            if (cap.Grid is { } grid) capGrids[row] = grid;
             if (!cap.Sure) maybeCaps.Add(row);
             if (cap.Tag is { } tag)
             {
@@ -86,7 +94,7 @@ public sealed class ScanCadPilesCommand : IRevitCommand
         var pileTypes = PileTypeMatcher.CollectFoundationTypes(document);
         var groups = PileFoundationPlacer.GroupCircles(circles, pileTypes);
         var scanId = groups.Count == 0 && rows.Count == 0 ? null : context.Sessions.Add(PileScan.Kind, document,
-            new PileScan(cad.Id, view.Id, groups, rows, capEvidence, maybeCaps));
+            new PileScan(cad.Id, view.Id, groups, rows, capEvidence, maybeCaps, capPercents, pilePercents, capGrids));
         var defaultFamily = DefaultFamilies.Find(document, DefaultFamilies.PileFamilyName);
         var slabTypes = PileDefaults.CollectFoundationSlabTypes(document);
 

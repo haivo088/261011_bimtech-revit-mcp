@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
 using Bimtech.RevitMcp.Planning;
 
 namespace Bimtech.RevitMcp.Ui;
@@ -15,6 +16,14 @@ public partial class ReviewWindow : Window
         InitializeComponent();
         DataContext = _model = model;
         _focus = focus;
+        // The list shows what needs a look; items approved by their confidence come back with "Hiện cả mục tự duyệt".
+        var view = CollectionViewSource.GetDefaultView(model.Items);
+        view.Filter = row => model.IsVisible((PlanItemRow)row);
+        model.PropertyChanged += (_, e) =>
+        {
+            // A new plan or a reviewer's change (empty name) can hide or show rows.
+            if (e.PropertyName is "" or null or nameof(ReviewViewModel.ShowAutoItems)) view.Refresh();
+        };
     }
 
     private List<PlanItemRow> SelectedRows => ItemsGrid.SelectedItems.Cast<PlanItemRow>().ToList();

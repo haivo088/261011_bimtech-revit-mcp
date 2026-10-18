@@ -40,6 +40,7 @@ internal static class WallColumnExtender
                 CrossLayerNote = wall.CrossLayerNote,
                 Sure = wall.Sure,
                 Evidence = wall.Evidence,
+                Percent = wall.Percent,
                 Grid = wall.Grid,
             });
         }

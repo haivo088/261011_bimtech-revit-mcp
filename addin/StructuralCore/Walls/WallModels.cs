@@ -37,8 +37,11 @@ internal sealed class RawWall
     /// vách ghép từ cặp Line kiểu cũ.</summary>
     public bool? Sure { get; init; }
 
-    /// <summary>Bằng chứng có dấu của vách nhận từ hatch, vd "+1 nằm trên trục" — hiện trong cửa sổ duyệt.</summary>
+    /// <summary>Bằng chứng có dấu của vách nhận từ hatch, vd "+10% nằm trên trục" — hiện trong cửa sổ duyệt.</summary>
     public IReadOnlyList<string>? Evidence { get; init; }
+
+    /// <summary>Độ tin cậy (thang Evidence, %) của vách nhận từ hatch; null cho vách ghép từ cặp Line kiểu cũ.</summary>
+    public int? Percent { get; init; }
 
     /// <summary>Trục mà tim hoặc mặt vách nằm trên (vách nhận từ hatch).</summary>
     public string? Grid { get; init; }

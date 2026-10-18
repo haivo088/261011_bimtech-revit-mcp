@@ -80,8 +80,7 @@ public sealed class ProposeColumnsCommand(PlanService plans, ReviewWindowHost re
             var reasons = new List<string>();
             if (type.Problem is not null) reasons.Add(type.Problem);
             if (scan.TagMismatches.TryGetValue(group.Key, out var mismatch)) reasons.Add(mismatch);
-            var evidenceSure = scan.MaybeKeys?.Contains(group.Key) != true;
-            if (!evidenceSure) reasons.Add("Bằng chứng chưa đủ, nên xem lại trên mặt bằng.");
+            if (scan.MaybeKeys?.Contains(group.Key) == true) reasons.Add("Bằng chứng chưa đủ, nên xem lại trên mặt bằng.");
             if (scan.Evidence is { } evidence)
                 reasons.Add("Vì sao: " + string.Join("; ", group.Columns.SelectMany(column => evidence.GetValueOrDefault(column) ?? [])
                     .GroupBy(reason => reason).OrderByDescending(g => g.Count())
@@ -198,9 +197,11 @@ public sealed class ProposeColumnsCommand(PlanService plans, ReviewWindowHost re
                     columns,
                 }),
                 Tier = type.Problem is null ? PlanTier.Review : PlanTier.Blocked,
-                // No grids in the view: no crossings to judge positions by, so no confidence.
-                Confidence = frame is null ? null
-                    : ConfidenceRules.Columns(columns.Count, crossings.Count, type.Symbol is not null, mismatch is not null, evidenceSure),
+                // As sure as its least sure column; a type to create or a mark at odds with the drawing needs a look.
+                Confidence = scan.Percents is { } percents
+                    ? ConfidenceRules.Group(group.Columns.Select(column => percents.GetValueOrDefault(column, Evidence.BasePercent)),
+                        needsLook: type.Symbol is null || mismatch is not null)
+                    : null,
                 Reasons = reasons,
                 Source = JsonSerializer.SerializeToElement(new { name = group.Key, category = "Structural Columns", count = columns.Count }),
             });

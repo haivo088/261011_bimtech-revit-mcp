@@ -152,16 +152,25 @@ public sealed class ProposeBeamsCommand(PlanService plans, ReviewWindowHost revi
                 beam.Tag?.BMm ?? measured, beam.Tag?.HMm, widthNote);
         }).ToList();
 
-        // Group keys like columns: the mark, "D1 220x600" when one mark has several sizes, "220x600", or "b220".
+        // Each beam on the Evidence scale: a secondary beam from its evidence (SecondaryBeams), a main beam from its mark,
+        // grid and edges (ConfidenceRules.MainBeam).
+        int PercentOf(Placed beam) => weights.TryGetValue(beam.Beam, out var weight) ? weight.Percent
+            : ConfidenceRules.MainBeam(beam.Name is not null && beam.HMm is not null, beam.Beam.TagInherited, beam.WidthNote is not null,
+                beam.Beam.Coverage < WellDrawn, beam.OnGrid);
+
+        // Group keys like columns: the mark, "D1 220x600" when one mark has several sizes, "220x600", or "b220"; beams below
+        // the automatic threshold go to a group of their own ("D1-maybe"), so a doubtful beam never holds up sure ones.
         var sizesPerName = placed.Where(beam => beam.Name is not null).GroupBy(beam => beam.Name!)
             .ToDictionary(group => group.Key, group => group.Select(beam => (beam.BMm, beam.HMm)).Distinct().Count());
-        string Key(Placed beam) => beam.Name is { } name
+        string BaseKey(Placed beam) => beam.Name is { } name
             ? sizesPerName[name] > 1 ? $"{name} {Size(beam.BMm, beam.HMm)}" : name
             : beam.HMm is not null ? Size(beam.BMm, beam.HMm) : $"b{beam.BMm:0}";
+        string Key(Placed beam) => BaseKey(beam) + (Evidence.IsSure(PercentOf(beam)) ? "" : "-maybe");
         var groups = placed.GroupBy(Key)
             .OrderBy(group => group.First().Name is null ? 1 : 0).ThenBy(group => group.Key, StringComparer.CurrentCultureIgnoreCase)
             .ToList();
-        var keys = groups.Select(group => group.Key).ToList();
+        // types and heightsMm name the group without its "-maybe".
+        var keys = groups.Select(group => BaseKey(group.First())).Distinct().ToList();
         StructuralJson.RequireKnownKeys(assigned.Keys, keys, "types");
         StructuralJson.RequireKnownKeys(heights.Keys, keys, "heightsMm");
 
@@ -173,8 +182,9 @@ public sealed class ProposeBeamsCommand(PlanService plans, ReviewWindowHost revi
         foreach (var group in groups)
         {
             var first = group.First();
-            var hMm = first.HMm ?? (heights.TryGetValue(group.Key, out var h) ? h : (double?)null);
-            var (symbol, family, typeText, problem) = ChooseType(document, group.Key, first.BMm, hMm, assigned, available, templateFamily);
+            var baseKey = BaseKey(first);
+            var hMm = first.HMm ?? (heights.TryGetValue(baseKey, out var h) ? h : (double?)null);
+            var (symbol, family, typeText, problem) = ChooseType(document, baseKey, first.BMm, hMm, assigned, available, templateFamily);
 
             var beams = new List<object>();
             var duplicates = 0;
@@ -215,10 +225,9 @@ public sealed class ProposeBeamsCommand(PlanService plans, ReviewWindowHost revi
                 reasons.Add($"{broken.Count} dầm nét vẽ đứt nhiều (phủ dưới {WellDrawn:P0} nhịp), kiểm tra: {List(broken.Select(beam => beam.At))}");
             if (duplicates > 0) reasons.Add($"{duplicates} dầm đã có trong model, bỏ qua.");
             var weighed = group.Where(beam => weights.ContainsKey(beam.Beam)).Select(beam => weights[beam.Beam]).ToList();
-            var evidenceSure = weighed.All(weight => weight.Sure);
+            if (group.Key.EndsWith("-maybe", StringComparison.Ordinal)) reasons.Add("Bằng chứng chưa đủ, nên xem lại trên mặt bằng.");
             if (weighed.Count > 0)
             {
-                if (!evidenceSure) reasons.Add($"{weighed.Count(weight => !weight.Sure)} dầm phụ bằng chứng chưa đủ, nên xem lại trên mặt bằng.");
                 reasons.Add("Vì sao: " + string.Join("; ", weighed.SelectMany(weight => weight.Reasons)
                     .GroupBy(reason => reason).OrderByDescending(g => g.Count()).Select(g => $"{g.Key} ({g.Count()}/{weighed.Count})")));
             }
@@ -243,8 +252,8 @@ public sealed class ProposeBeamsCommand(PlanService plans, ReviewWindowHost revi
                     beams,
                 }),
                 Tier = problem is null ? PlanTier.Review : PlanTier.Blocked,
-                Confidence = ConfidenceRules.Beams(group.Count(), first.Name is not null && first.HMm is not null,
-                    inherited, widthNotes.Count, broken.Count, evidenceSure),
+                // As sure as its least sure beam; a type to create needs a look.
+                Confidence = ConfidenceRules.Group(group.Select(PercentOf), needsLook: symbol is null),
                 Reasons = reasons,
                 Source = JsonSerializer.SerializeToElement(new { name = group.Key, category = "Structural Framing", count = beams.Count }),
             });

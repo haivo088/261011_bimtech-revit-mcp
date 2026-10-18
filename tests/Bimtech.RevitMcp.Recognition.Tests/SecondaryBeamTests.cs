@@ -60,9 +60,9 @@ public sealed class SecondaryBeamTests
 
         Assert.True(weight.Sure);
         Assert.Equal("DP1", beam.Tag?.Name);
-        Assert.Contains("+1 " + SecondaryBeams.DivisionReason, weight.Reasons);
-        Assert.Contains("+1 " + SecondaryBeams.DashedReason, weight.Reasons);
-        Assert.Contains("+1 " + SecondaryBeams.MarkReason, weight.Reasons);
+        Assert.Contains("+10% " + SecondaryBeams.DivisionReason, weight.Reasons);
+        Assert.Contains("+10% " + SecondaryBeams.DashedReason, weight.Reasons);
+        Assert.Contains("+10% " + SecondaryBeams.MarkReason, weight.Reasons);
     }
 
     [Fact]
@@ -76,7 +76,7 @@ public sealed class SecondaryBeamTests
         var weight = SecondaryBeams.Weigh(beam, result.Beams, BeamCase.Frame.Plain, [wall]);
 
         Assert.False(weight.Sure);
-        Assert.Contains("-3 " + SecondaryBeams.BiggerReason, weight.Reasons);
-        Assert.Contains("-2 " + SecondaryBeams.WallReason, weight.Reasons);
+        Assert.Contains(Evidence.VetoReason(SecondaryBeams.BiggerReason), weight.Reasons);
+        Assert.Contains("-20% " + SecondaryBeams.WallReason, weight.Reasons);
     }
 }

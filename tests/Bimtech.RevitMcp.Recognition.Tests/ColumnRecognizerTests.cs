@@ -36,8 +36,8 @@ public sealed class ColumnRecognizerTests
         var column = result.Columns[0];
         Assert.True(column.Sure);
         Assert.Equal("A-1", column.Grid);
-        Assert.Contains("+2 " + ColumnRecognizer.CrossingReason, column.Reasons);
-        Assert.Contains("+2 " + ColumnRecognizer.HatchReason, column.Reasons);
+        Assert.Contains("+20% " + ColumnRecognizer.CrossingReason, column.Reasons);
+        Assert.Contains("+20% " + ColumnRecognizer.HatchReason, column.Reasons);
     }
 
     [Fact]
@@ -60,14 +60,15 @@ public sealed class ColumnRecognizerTests
     }
 
     [Fact]
-    public void A_lone_rectangle_off_the_grids_is_dropped()
+    public void A_lone_rectangle_off_the_grids_is_only_to_review()
     {
         var result = Recognize([Outline(3000, 3000, 600, 300, layer: "A-FURN")]);
 
-        Assert.Empty(result.Columns);
-        var dropped = Assert.Single(result.Dropped);
-        Assert.Contains("-1 " + ColumnRecognizer.AloneReason, dropped.Reasons);
-        Assert.Contains("-1 " + ColumnRecognizer.OtherLayerReason, dropped.Reasons);
+        var lone = Assert.Single(result.Columns);
+        Assert.False(lone.Sure);
+        Assert.Equal(35, lone.Percent);
+        Assert.Contains("-10% " + ColumnRecognizer.AloneReason, lone.Reasons);
+        Assert.Contains("-5% " + ColumnRecognizer.OtherLayerReason, lone.Reasons);
     }
 
     [Fact]
@@ -84,7 +85,7 @@ public sealed class ColumnRecognizerTests
 
         Assert.DoesNotContain(result.Columns, column => column.Sure);
         Assert.All(result.Columns.Concat(result.Dropped),
-            column => Assert.Contains("-3 " + ColumnRecognizer.WallRunReason, column.Reasons));
+            column => Assert.Contains(Evidence.VetoReason(ColumnRecognizer.WallRunReason), column.Reasons));
     }
 
     [Fact]
@@ -100,8 +101,8 @@ public sealed class ColumnRecognizerTests
         var column = Assert.Single(result.Columns);
         Assert.True(column.Sure);
         Assert.Equal("C1", column.Tag?.Name);
-        Assert.Contains("+1 " + ColumnRecognizer.TagReason, column.Reasons);
-        Assert.Contains("+2 " + ColumnRecognizer.BelowReason, column.Reasons);
+        Assert.Contains("+10% " + ColumnRecognizer.TagReason, column.Reasons);
+        Assert.Contains("+20% " + ColumnRecognizer.BelowReason, column.Reasons);
     }
 
     [Fact]
@@ -112,8 +113,7 @@ public sealed class ColumnRecognizerTests
 
         var midSpan = result.Columns.Single(column => column.Cy == 3000);
         Assert.Equal("trục 1", midSpan.Grid);
-        Assert.Equal(2, midSpan.Score);
-        Assert.False(midSpan.Sure);
+        Assert.Equal(70, midSpan.Percent);        Assert.True(midSpan.Sure);
         Assert.All(result.Columns.Where(column => column.Cy == 0), column => Assert.True(column.Sure));
     }
 

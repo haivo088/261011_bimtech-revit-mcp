@@ -312,7 +312,7 @@ public sealed class PlanServiceTests : IDisposable
         var sure = Item("E1", "A");
         sure.Confidence = 0.95;
         var unsure = Item("E2", "A");
-        unsure.Confidence = 0.89;
+        unsure.Confidence = 0.49;
         var blocked = Item("E3", "A");
         blocked.Confidence = 0.99;
         blocked.Tier = PlanTier.Blocked;
@@ -324,6 +324,52 @@ public sealed class PlanServiceTests : IDisposable
         Assert.Equal([PlanTier.Auto, PlanTier.Review, PlanTier.Blocked, PlanTier.Review], plan.Items.Select(item => item.Tier));
         Assert.Equal([PlanItemStatus.Approved, PlanItemStatus.Pending, PlanItemStatus.Pending, PlanItemStatus.Pending],
             plan.Items.Select(item => item.Status));
+    }
+
+    // The person's auto-commit setting: a plan with nothing to review is approved at once, marked as automatic.
+    [Fact]
+    public void Auto_commit_approves_a_plan_whose_every_item_is_sure()
+    {
+        var plans = new PlanService(new JsonPlanStore(), _clock, autoApproveSure: () => true);
+        var first = Item("E1", "A");
+        first.Confidence = 0.8;
+        var second = Item("E2", "A");
+        second.Confidence = 0.5;
+
+        var plan = plans.Create(_document, "set_parameters", "Đặt Comments", scope: null, [first, second]);
+
+        Assert.Equal(PlanStatus.Approved, plan.Status);
+        Assert.True(plan.Approval!.Automatic);
+        Assert.Equal(["E1", "E2"], plan.Approval.ApprovedItemIds);
+    }
+
+    [Fact]
+    public void Auto_commit_waits_for_the_person_when_anything_needs_a_look()
+    {
+        var plans = new PlanService(new JsonPlanStore(), _clock, autoApproveSure: () => true);
+        var sure = Item("E1", "A");
+        sure.Confidence = 0.9;
+        var unsure = Item("E2", "A");
+        unsure.Confidence = 0.4;
+        var blocked = Item("E3", "A");
+        blocked.Confidence = 0.9;
+        blocked.Tier = PlanTier.Blocked;
+
+        Assert.Equal(PlanStatus.InReview, plans.Create(_document, "set_parameters", "x", null, [sure, unsure]).Status);
+        Assert.Equal(PlanStatus.InReview, plans.Create(_document, "set_parameters", "x", null, [Item("E4", "A")]).Status);
+        Assert.Equal(PlanStatus.InReview, plans.Create(_document, "set_parameters", "x", null, [Item("E5", "A"), blocked]).Status);
+    }
+
+    [Fact]
+    public void Without_auto_commit_a_sure_plan_still_waits_for_the_person()
+    {
+        var sure = Item("E1", "A");
+        sure.Confidence = 0.9;
+
+        var plan = _plans.Create(_document, "set_parameters", "Đặt Comments", scope: null, [sure]);
+
+        Assert.Equal(PlanStatus.InReview, plan.Status);
+        Assert.Null(plan.Approval);
     }
 
     [Fact]

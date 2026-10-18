@@ -223,8 +223,10 @@ public sealed class ProposeWallsCommand(PlanService plans, ReviewWindowHost revi
                 }).ToList(),
             }),
             Tier = problem is null ? PlanTier.Review : PlanTier.Blocked,
-            Confidence = ConfidenceRules.Walls(group.Sure,
-                group.Walls.Select(wall => (IReadOnlyList<string>)(wall.Evidence ?? [])).ToList(), repaired > 0),
+            // Walls read from line pairs carry no evidence: reviewed by hand.
+            Confidence = group.Sure is null ? null
+                : ConfidenceRules.Group(group.Walls.Select(wall => wall.Percent ?? Evidence.BasePercent),
+                    needsLook: plan.NewTypeName is not null || repaired > 0),
             Reasons = reasons,
             Source = JsonSerializer.SerializeToElement(new
             {

@@ -14,7 +14,7 @@ public sealed class OpenPlanReviewCommand(PlanService plans, ReviewWindowHost re
     {
         var document = PlanStorageLocation.For(context.RequireDocument());
         var plan = plans.Get(document, context.Params.RequireString("planId", 64));
-        review.Show(plan, context.UIApplication);
+        review.Show(plan, context.UIApplication, evenIfAutoApproved: true);
         return new
         {
             plan = PlanResults.Status(plan),

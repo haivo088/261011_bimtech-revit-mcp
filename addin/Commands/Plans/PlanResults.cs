@@ -13,6 +13,8 @@ public static class PlanResults
         status = plan.Status,
         // Set when the person approves in the review window. commit_plan will require it.
         approvalId = plan.Approval?.ApprovalId,
+        // True when the person's auto-commit setting approved a plan with nothing to review: commit it straight away.
+        autoApproved = plan.Approval?.Automatic == true,
         createdAt = plan.CreatedAt,
         updatedAt = plan.UpdatedAt,
         summary = plan.Summarize(),

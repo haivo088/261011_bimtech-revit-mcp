@@ -10,11 +10,13 @@ namespace Bimtech.RevitMcp.Commands.Structural;
 
 // A column scan kept in SessionStore; propose_columns reads it back by scanId.
 // TagMismatches: per group key, the note when the mark's size differs from the drawn outline.
-// Evidence: each column's signed reasons. MaybeKeys: groups whose columns lack enough evidence ("300x500-maybe").
+// Evidence: each column's signed reasons; Percents: its confidence (Evidence scale). MaybeKeys: groups whose columns are
+// below the automatic threshold ("300x500-maybe").
 internal sealed record ColumnScan(
     ElementId CadId, ElementId ViewId, IReadOnlyList<string> Layers, IReadOnlyList<ColumnSizeGroup> Groups,
     IReadOnlyDictionary<string, string> TagMismatches,
-    IReadOnlyDictionary<RawColumn, IReadOnlyList<string>>? Evidence = null, IReadOnlySet<string>? MaybeKeys = null)
+    IReadOnlyDictionary<RawColumn, IReadOnlyList<string>>? Evidence = null, IReadOnlySet<string>? MaybeKeys = null,
+    IReadOnlyDictionary<RawColumn, int>? Percents = null)
 {
     public const string Kind = "scan";
 }
@@ -79,7 +81,8 @@ public sealed class ScanCadColumnsCommand : IRevitCommand
             .Where(entry => entry.Note is not null)
             .ToDictionary(entry => entry.Key, entry => entry.Note!);
         var scanId = groups.Count == 0 ? null : context.Sessions.Add(ColumnScan.Kind, document,
-            new ColumnScan(cad.Id, view.Id, layers, groups, mismatches, evidence, maybeGroups.Select(group => group.Key).ToHashSet()));
+            new ColumnScan(cad.Id, view.Id, layers, groups, mismatches, evidence, maybeGroups.Select(group => group.Key).ToHashSet(),
+                result.Columns.ToDictionary(column => raws[column], column => column.Percent)));
 
         var types = ColumnTypeMatcher.CollectColumnTypes(document);
         var defaultFamily = DefaultFamilies.Find(document, DefaultFamilies.ColumnFamilyName);

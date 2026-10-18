@@ -9,7 +9,9 @@ namespace Bimtech.RevitMcp.Planning;
 // Creates plans, looks them up and moves them between statuses.
 // Only the transitions in PlanTransitions are allowed, and only the review window
 // calls Approve; no JSON-RPC command may (server/tests/contract.test.mjs checks this).
-public sealed class PlanService(IPlanStore store, TimeProvider? clock = null)
+// autoApproveSure: the person's "auto-commit sure plans" setting. When it says yes, a new plan whose every item is
+// sure (none pending, none blocked) is approved at once, as the person asked; no command ever approves on its own.
+public sealed class PlanService(IPlanStore store, TimeProvider? clock = null, Func<bool>? autoApproveSure = null)
 {
     private readonly TimeProvider _clock = clock ?? TimeProvider.System;
     // Commands and the review window both run on Revit's main thread today;
@@ -38,6 +40,9 @@ public sealed class PlanService(IPlanStore store, TimeProvider? clock = null)
         };
         Validate(plan);
         PlanConfidence.Apply(plan.Items);
+        if (autoApproveSure?.Invoke() == true
+            && plan.Items.All(item => item.Tier == PlanTier.Auto && item.Status == PlanItemStatus.Approved))
+            RecordApproval(plan, automatic: true);
         lock (_lock) store.Save(plan);
         Changed?.Invoke(plan);
         return plan;
@@ -117,6 +122,13 @@ public sealed class PlanService(IPlanStore store, TimeProvider? clock = null)
             throw new RpcException(RpcErrorCodes.PlanWrongStatus,
                 "No item is approved. Approve at least one item, or cancel the plan.", new { planId });
 
+        RecordApproval(plan, automatic: false);
+        return true;
+    });
+
+    private void RecordApproval(Plan plan, bool automatic)
+    {
+        var approved = plan.Items.Where(item => item.Status == PlanItemStatus.Approved).ToList();
         plan.Status = PlanStatus.Approved;
         plan.Approval = new PlanApproval
         {
@@ -124,9 +136,9 @@ public sealed class PlanService(IPlanStore store, TimeProvider? clock = null)
             ApprovedAt = _clock.GetUtcNow(),
             ApprovedItemIds = approved.Select(item => item.ItemId).ToList(),
             ItemsHash = PlanApproval.HashItems(approved),
+            Automatic = automatic,
         };
-        return true;
-    });
+    }
 
     // Records what commit_plan wrote: each approved item becomes Applied or Failed with its result,
     // and the plan becomes Committed. The approval stays as a record of what was approved.
