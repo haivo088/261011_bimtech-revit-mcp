@@ -63,8 +63,11 @@ public class App : IExternalApplication
     internal static CommandRegistry CreateRegistry()
     {
         Review ??= new ReviewWindowHost(Plans);
-        return CommandRegistry.CreateDefault(Plans, Review, Changes!,
+        var registry = CommandRegistry.CreateDefault(Plans, Review, Changes!,
             DevToolsLoader.CreateCommands(new DevToolsHost(Plans, Review, Changes!)), DevToolsLoader.CreateActions());
+        // The review window commits with the same command when the person approves (setting CommitOnApprove).
+        Review.Committer = registry.Commands.OfType<Commands.Plans.CommitPlanCommand>().FirstOrDefault();
+        return registry;
     }
 
     // Must run in a Revit API context (OnStartup or an IExternalCommand).

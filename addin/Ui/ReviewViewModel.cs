@@ -9,7 +9,9 @@ namespace Bimtech.RevitMcp.Ui;
 // What the review window shows and what its buttons do. Uses no WPF or Revit types,
 // so tests can press the "buttons" without Revit. Every action goes through PlanService,
 // which saves the plan file; the window only redraws the result.
-public sealed class ReviewViewModel(PlanService plans) : INotifyPropertyChanged
+// commitApproved: asked after the person approves a plan; returns true when it started writing the plan into the model
+// (setting CommitOnApprove), false when Claude should commit it.
+public sealed class ReviewViewModel(PlanService plans, Func<Plan, bool>? commitApproved = null) : INotifyPropertyChanged
 {
     private string _message = "";
     private bool _showAutoItems;
@@ -28,12 +30,16 @@ public sealed class ReviewViewModel(PlanService plans) : INotifyPropertyChanged
     {
         get
         {
-            var auto = Items.Count(IsAutoApproved);
-            return auto == 0 ? $"Mục cần duyệt ({Items.Count})" : $"Cần xem ({Items.Count - auto}) · tự duyệt {auto}";
+            var approved = Items.Count(row => row.IsDecidedForPerson && row.Status == PlanItemStatus.Approved);
+            var rejected = Items.Count(row => row.IsDecidedForPerson && row.Status == PlanItemStatus.Rejected);
+            if (approved + rejected == 0) return $"Mục cần duyệt ({Items.Count})";
+            return $"Cần xem ({Items.Count - approved - rejected})"
+                + (approved > 0 ? $" · tự duyệt {approved}" : "") + (rejected > 0 ? $" · tự bỏ {rejected}" : "");
         }
     }
 
-    // Items approved by their confidence are hidden unless the reviewer asks to see them: the list shows what needs a look.
+    // Items decided for the reviewer (approved by their confidence, or rejected as on the storey below) are hidden unless
+    // the reviewer asks to see them: the list shows what needs a look.
     public bool ShowAutoItems
     {
         get => _showAutoItems;
@@ -45,9 +51,7 @@ public sealed class ReviewViewModel(PlanService plans) : INotifyPropertyChanged
         }
     }
 
-    public bool IsVisible(PlanItemRow row) => ShowAutoItems || !IsAutoApproved(row);
-
-    private static bool IsAutoApproved(PlanItemRow row) => row.IsAuto && row.Status == PlanItemStatus.Approved;
+    public bool IsVisible(PlanItemRow row) => ShowAutoItems || !row.IsDecidedForPerson;
 
     // Why the plan can no longer be edited; empty while it can.
     public string ReadOnlyNotice => Plan?.Status switch
@@ -69,12 +73,13 @@ public sealed class ReviewViewModel(PlanService plans) : INotifyPropertyChanged
         get
         {
             if (Plan is null) return "";
-            var auto = Items.Count(row => row.IsAuto && row.Status == PlanItemStatus.Approved);
+            var autoApproved = Items.Count(row => row.IsDecidedForPerson && row.Status == PlanItemStatus.Approved);
+            var autoRejected = Items.Count(row => row.IsDecidedForPerson && row.Status == PlanItemStatus.Rejected);
             return string.Join(" · ",
                 Plan.Document.Title,
                 StatusName(Plan.Status),
-                $"{Count(PlanItemStatus.Approved)} duyệt" + (auto > 0 ? $" ({auto} tự duyệt)" : ""),
-                $"{Count(PlanItemStatus.Rejected)} bỏ",
+                $"{Count(PlanItemStatus.Approved)} duyệt" + (autoApproved > 0 ? $" ({autoApproved} tự duyệt)" : ""),
+                $"{Count(PlanItemStatus.Rejected)} bỏ" + (autoRejected > 0 ? $" ({autoRejected} tự bỏ)" : ""),
                 $"{Count(PlanItemStatus.Pending)} chờ");
         }
     }
@@ -127,8 +132,13 @@ public sealed class ReviewViewModel(PlanService plans) : INotifyPropertyChanged
     public void RejectRemaining() =>
         SetStatus(Items.Where(row => row.Status == PlanItemStatus.Pending).ToList(), PlanItemStatus.Rejected);
 
-    public void ApprovePlan() => Run(plan => plans.Approve(plan.Document, plan.PlanId),
-        "Đã duyệt kế hoạch. Quay lại Claude và nói \"xong\" để tiếp tục.");
+    public void ApprovePlan()
+    {
+        if (!Run(plan => plans.Approve(plan.Document, plan.PlanId), "") || Plan is null) return;
+        Message = commitApproved?.Invoke(Plan) == true
+            ? "Đã duyệt. Đang ghi vào mô hình..."
+            : "Đã duyệt kế hoạch. Quay lại Claude và nói \"xong\" để tiếp tục.";
+    }
 
     public void CancelPlan() => Run(plan => plans.Cancel(plan.Document, plan.PlanId),
         "Đã huỷ kế hoạch. Mô hình không thay đổi.");
@@ -136,18 +146,21 @@ public sealed class ReviewViewModel(PlanService plans) : INotifyPropertyChanged
     // For messages from outside the view model, e.g. when zooming to an element fails.
     public void ShowMessage(string message) => Message = message;
 
-    private void Run(Func<Plan, Plan> action, string done)
+    // False when the action failed; its message is then shown.
+    private bool Run(Func<Plan, Plan> action, string done)
     {
-        if (Plan is null) return;
+        if (Plan is null) return false;
         try
         {
             Load(action(Plan));
             Message = done;
+            return true;
         }
         catch (Exception exception) when (exception is RpcException or InvalidOperationException
             or ArgumentException or IOException or UnauthorizedAccessException)
         {
             Message = exception.Message;
+            return false;
         }
     }
 

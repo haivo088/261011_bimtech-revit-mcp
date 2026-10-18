@@ -361,6 +361,34 @@ public sealed class PlanServiceTests : IDisposable
     }
 
     [Fact]
+    public void Auto_commit_takes_items_rejected_for_the_person_as_decided()
+    {
+        var plans = new PlanService(new JsonPlanStore(), _clock, autoApproveSure: () => true);
+        var sure = Item("E1", "A");
+        sure.Confidence = 0.9;
+        var asBelow = Item("E2", "A");
+        (asBelow.Tier, asBelow.Status, asBelow.AutoStatus) = (PlanTier.Auto, PlanItemStatus.Rejected, PlanItemStatus.Rejected);
+
+        var plan = plans.Create(_document, "set_parameters", "x", null, [sure, asBelow]);
+
+        Assert.Equal(PlanStatus.Approved, plan.Status);
+        Assert.Equal(["E1"], plan.Approval!.ApprovedItemIds);
+        var onlyRejected = Item("E3", "A");
+        (onlyRejected.Tier, onlyRejected.Status, onlyRejected.AutoStatus) = (PlanTier.Auto, PlanItemStatus.Rejected, PlanItemStatus.Rejected);
+        Assert.Equal(PlanStatus.InReview, plans.Create(_document, "set_parameters", "x", null, [onlyRejected]).Status);
+    }
+
+    [Fact]
+    public void List_returns_every_plan_of_the_model()
+    {
+        var first = _plans.Create(_document, "set_parameters", "a", scope: null, [Item("E1", "A")]);
+        var second = _plans.Create(_document, "set_parameters", "b", scope: null, [Item("E1", "A")]);
+        File.WriteAllText(Path.Combine(_folder, "pln_20260101_abcdef.json"), "not a plan");
+
+        Assert.Equal(new[] { first.PlanId, second.PlanId }.Order(), _plans.List(_document).Select(plan => plan.PlanId).Order());
+    }
+
+    [Fact]
     public void Without_auto_commit_a_sure_plan_still_waits_for_the_person()
     {
         var sure = Item("E1", "A");

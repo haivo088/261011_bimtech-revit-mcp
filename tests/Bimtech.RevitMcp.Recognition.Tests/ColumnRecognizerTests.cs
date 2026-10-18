@@ -89,6 +89,32 @@ public sealed class ColumnRecognizerTests
     }
 
     [Fact]
+    public void Columns_at_two_neighbouring_crossings_are_not_a_wall_cut_by_a_door()
+    {
+        // Grid 8 and grids A, A' 1800 apart: a 350 x 1400 column at A-8 and a 330 x 750 one at A'-8, one line, 1050 apart.
+        var frame = BeamCase.FrameOf(
+        [
+            new TruthGrid { Name = "8", X0 = 47400, Y0 = -5000, X1 = 47400, Y1 = 5000 },
+            new TruthGrid { Name = "A", X0 = 40000, Y0 = 0, X1 = 55000, Y1 = 0 },
+            new TruthGrid { Name = "A'", X0 = 40000, Y0 = -1800, X1 = 55000, Y1 = -1800 },
+        ]);
+        Shape[] shapes =
+        [
+            new("01 Colum", 47375, 700, 350, 1400, 0, false), new("HATCH", 47375, 700, 350, 1400, 0, true),
+            new("BAO", 47365, -1425, 330, 750, 0, false), new("HATCH", 47365, -1425, 330, 750, 0, true),
+        ];
+
+        var result = ColumnRecognizer.Recognize(shapes, frame, [], [], []);
+
+        Assert.Equal(2, result.Columns.Count);
+        Assert.All(result.Columns, column =>
+        {
+            Assert.True(column.Sure);
+            Assert.DoesNotContain(Evidence.VetoReason(ColumnRecognizer.WallRunReason), column.Reasons);
+        });
+    }
+
+    [Fact]
     public void A_column_mark_and_a_column_below_add_evidence()
     {
         var below = new CaseSupport
@@ -131,5 +157,91 @@ public sealed class ColumnRecognizerTests
         Assert.Equal(2000, rect.Cy, 6);
         Assert.Equal(180000, rect.Length * rect.Width, 3);
         Assert.InRange(rect.AngleRadians, 0, Math.PI / 2);
+    }
+    // A 150 x 150 square on grid 1, drawn as a polyline, with or without its two diagonals as loose lines.
+    private static CadCase Square(bool crossed)
+    {
+        var data = new CadCase { Styles = [new CadStyle { Layer = "DCE_BaoBeTong" }, new CadStyle { Layer = "DCE_Dim" }] };
+        data.Polylines.Add(new CadPolyline { Style = 0, Closed = true, Points = [[-75, 2925], [75, 2925], [75, 3075], [-75, 3075]] });
+        if (crossed)
+        {
+            data.Lines.Add(new CadLine { Style = 1, X0 = -75, Y0 = 2925, X1 = 75, Y1 = 3075 });
+            data.Lines.Add(new CadLine { Style = 1, X0 = 75, Y0 = 2925, X1 = -75, Y1 = 3075 });
+        }
+        return data;
+    }
+
+    [Fact]
+    public void A_rectangle_with_both_diagonals_is_found_crossed()
+    {
+        Assert.True(Assert.Single(ColumnRecognizer.FindShapes(Square(crossed: true), null)).Crossed);
+        Assert.False(Assert.Single(ColumnRecognizer.FindShapes(Square(crossed: false), null)).Crossed);
+    }
+
+    [Fact]
+    public void One_diagonal_is_not_an_x()
+    {
+        var data = Square(crossed: true);
+        data.Lines.RemoveAt(1);
+
+        Assert.False(Assert.Single(ColumnRecognizer.FindShapes(data, null)).Crossed);
+    }
+
+    [Fact]
+    public void An_empty_crossed_rectangle_is_a_floor_opening_to_review_not_a_sure_column()
+    {
+        // Repeated on grids, which alone would make it sure; the drawing fills its three columns.
+        var result = Recognize([.. FilledColumns, Outline(0, 3000, 150, 150) with { Crossed = true },
+            Outline(6000, 3000, 150, 150) with { Crossed = true }, Outline(12000, 3000, 150, 150) with { Crossed = true }]);
+
+        Assert.All(result.Columns.Where(column => column.SizeA == 150), column =>
+        {
+            Assert.False(column.Sure);
+            Assert.Equal(Evidence.VetoCapPercent, column.Percent);
+            Assert.Contains(Evidence.VetoReason(ColumnRecognizer.OpeningReason), column.Reasons);
+        });
+        Assert.Empty(result.Dropped);
+    }
+
+    // Three filled 400 x 400 columns with an X on grid A: the drawing fills its crossed columns.
+    private static readonly Shape[] FilledColumns =
+    [
+        Outline(0, 0) with { Crossed = true }, Hatch(0, 0), Outline(6000, 0) with { Crossed = true }, Hatch(6000, 0),
+        Outline(12000, 0) with { Crossed = true }, Hatch(12000, 0),
+    ];
+
+    [Fact]
+    public void Without_filled_columns_an_empty_x_says_nothing()
+    {
+        // No DWG read, or a drawing that fills only its plain columns: an X may be a column's own sign.
+        var result = Recognize([Outline(0, 0), Hatch(0, 0), Outline(6000, 0), Hatch(6000, 0), Outline(12000, 0), Hatch(12000, 0),
+            Outline(0, 3000) with { Crossed = true }, Outline(6000, 3000) with { Crossed = true },
+            Outline(12000, 3000) with { Crossed = true }]);
+
+        Assert.All(result.Columns, column => Assert.True(column.Sure));
+    }
+
+    [Fact]
+    public void A_filled_column_drawn_with_an_x_stays_a_column()
+    {
+        var result = Recognize(FilledColumns);
+
+        var column = result.Columns.Single(column => column.Cx == 0);
+        Assert.True(column.Sure);
+        Assert.DoesNotContain(column.Reasons, reason => reason.Contains(ColumnRecognizer.OpeningReason));
+    }
+
+    [Fact]
+    public void A_crossed_column_on_the_column_below_stays_a_column()
+    {
+        var below = new CaseSupport
+        {
+            Kind = "column", Cx = 0, Cy = 3000, Points = [[-200, 2800], [200, 2800], [200, 3200], [-200, 3200]],
+        };
+        var result = Recognize([.. FilledColumns, Outline(0, 3000) with { Crossed = true }], [below]);
+
+        var column = result.Columns.Single(column => column.Cy == 3000);
+        Assert.True(column.Sure);
+        Assert.DoesNotContain(column.Reasons, reason => reason.Contains(ColumnRecognizer.OpeningReason));
     }
 }

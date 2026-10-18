@@ -27,6 +27,10 @@ public sealed record McpSettings
     // it is proposed, so Claude commits it without the review window. The person turns it on; Claude never approves.
     public bool AutoCommitSure { get; init; }
 
+    // Pressing "Duyệt kế hoạch" in the review window also writes the plan into the model at once (one Ctrl+Z), so the
+    // person need not go back to Claude to say they are done. Read-only mode and a switched-off commit_plan still apply.
+    public bool CommitOnApprove { get; init; } = true;
+
     // Upper bound for elements one write call may create, e.g. beams in propose_beams.
     public int MaxElementsPerWrite { get; init; } = DefaultMaxElementsPerWrite;
 

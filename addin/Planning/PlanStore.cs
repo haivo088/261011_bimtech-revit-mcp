@@ -13,6 +13,9 @@ public interface IPlanStore
     // Returns null when the model has no plan with this ID.
     Plan? Load(PlanDocument document, string planId);
 
+    // Every plan of the model, in no particular order. Files that cannot be read are left out.
+    IReadOnlyList<Plan> List(PlanDocument document);
+
     // Appends one entry to the model's audit log. Entries are never rewritten or removed.
     void AppendAudit(PlanDocument document, PlanAuditEntry entry);
 }
@@ -51,6 +54,26 @@ public sealed class JsonPlanStore : IPlanStore
         plan.SchemaVersion = Plan.CurrentSchemaVersion;
         plan.Document.StorageFolder = document.StorageFolder;
         return plan;
+    }
+
+    public IReadOnlyList<Plan> List(PlanDocument document)
+    {
+        if (string.IsNullOrEmpty(document.StorageFolder) || !Directory.Exists(document.StorageFolder)) return [];
+        var plans = new List<Plan>();
+        foreach (var path in Directory.EnumerateFiles(document.StorageFolder, "pln_*.json"))
+        {
+            var planId = Path.GetFileNameWithoutExtension(path);
+            if (!PlanIds.IsValid(planId)) continue;
+            try
+            {
+                if (Load(document, planId) is { } plan) plans.Add(plan);
+            }
+            catch (Exception exception) when (exception is JsonException or IOException or InvalidDataException or UnauthorizedAccessException)
+            {
+                // A damaged or newer file is skipped; the plan it holds is simply not part of the history.
+            }
+        }
+        return plans;
     }
 
     // audit.jsonl next to the plan files: one JSON object per line, appended after each commit.

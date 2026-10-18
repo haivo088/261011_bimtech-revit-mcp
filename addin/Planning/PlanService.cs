@@ -9,8 +9,9 @@ namespace Bimtech.RevitMcp.Planning;
 // Creates plans, looks them up and moves them between statuses.
 // Only the transitions in PlanTransitions are allowed, and only the review window
 // calls Approve; no JSON-RPC command may (server/tests/contract.test.mjs checks this).
-// autoApproveSure: the person's "auto-commit sure plans" setting. When it says yes, a new plan whose every item is
-// sure (none pending, none blocked) is approved at once, as the person asked; no command ever approves on its own.
+// autoApproveSure: the person's "auto-commit sure plans" setting. When it says yes, a new plan whose every item was
+// decided for them (approved by its confidence, or rejected as they did on the storey below; none pending, none blocked)
+// is approved at once, as the person asked; no command ever approves on its own.
 public sealed class PlanService(IPlanStore store, TimeProvider? clock = null, Func<bool>? autoApproveSure = null)
 {
     private readonly TimeProvider _clock = clock ?? TimeProvider.System;
@@ -41,7 +42,8 @@ public sealed class PlanService(IPlanStore store, TimeProvider? clock = null, Fu
         Validate(plan);
         PlanConfidence.Apply(plan.Items);
         if (autoApproveSure?.Invoke() == true
-            && plan.Items.All(item => item.Tier == PlanTier.Auto && item.Status == PlanItemStatus.Approved))
+            && plan.Items.All(item => item.IsDecidedForPerson)
+            && plan.Items.Any(item => item.Status == PlanItemStatus.Approved))
             RecordApproval(plan, automatic: true);
         lock (_lock) store.Save(plan);
         Changed?.Invoke(plan);
@@ -57,6 +59,12 @@ public sealed class PlanService(IPlanStore store, TimeProvider? clock = null, Fu
                 $"No plan '{planId}' for the open model. Plans belong to the model they were proposed in.",
                 new { planId });
         }
+    }
+
+    // Every plan of the model, e.g. to read what was decided on the storey below.
+    public IReadOnlyList<Plan> List(PlanDocument document)
+    {
+        lock (_lock) return store.List(document);
     }
 
     public Plan Cancel(PlanDocument document, string planId) => Move(document, planId, PlanStatus.Cancelled);

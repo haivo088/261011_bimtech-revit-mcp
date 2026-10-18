@@ -226,7 +226,9 @@ export const scanCadColumns = defineTool({
     + " (100-2000 mm, possibly rotated) drawn as polylines or loose lines, each weighed on evidence: at a grid crossing"
     + " or on a grid, filled with a hatch of the DWG file, its size repeated, a mark beside it (\"C1 300x500\"), a column"
     + " or pile cap of the storey below, a column-like layer name; against: inside a wall hatch, a row of pieces of one"
-    + " thickness a door apart (a wall cut by doors), a layer named like doors or furniture, alone off every grid."
+    + " thickness a door apart (a wall cut by doors), a layer named like doors or furniture, alone off every grid,"
+    + " crossed by an X but not filled where the drawing fills its crossed columns (a floor opening; needs the DWG"
+    + " hatches, so pass dwgPath for an imported CAD)."
     + " Hatches come from the DWG file on disk (a linked CAD's own file, or dwgPath for an imported one); without it"
     + " the scan still works, with less evidence. Groups by mark (\"C1\") or size small side first (\"300x500\"): sure"
     + " groups, and \"300x500-maybe\" groups to review. Model the grids (and the storey below) first: the region"
@@ -275,9 +277,12 @@ export const proposeColumns = defineTool({
     + " snapMm (default 5). Items name the crossings (\"A-1\"); columns on one grid only or on none are flagged; grid"
     + " crossings with no column are returned in emptyCrossings for the user to check. A column drawn within 2° of the"
     + " grid direction is set straight; columns drawn twice are placed once; columns already in the model at that spot"
-    + " (any family) are skipped. Type per group: its entry in 'types', else an existing type with matching b/h, else a b×h type"
+    + " (any family) are skipped. Columns at the spot and size of ones the user rejected on the storey below (the"
+    + " committed column plans ending at baseLevelId; a spot built later is no longer rejected) get their own item per group, already rejected (\"Tự bỏ\";"
+    + " rejectedAsBelow counts them); the user may still approve it."
+    + " Type per group: its entry in 'types', else an existing type with matching b/h, else a b×h type"
     + " created in templateFamilyId. The mark goes to the Mark parameter (writeMark, default true). Opens the review"
-    + " window and returns a planId at once; then get_plan_status and commit_plan.",
+    + " window and returns a planId at once; then get_plan_status, and commit_plan unless the window already wrote it.",
   inputSchema: {
     scanId: z.string().min(1).max(64).describe("scanId from scan_cad_columns."),
     baseLevelId: elementId.describe("Bottom level of the columns."),

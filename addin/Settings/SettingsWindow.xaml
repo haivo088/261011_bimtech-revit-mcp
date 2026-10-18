@@ -66,6 +66,10 @@
                 <TextBlock Style="{StaticResource Hint}" Margin="22,2,0,0"
                            Text="Nên bật khi mở model dự án thật. Claude vẫn đọc dữ liệu và xem trước kế hoạch (dry-run), nhưng không ghi được gì."/>
 
+                <CheckBox x:Name="CommitOnApproveCheck" Content="Bấm Duyệt kế hoạch là ghi vào mô hình ngay" FontWeight="SemiBold" Margin="0,10,0,0"/>
+                <TextBlock Style="{StaticResource Hint}" Margin="22,2,0,0"
+                           Text="Không cần quay lại nói với Claude: các mục đã duyệt được ghi ngay khi bạn bấm Duyệt kế hoạch, là một bước Ctrl+Z. Tắt đi thì Claude ghi khi bạn báo xong."/>
+
                 <CheckBox x:Name="AutoCommitCheck" Content="Tự commit kế hoạch khi mọi mục đủ tin cậy" FontWeight="SemiBold" Margin="0,10,0,0"/>
                 <TextBlock Style="{StaticResource Hint}" Margin="22,2,0,0"
                            Text="Kế hoạch mà mọi mục từ 50% tin cậy trở lên, không có mục bị chặn, được duyệt thay bạn ngay khi đề xuất: Claude ghi luôn, không mở cửa sổ duyệt. Vẫn là một bước Ctrl+Z. Kế hoạch có mục cần xem vẫn chờ bạn duyệt."/>

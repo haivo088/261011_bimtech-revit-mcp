@@ -18,6 +18,7 @@ public sealed class PlanItemRow : INotifyPropertyChanged
         Detail = ReadString(item.Params, "detail") ?? "";
         ElementIds = (ReadString(item.Params, "elementId") ?? ReadString(item.Source, "elementId")) is { } id ? [id] : [];
         IsAuto = item.Tier == PlanTier.Auto;
+        AutoStatus = IsAuto ? item.AutoStatus ?? PlanItemStatus.Approved : null;
         ConfidenceText = item.Confidence is { } confidence ? $"{Math.Round(confidence * 100):0}%" : "";
         var shapes = PreviewShapes.From(item.Action, item.Params);
         Preview = shapes.Count == 0 ? PreviewGroup.None : new PreviewGroup(PreviewShapes.LevelId(item.Params), shapes);
@@ -34,8 +35,13 @@ public sealed class PlanItemRow : INotifyPropertyChanged
     public string Detail { get; }
     // Revit elements to select and zoom to when the row is selected.
     public IReadOnlyList<string> ElementIds { get; }
-    // Approved automatically because its confidence reached PlanConfidence.AutoApproveFrom.
+    // Decided automatically: approved because its confidence reached PlanConfidence.AutoApproveFrom, or rejected as the
+    // person did before (PlanTier.Auto).
     public bool IsAuto { get; }
+    // What was decided for the person (Approved or Rejected); null for items they decide.
+    public PlanItemStatus? AutoStatus { get; }
+    // Still as decided for the person.
+    public bool IsDecidedForPerson => AutoStatus is { } decided && Status == decided;
     // e.g. "95%"; empty when the command gives no confidence.
     public string ConfidenceText { get; }
     // Where the item's new elements will be, drawn in Revit while the row is selected. Empty for items on existing elements.
@@ -56,8 +62,8 @@ public sealed class PlanItemRow : INotifyPropertyChanged
     public string StatusText => Status switch
     {
         PlanItemStatus.Pending => "Chờ",
-        PlanItemStatus.Approved => IsAuto ? "Tự duyệt" : "Duyệt",
-        PlanItemStatus.Rejected => "Bỏ",
+        PlanItemStatus.Approved => IsDecidedForPerson ? "Tự duyệt" : "Duyệt",
+        PlanItemStatus.Rejected => IsDecidedForPerson ? "Tự bỏ" : "Bỏ",
         PlanItemStatus.Applied => "Đã ghi",
         _ => "Lỗi",
     };

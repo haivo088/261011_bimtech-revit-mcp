@@ -20,6 +20,8 @@ namespace Bimtech.RevitMcp.Commands.Structural;
 //     crossings ("A-1"); columns on one grid only or on none are flagged, and crossings with no column are returned.
 //   - A column drawn within 2° of the grid direction is set straight on it; columns drawn twice are placed once.
 //   - Columns already in the model (any family, overlapping heights) are skipped.
+//   - Columns at the spot and size of ones the person rejected on the storey below (its committed column plans, later wins)
+//     go into a separate item per group that starts rejected ("Tự bỏ"): the same opening or wall piece is not asked twice.
 public sealed class ProposeColumnsCommand(PlanService plans, ReviewWindowHost review, ModelChangeTracker changes) : IRevitCommand
 {
     public string Method => "propose_columns";
@@ -73,6 +75,8 @@ public sealed class ProposeColumnsCommand(PlanService plans, ReviewWindowHost re
 
         var items = new List<PlanItem>();
         var alreadyModeled = new List<string>();
+        var below = PlanHistory.ColumnsBelow(plans.List(PlanStorageLocation.For(document)), RevitJson.Id(baseLevel.Id));
+        var inheritedTotal = 0;
         foreach (var group in scan.Groups)
         {
             context.Cancellation.ThrowIfCancellationRequested();
@@ -87,6 +91,8 @@ public sealed class ProposeColumnsCommand(PlanService plans, ReviewWindowHost re
                     .Select(g => $"{g.Key} ({g.Count()}/{group.Columns.Count})")));
 
             var columns = new List<object>();
+            // Rejected on the storey below, at the same spot and size.
+            var rejectedBelow = new List<object>();
             int skipped = 0, doubled = 0, straightened = 0, setOnGrid = 0;
             var crossings = new List<string>();
             var oneGrid = new List<string>();
@@ -151,18 +157,22 @@ public sealed class ProposeColumnsCommand(PlanService plans, ReviewWindowHost re
                     skipped++;
                     continue;
                 }
-                columns.Add(new
+                var (xMm, yMm) = (UnitConvert.Length(center.X), UnitConvert.Length(center.Y));
+                var (lengthOfColumn, widthOfColumn) = (UnitConvert.Length(column.LengthFeet), UnitConvert.Length(column.WidthFeet));
+                var rejectedThere = below is not null
+                    && below.Rejected.Any(spot => PlanHistory.Matches(spot, xMm, yMm, lengthOfColumn, widthOfColumn));
+                (rejectedThere ? rejectedBelow : columns).Add(new
                 {
-                    x = UnitConvert.Length(center.X),
-                    y = UnitConvert.Length(center.Y),
+                    x = xMm,
+                    y = yMm,
                     angleDeg = Math.Round(angle * 180 / Math.PI, 4),
-                    lengthMm = UnitConvert.Length(column.LengthFeet),
-                    widthMm = UnitConvert.Length(column.WidthFeet),
+                    lengthMm = lengthOfColumn,
+                    widthMm = widthOfColumn,
                     at,
                 });
             }
 
-            if (columns.Count == 0 && type.Problem is null)
+            if (columns.Count == 0 && rejectedBelow.Count == 0 && type.Problem is null)
             {
                 alreadyModeled.Add(group.Key);
                 continue;
@@ -178,13 +188,18 @@ public sealed class ProposeColumnsCommand(PlanService plans, ReviewWindowHost re
                 reasons.Add($"{offGrid.Count} cột không nằm trên trục nào, kiểm tra: {List(offGrid)}");
 
             var place = crossings.Count == 0 ? "" : $" · tại {List(crossings)}";
-            items.Add(new PlanItem
+            // As sure as its least sure column; a type to create or a mark at odds with the drawing needs a look.
+            var confidence = scan.Percents is { } percents
+                ? ConfidenceRules.Group(group.Columns.Select(column => percents.GetValueOrDefault(column, Evidence.BasePercent)),
+                    needsLook: type.Symbol is null || mismatch is not null)
+                : (double?)null;
+            PlanItem Item(string itemId, List<object> placed, string placeText, List<string> reasons) => new()
             {
-                ItemId = "K-" + group.Key.Replace(' ', '_'),
+                ItemId = itemId,
                 Action = "create_columns",
                 Params = JsonSerializer.SerializeToElement(new
                 {
-                    summary = $"{(group.TagName is null ? "" : group.TagName + " · ")}{group.SizeKey} · {columns.Count} cột · {type.Text}{place}",
+                    summary = $"{(group.TagName is null ? "" : group.TagName + " · ")}{group.SizeKey} · {placed.Count} cột · {type.Text}{placeText}",
                     groupKey = group.Key,
                     mark = writeMark ? group.TagName : null,
                     baseLevelId = RevitJson.Id(baseLevel.Id),
@@ -194,17 +209,31 @@ public sealed class ProposeColumnsCommand(PlanService plans, ReviewWindowHost re
                     sizeAMm = group.SizeAMm,
                     sizeBMm = group.SizeBMm,
                     // Centres in model coordinates (mm), angle of the drawn Length side from X (degrees).
-                    columns,
+                    columns = placed,
                 }),
                 Tier = type.Problem is null ? PlanTier.Review : PlanTier.Blocked,
-                // As sure as its least sure column; a type to create or a mark at odds with the drawing needs a look.
-                Confidence = scan.Percents is { } percents
-                    ? ConfidenceRules.Group(group.Columns.Select(column => percents.GetValueOrDefault(column, Evidence.BasePercent)),
-                        needsLook: type.Symbol is null || mismatch is not null)
-                    : null,
+                Confidence = confidence,
                 Reasons = reasons,
-                Source = JsonSerializer.SerializeToElement(new { name = group.Key, category = "Structural Columns", count = columns.Count }),
-            });
+                Source = JsonSerializer.SerializeToElement(new { name = group.Key, category = "Structural Columns", count = placed.Count }),
+            };
+            if (columns.Count > 0 || type.Problem is not null) items.Add(Item("K-" + group.Key.Replace(' ', '_'), columns, place, reasons));
+            if (rejectedBelow.Count > 0)
+            {
+                inheritedTotal += rejectedBelow.Count;
+                var item = Item("K-" + group.Key.Replace(' ', '_') + "-tangduoibo", rejectedBelow, " · tầng dưới đã bỏ",
+                [
+                    $"Tầng dưới đã bỏ {rejectedBelow.Count} cột đúng vị trí và kích thước này ({below!.Title}): tự bỏ theo. "
+                    + "Chọn Duyệt nếu tầng này khác.",
+                    .. reasons.Where(reason => reason.StartsWith("Vì sao", StringComparison.Ordinal)),
+                ]);
+                // Decided for the person, as they decided below; they may still approve it. A blocked group stays blocked.
+                if (item.Tier == PlanTier.Review)
+                {
+                    item.Tier = PlanTier.Auto;
+                    item.AutoStatus = item.Status = PlanItemStatus.Rejected;
+                }
+                items.Add(item);
+            }
         }
 
         var emptyCrossings = frame is null ? [] : GridIntersections.Empty(frame.AlongU, frame.AlongV, footprints, marginMm);
@@ -232,6 +261,7 @@ public sealed class ProposeColumnsCommand(PlanService plans, ReviewWindowHost re
                 gridMarginMm = marginMm,
                 alreadyModeledGroups = alreadyModeled,
                 emptyCrossings = emptyCrossingsInfo,
+                rejectedAsBelow = below is null ? null : new { planId = below.PlanId, columns = inheritedTotal },
             }),
             items: items,
             modelStamp: changes.Current(document));
@@ -247,7 +277,9 @@ public sealed class ProposeColumnsCommand(PlanService plans, ReviewWindowHost re
                 : snapMm <= 0 ? "off (snapMm = 0): positions as drawn"
                 : $"centred or face-on-grid within {toleranceMm} mm set exactly, other offsets rounded to {snapMm} mm",
             emptyCrossings = emptyCrossingsInfo,
-            reviewWindow = "opened",
+            // Columns that start rejected because the person rejected the same spot on the storey below.
+            rejectedAsBelow = below is null ? null : new { planId = below.PlanId, columns = inheritedTotal },
+            reviewWindow = plan.Approval?.Automatic == true ? "not opened: auto-approved" : "opened",
             note = "Nothing was changed in the model. Each item is one column group. "
                 + (emptyCrossings.Count > 0
                     ? $"Tell the user the {emptyCrossings.Count} grid crossing(s) with no column (open space on purpose, or a "

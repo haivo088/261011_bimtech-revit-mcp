@@ -7,6 +7,7 @@ namespace Bimtech.RevitMcp.Commands.Plans;
 // Writes the items the person approved in the review window. Needs the approvalId that
 // get_plan_status shows after approval; refuses stale plans and plans whose approved items changed.
 // Calling it again on a committed plan returns the stored results and writes nothing.
+// The review window uses Write too, when the person presses "Duyệt kế hoạch" with CommitOnApprove on.
 public sealed class CommitPlanCommand(PlanService plans, PlanCommitter committer, PlanActions actions, ModelChangeTracker changes)
     : IRevitCommand
 {
@@ -18,9 +19,24 @@ public sealed class CommitPlanCommand(PlanService plans, PlanCommitter committer
 
     public object? Execute(CommandContext context)
     {
-        var revitDocument = context.RequireDocument();
-        var planId = context.Params.RequireString("planId", 64);
-        var approvalId = context.Params.RequireString("approvalId", 64);
+        var result = Write(context.RequireDocument(), context.Params.RequireString("planId", 64), context.Params.RequireString("approvalId", 64));
+        var plan = result.Plan;
+        var written = plan.Items.Where(item => item.Status is PlanItemStatus.Applied or PlanItemStatus.Failed).ToList();
+
+        return new
+        {
+            plan = PlanResults.Status(plan),
+            alreadyCommitted = result.AlreadyCommitted,
+            applied = written.Count(item => item.Status == PlanItemStatus.Applied),
+            failed = written.Count(item => item.Status == PlanItemStatus.Failed),
+            items = written.Take(MaxItemsReturned).Select(item => new { item.ItemId, item.Status, item.Result }),
+            undo = "The whole commit is one undo step in Revit (Ctrl+Z).",
+        };
+    }
+
+    // Must run in a Revit API context. Throws RpcException when the plan cannot be written (stale, wrong approval...).
+    public PlanCommitResult Write(Autodesk.Revit.DB.Document revitDocument, string planId, string approvalId)
+    {
         var document = PlanStorageLocation.For(revitDocument);
 
         // A model that cannot be written is reported up front, instead of every item failing on its own.
@@ -34,18 +50,6 @@ public sealed class CommitPlanCommand(PlanService plans, PlanCommitter committer
         }
 
         var writer = new RevitPlanWriter(revitDocument, actions, $"BIMTECH: {plans.Get(document, planId).Title}");
-        var result = committer.Commit(document, planId, approvalId, changes.Current(revitDocument), writer);
-        var plan = result.Plan;
-        var written = plan.Items.Where(item => item.Status is PlanItemStatus.Applied or PlanItemStatus.Failed).ToList();
-
-        return new
-        {
-            plan = PlanResults.Status(plan),
-            alreadyCommitted = result.AlreadyCommitted,
-            applied = written.Count(item => item.Status == PlanItemStatus.Applied),
-            failed = written.Count(item => item.Status == PlanItemStatus.Failed),
-            items = written.Take(MaxItemsReturned).Select(item => new { item.ItemId, item.Status, item.Result }),
-            undo = "The whole commit is one undo step in Revit (Ctrl+Z).",
-        };
+        return committer.Commit(document, planId, approvalId, changes.Current(revitDocument), writer);
     }
 }

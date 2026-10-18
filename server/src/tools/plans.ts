@@ -13,7 +13,9 @@ export const getPlanStatus = defineTool({
   description:
     "Read a plan's status and item counts. Call it when the user says they finished reviewing. "
     + "Statuses: InReview, Approved, Committed, Stale, Cancelled. Only the user can approve a plan, "
-    + "in the Revit review window; approvalId is set once they do.",
+    + "in the Revit review window; approvalId is set once they do. Committed right after their approval means the "
+    + "review window already wrote it (Revit setting \"Bấm Duyệt kế hoạch là ghi vào mô hình ngay\", on by default): "
+    + "nothing is left to commit; carry on with the next step.",
   inputSchema: { planId },
   annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
 });
@@ -64,7 +66,8 @@ export const commitPlan = defineTool({
     + "nothing to review); pass that approvalId. "
     + "Rejected items are never written. The whole commit is one undo step in Revit. Errors: -32022 the model "
     + "changed since the plan was proposed (plan becomes Stale; propose again), -32023 the approvalId is not the "
-    + "latest (read get_plan_status again). Calling it again on a committed plan returns the same results.",
+    + "latest (read get_plan_status again). Calling it again on a committed plan returns the same results, e.g. a "
+    + "plan the review window already wrote when the user approved it.",
   inputSchema: { planId, approvalId },
   // Plans may hold items that overwrite or delete, so treat a commit as destructive.
   annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },

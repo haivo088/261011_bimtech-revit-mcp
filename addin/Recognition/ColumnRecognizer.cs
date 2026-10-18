@@ -8,7 +8,10 @@ namespace Bimtech.RevitMcp.Recognition;
 //   + at a grid crossing (or on one grid), filled with a hatch, its size repeated over the plan, a column mark beside
 //     it, a column or pile cap of the storey below under it, a column-like layer name;
 //   − inside a wall hatch, a layer named like something else (doors, furniture, dimensions...), and alone: on no
-//     grid, without hatch and of a size found nowhere else.
+//     grid, without hatch and of a size found nowhere else;
+//   − crossed by both diagonals but not filled, with nothing below, on a drawing whose crossed columns are filled: the sign of a
+//     floor opening. A column may be drawn with the same X, but filled (a hatch) or standing on the column below, so
+//     either lifts the veto; without hatches read (no DWG) or when no crossed rectangle is filled, "not filled" says nothing.
 // Layer names are a hint, never a gate. Weighed on the Evidence scale: from 50% (no evidence either way), strong
 // relations ±20%, supporting evidence ±10%, layer names ±5%, a wall cut by doors −50%; sure from 50%, to review from
 // 20%, dropped below, still
@@ -32,12 +35,16 @@ public static partial class ColumnRecognizer
         public double SupportOffsetMm { get; init; } = 50;
         // Hatches thinner than this on average are walls.
         public double MaxWallMm { get; init; } = 600;
-        // Pieces of a wall further apart than this are not one wall cut by a door.
+        // Pieces of a wall further apart than this are not one wall cut by a door, nor closer than the narrowest door
+        // (touching pieces are one element, e.g. a wall running into a column).
         public double MaxOpeningMm { get; init; } = 2500;
+        public double MinOpeningMm { get; init; } = 600;
     }
 
     // A rectangle found in the drawing: from an outline (polyline or touching lines) or from a hatch's outer loop.
-    public sealed record Shape(string Layer, double Cx, double Cy, double Length, double Width, double AngleRadians, bool IsHatch);
+    // Crossed: both its diagonals are drawn (an X), on any layer.
+    public sealed record Shape(string Layer, double Cx, double Cy, double Length, double Width, double AngleRadians, bool IsHatch,
+        bool Crossed = false);
 
     // Percent and signed reasons, e.g. "+20% ở giao trục", from Weighed.
     public sealed class Column : Weighed
@@ -51,8 +58,11 @@ public static partial class ColumnRecognizer
         public List<string> Layers { get; } = [];
         public bool HasOutline { get; set; }
         public bool HasHatch { get; set; }
+        // Both diagonals drawn across it.
+        public bool Crossed { get; set; }
         // "A-1" at a grid crossing, "trục 3" on one grid, else null.
         public string? Grid { get; set; }
+        public bool AtCrossing { get; set; }
         public ColumnTag? Tag { get; set; }
 
         public double SizeA => Math.Round(Math.Min(Length, Width) / 5) * 5;
@@ -74,6 +84,7 @@ public static partial class ColumnRecognizer
     public const string OtherLayerReason = "tên layer giống thứ khác (cửa, thiết bị, kích thước...)";
     public const string AloneReason = "đơn lẻ: không trục, không hatch, không ký hiệu, kích thước không lặp";
     public const string WallRunReason = "thẳng hàng với mảnh cùng bề dày: đoạn vách bị cửa cắt";
+    public const string OpeningReason = "gạch chéo X mà không tô, không có cột tầng dưới: ký hiệu lỗ mở sàn";
 
     // Shapes of column size in a drawing: closed polylines, clusters of touching lines on one layer, and hatches.
     public static List<Shape> FindShapes(CadCase scene, WallRecognizer.Region? region, Options? options = null)
@@ -109,6 +120,8 @@ public static partial class ColumnRecognizer
                 if (cluster.Count >= 2) Add(Layer(layer.Key), cluster.Select(i => segments[i]).ToList(), checkOutline: true);
         }
 
+        shapes = MarkCrossed(shapes, scene);
+
         // One hatch often fills many columns at once: each of its outer loops is a shape.
         foreach (var hatch in scene.Hatches)
             foreach (var outer in OuterLoops(hatch))
@@ -119,6 +132,46 @@ public static partial class ColumnRecognizer
                 shapes.Add(new Shape(Layer(hatch.Style), rect.Cx, rect.Cy, rect.Length, rect.Width, rect.AngleRadians, true));
             }
         return shapes;
+    }
+
+    // Outlines whose two diagonals are drawn: lines or polyline sides of any layer running corner to corner. A diagonal's
+    // midpoint is the rectangle's centre, so segments are looked up by midpoint.
+    private static List<Shape> MarkCrossed(List<Shape> shapes, CadCase scene)
+    {
+        const double cell = 50;
+        var byMidpoint = new Dictionary<(long, long), List<(double X0, double Y0, double X1, double Y1)>>();
+        void Index(double x0, double y0, double x1, double y1)
+        {
+            var key = ((long)Math.Floor((x0 + x1) / 2 / cell), (long)Math.Floor((y0 + y1) / 2 / cell));
+            if (!byMidpoint.TryGetValue(key, out var list)) byMidpoint[key] = list = [];
+            list.Add((x0, y0, x1, y1));
+        }
+        foreach (var line in scene.Lines) Index(line.X0, line.Y0, line.X1, line.Y1);
+        foreach (var polyline in scene.Polylines)
+            for (var i = 0; i + 1 < polyline.Points.Count; i++)
+                Index(polyline.Points[i][0], polyline.Points[i][1], polyline.Points[i + 1][0], polyline.Points[i + 1][1]);
+
+        return shapes.Select(shape =>
+        {
+            var (cos, sin) = (Math.Cos(shape.AngleRadians), Math.Sin(shape.AngleRadians));
+            var (hl, hw) = (shape.Length / 2, shape.Width / 2);
+            (double X, double Y) Corner(double u, double v) => (shape.Cx + u * cos - v * sin, shape.Cy + u * sin + v * cos);
+            var diagonals = new[] { (Corner(-hl, -hw), Corner(hl, hw)), (Corner(hl, -hw), Corner(-hl, hw)) };
+            var tolerance = Math.Max(15, 0.1 * Math.Min(shape.Length, shape.Width));
+            bool Near((double X, double Y) a, double x, double y) => Math.Abs(a.X - x) <= tolerance && Math.Abs(a.Y - y) <= tolerance;
+            var (kx, ky) = ((long)Math.Floor(shape.Cx / cell), (long)Math.Floor(shape.Cy / cell));
+            var found = new bool[2];
+            for (var dx = -1L; dx <= 1; dx++)
+                for (var dy = -1L; dy <= 1; dy++)
+                    if (byMidpoint.TryGetValue((kx + dx, ky + dy), out var near))
+                        foreach (var s in near)
+                            for (var d = 0; d < 2; d++)
+                            {
+                                var (a, b) = diagonals[d];
+                                if ((Near(a, s.X0, s.Y0) && Near(b, s.X1, s.Y1)) || (Near(b, s.X0, s.Y0) && Near(a, s.X1, s.Y1))) found[d] = true;
+                            }
+            return found[0] && found[1] ? shape with { Crossed = true } : shape;
+        }).ToList();
     }
 
     // The loops of a hatch that no other of its loops encloses: separate filled areas, not holes.
@@ -138,6 +191,9 @@ public static partial class ColumnRecognizer
         var merged = Merge(shapes, options);
         var columns = merged.Where(column => column.HasOutline).ToList();
         var hatchOnly = merged.Count - columns.Count;
+        // Whether this drawing fills its crossed rectangles (columns drawn with an X and filled), so an empty X means
+        // something else. Hatches misplaced by a bad DWG reading never land on crossed outlines, so they do not count.
+        var fillsColumns = columns.Count(column => column.Crossed && column.HasHatch) >= options.RepeatCount;
 
         var sizes = columns.GroupBy(column => (column.SizeA, column.SizeB)).ToDictionary(group => group.Key, group => group.Count());
         var tags = ColumnTags.AssignNearest(columns.Select(column => (column.Cx, column.Cy)).ToList(), texts,
@@ -148,11 +204,13 @@ public static partial class ColumnRecognizer
             .Where(w => w.Rect is { } rect && Math.Max(rect.Length, rect.Width) > options.MaxSideMm && w.Thickness <= options.MaxWallMm)
             .ToList();
 
+        // Every column's place among the grids first: telling a wall cut by doors from columns compares neighbours.
+        var onGrids = columns.Select(column => Grid(column, frame, options)).ToList();
         for (var i = 0; i < columns.Count; i++)
         {
             var column = columns[i];
             column.Tag = tags[i];
-            var onGrid = Grid(column, frame, options);
+            var onGrid = onGrids[i];
             if (onGrid == 2) column.Add(20, CrossingReason);
             else if (onGrid == 1) column.Add(10, OneGridReason);
             if (column.HasHatch) column.Add(20, HatchReason);
@@ -169,13 +227,16 @@ public static partial class ColumnRecognizer
                 column.Add(-20, InWallReason);
             if (onGrid == 0 && !column.HasHatch && !repeated && column.Tag?.Name is null && !onSupport) column.Add(-10, AloneReason);
             if (InWallRun(column, columns, options)) column.Veto(WallRunReason);
+            // Not dropped: a column drawn with an X on a drawing whose hatches could not be read still comes to review.
+            if (fillsColumns && column.Crossed && !column.HasHatch && !onSupport) column.Veto(OpeningReason);
         }
         return new Result(columns.Where(column => Evidence.IsKept(column.Percent)).ToList(), columns.Where(column => !Evidence.IsKept(column.Percent)).ToList(),
             shapes.Count(shape => !shape.IsHatch), shapes.Count(shape => shape.IsHatch), hatchOnly);
     }
 
     // A wall cut by doors: pieces of one thickness in a row on one line, a door's width apart. Columns of one size
-    // stand a bay apart, so they never form such a row.
+    // stand a bay apart, so they never form such a row; two pieces each at its own grid crossing are columns on
+    // neighbouring grids (A-8 and A'-8, 1800 apart), not a wall with a door between them.
     private static bool InWallRun(Column column, IReadOnlyList<Column> columns, Options options)
     {
         var (thick, longSide) = (Math.Min(column.Length, column.Width), Math.Max(column.Length, column.Width));
@@ -185,6 +246,7 @@ public static partial class ColumnRecognizer
         foreach (var other in columns)
         {
             if (ReferenceEquals(other, column)) continue;
+            if (column.AtCrossing && other.AtCrossing && column.Grid != other.Grid) continue;
             var (otherThick, otherLong) = (Math.Min(other.Length, other.Width), Math.Max(other.Length, other.Width));
             if (Math.Abs(otherThick - thick) > options.SameSizeMm || otherLong < 2 * otherThick) continue;
             var otherAxis = other.Length >= other.Width ? other.AngleRadians : other.AngleRadians + Math.PI / 2;
@@ -193,7 +255,7 @@ public static partial class ColumnRecognizer
             var along = dx * cos + dy * sin;
             var across = -dx * sin + dy * cos;
             var gap = Math.Abs(along) - (longSide + otherLong) / 2;
-            if (Math.Abs(across) <= options.SameSizeMm && gap >= -options.SameSizeMm && gap <= options.MaxOpeningMm) return true;
+            if (Math.Abs(across) <= options.SameSizeMm && gap >= options.MinOpeningMm && gap <= options.MaxOpeningMm) return true;
         }
         return false;
     }
@@ -222,6 +284,7 @@ public static partial class ColumnRecognizer
         var halfV = GridIntersections.HalfExtent(column.Length, column.Width, fromU - Math.PI / 2);
         var fitU = GridIntersections.Fit(u, halfU, frame.AlongV, 0, options.GridMarginMm, options.GridToleranceMm);
         var fitV = GridIntersections.Fit(v, halfV, frame.AlongU, 0, options.GridMarginMm, options.GridToleranceMm);
+        column.AtCrossing = fitU.OnGrid && fitV.OnGrid;
         column.Grid = (fitU.OnGrid, fitV.OnGrid) switch
         {
             (true, true) => GridIntersections.Label(fitU.GridName!, fitV.GridName!),
@@ -259,6 +322,7 @@ public static partial class ColumnRecognizer
             }
             if (shape.IsHatch) same.HasHatch = true;
             else same.HasOutline = true;
+            if (shape.Crossed) same.Crossed = true;
             if (shape.Layer.Length > 0 && !same.Layers.Contains(shape.Layer)) same.Layers.Add(shape.Layer);
         }
         return columns;

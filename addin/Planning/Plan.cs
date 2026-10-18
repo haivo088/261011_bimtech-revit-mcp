@@ -51,6 +51,12 @@ public sealed class PlanItem
     // starts approved (Tier Auto); the person still approves the plan and may undo the item's approval.
     public double? Confidence { get; set; }
     public PlanTier Tier { get; set; } = PlanTier.Review;
+    // For Auto items, the status decided for the person: Approved (sure enough) or Rejected (as they decided before).
+    // Null in older files, read as Approved. Once the person changes it, Status differs from it.
+    public PlanItemStatus? AutoStatus { get; set; }
+
+    // Still as decided for the person: an Auto item whose status they did not change.
+    public bool IsDecidedForPerson => Tier == PlanTier.Auto && Status == (AutoStatus ?? PlanItemStatus.Approved);
     // Plain-language reasons the reviewer and Claude can read, e.g. why an item is blocked.
     public List<string> Reasons { get; set; } = [];
     // Where the item came from, e.g. a CAD layer or a selected element.
@@ -113,7 +119,8 @@ public enum PlanStatus { InReview, Approved, Committed, Stale, Cancelled }
 [JsonConverter(typeof(JsonStringEnumConverter<PlanItemStatus>))]
 public enum PlanItemStatus { Pending, Approved, Rejected, Applied, Failed }
 
-// Auto: sure enough to start approved; still written only after the person approves the plan.
+// Auto: decided for the person, who may still change it: sure enough to start approved, or starting rejected because
+// they rejected the same thing before (e.g. on the storey below). Still written only after the person approves the plan.
 // Review: needs a person's decision. Blocked: never written.
 [JsonConverter(typeof(JsonStringEnumConverter<PlanTier>))]
 public enum PlanTier { Auto, Review, Blocked }
@@ -133,6 +140,7 @@ public static class PlanConfidence
             if (item.Confidence is not { } confidence || confidence < AutoApproveFrom) continue;
             item.Tier = PlanTier.Auto;
             item.Status = PlanItemStatus.Approved;
+            item.AutoStatus = PlanItemStatus.Approved;
         }
     }
 }

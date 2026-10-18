@@ -176,6 +176,64 @@ public sealed class ReviewViewModelTests : IDisposable
         Assert.False(_model.CanEdit);
     }
 
+    [Fact]
+    public void Items_rejected_as_on_the_storey_below_are_hidden_and_counted()
+    {
+        var asBelow = Item("E1", PlanTier.Auto);
+        asBelow.AutoStatus = asBelow.Status = PlanItemStatus.Rejected;
+        var document = new PlanDocument { Title = "DuAn", Path = @"D:\DuAn.rvt", StorageFolder = _folder };
+        _model.Load(_plans.Create(document, "set_parameters", "Đặt Comments", scope: null, [asBelow, Item("E2", PlanTier.Review)]));
+
+        Assert.Equal("Tự bỏ", _model.Items[0].StatusText);
+        Assert.False(_model.IsVisible(_model.Items[0]));
+        Assert.Equal("Cần xem (1) · tự bỏ 1", _model.ItemsHeader);
+        Assert.Contains("1 bỏ (1 tự bỏ)", _model.StatusLine);
+
+        // The reviewer may still approve it; it then shows again.
+        _model.SetStatus([_model.Items[0]], PlanItemStatus.Approved);
+        Assert.True(_model.IsVisible(_model.Items[0]));
+    }
+
+    [Fact]
+    public void Approving_hands_the_plan_to_the_commit_when_the_setting_asks()
+    {
+        var handed = new List<Plan>();
+        var model = new ReviewViewModel(_plans, plan => { handed.Add(plan); return true; });
+        model.Load(_model.Plan!);
+        model.SetStatus(model.Items.ToList(), PlanItemStatus.Approved);
+
+        model.ApprovePlan();
+
+        var plan = Assert.Single(handed);
+        Assert.Equal(PlanStatus.Approved, plan.Status);
+        Assert.Equal("Đã duyệt. Đang ghi vào mô hình...", model.Message);
+    }
+
+    [Fact]
+    public void Approving_without_the_commit_setting_sends_the_person_back_to_claude()
+    {
+        var model = new ReviewViewModel(_plans, _ => false);
+        model.Load(_model.Plan!);
+        model.SetStatus(model.Items.ToList(), PlanItemStatus.Approved);
+
+        model.ApprovePlan();
+
+        Assert.StartsWith("Đã duyệt kế hoạch. Quay lại Claude", model.Message);
+    }
+
+    [Fact]
+    public void A_failed_approval_never_reaches_the_commit()
+    {
+        var handed = 0;
+        var model = new ReviewViewModel(_plans, _ => { handed++; return true; });
+        model.Load(_model.Plan!);
+
+        model.ApprovePlan(); // items still pending
+
+        Assert.Equal(0, handed);
+        Assert.Contains("still need a decision", model.Message);
+    }
+
     private static PlanItem Item(string itemId, PlanTier tier, params string[] reasons) => new()
     {
         ItemId = itemId,
