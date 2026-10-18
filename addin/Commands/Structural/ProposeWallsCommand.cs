@@ -14,8 +14,10 @@ namespace Bimtech.RevitMcp.Commands.Structural;
 // Plans structural walls from a scan_cad_walls scan: one review item per wall group (tag name + thickness, or for
 // walls recognized from hatches: evidence level + thickness, with the evidence counted), placed between two levels. Read-only: it may drop unsupported walls and extend walls to columns in memory,
 // checks each group against existing walls (WallPlacer.PlanPlacement) and saves a plan, but never opens a Transaction.
-// Type per group: "types" entry → existing Basic Wall type of that thickness → new type "BTC-VachKC_<b>"
-// duplicated at commit time from templateTypeId (default: the Basic Wall type closest in thickness).
+// Type per group: "types" entry (a type ID, or "new" for the company type) → "BTC-VachKC_<b>" of exactly that
+// thickness → an existing concrete Basic Wall within 1 mm (Recognition.WallTypes; template walls such as CW/Brick never
+// match) → new type "BTC-VachKC_<b>" duplicated at commit time from templateTypeId (default: an existing BTC-VachKC_
+// type, else a concrete one, closest in thickness).
 public sealed class ProposeWallsCommand(PlanService plans, ReviewWindowHost review, ModelChangeTracker changes) : IRevitCommand
 {
     public string Method => "propose_walls";
@@ -43,7 +45,7 @@ public sealed class ProposeWallsCommand(PlanService plans, ReviewWindowHost revi
 
         var include = p.GetStringList("include", maxCount: 500, maxLength: 200);
         var exclude = p.GetStringList("exclude", maxCount: 500, maxLength: 200);
-        var assigned = p.GetStringMap("types", maxCount: 500, maxLength: 32);
+        var assigned = StructuralJson.ReadTypeMap(p, maxCount: 500);
         StructuralJson.RequireKnownKeys(include, scan.GroupKeys, "include");
         StructuralJson.RequireKnownKeys(exclude, scan.GroupKeys, "exclude");
         StructuralJson.RequireKnownKeys(assigned.Keys, scan.GroupKeys, "types");
@@ -146,27 +148,39 @@ public sealed class ProposeWallsCommand(PlanService plans, ReviewWindowHost revi
     {
         var pool = WallPlacer.CollectBasicWallTypes(document);
         var needTypes = new List<WallSizeGroup>();
+        // Groups given "new": they get the company type BTC-VachKC_<b> even when another type matches.
+        var newTypeGroups = new HashSet<WallSizeGroup>();
         var byGroup = new Dictionary<WallSizeGroup, GroupPlan>();
         foreach (var group in groups)
         {
-            var (suggested, isExact) = WallPlacer.SuggestType(group.SizeBMm, pool, type => type);
             if (assigned.TryGetValue(group.Key, out var typeId))
-                byGroup[group] = new GroupPlan(group, RequireWallType(document, ParseId(typeId, $"types.{group.Key}"), $"types.{group.Key}"),
-                    "assigned", null, null, null);
-            else if (isExact)
+            {
+                if (typeId == StructuralJson.NewType)
+                {
+                    newTypeGroups.Add(group);
+                    needTypes.Add(group);
+                }
+                else
+                    byGroup[group] = new GroupPlan(group, RequireWallType(document, ParseId(typeId, $"types.{group.Key}"), $"types.{group.Key}"),
+                        "assigned", null, null, null);
+                continue;
+            }
+            var (suggested, isExact) = WallPlacer.SuggestType(group.SizeBMm, pool, type => type);
+            if (isExact)
                 byGroup[group] = new GroupPlan(group, suggested, "exact", null, null, null);
             else
                 needTypes.Add(group);
         }
 
         // Groups of the same thickness share one new type, as WallPlacer.PlanMissingTypes names them.
-        foreach (var (group, reuse, newTypeName) in WallPlacer.PlanMissingTypes(needTypes, pool))
+        foreach (var (group, reuse, newTypeName) in WallPlacer.PlanMissingTypes(needTypes, pool, newTypeGroups))
         {
             var groupTemplate = template ?? WallPlacer.NearestTemplateType(pool, group.SizeBMm);
-            byGroup[group] = reuse is not null ? new GroupPlan(group, reuse, "exact", null, null, null)
+            var source = newTypeGroups.Contains(group) ? "new" : "create";
+            byGroup[group] = reuse is not null ? new GroupPlan(group, reuse, newTypeGroups.Contains(group) ? "new" : "exact", null, null, null)
                 : groupTemplate is null
-                    ? new GroupPlan(group, null, "create", null, null, "Model chưa có Basic Wall Type có cấu tạo lớp để làm mẫu.")
-                    : new GroupPlan(group, null, "create", groupTemplate, newTypeName, null);
+                    ? new GroupPlan(group, null, source, null, null, "Model chưa có Basic Wall Type có cấu tạo lớp để làm mẫu.")
+                    : new GroupPlan(group, null, source, groupTemplate, newTypeName, null);
         }
         return groups.Select(group => byGroup[group]).ToList();
     }
@@ -209,6 +223,8 @@ public sealed class ProposeWallsCommand(PlanService plans, ReviewWindowHost revi
                 thicknessMm = group.SizeBMm,
                 typeId = plan.Type is null ? null : RevitJson.Id(plan.Type.Id),
                 newTypeName = plan.NewTypeName,
+                // "new" in 'types': at commit only a BTC-VachKC_ type of that thickness is reused.
+                companyTypeOnly = plan.TypeSource == "new",
                 templateTypeId = plan.Template is null ? null : RevitJson.Id(plan.Template.Id),
                 baseLevelId = RevitJson.Id(baseLevel.Id),
                 topLevelId = RevitJson.Id(topLevel.Id),
@@ -240,7 +256,7 @@ public sealed class ProposeWallsCommand(PlanService plans, ReviewWindowHost revi
     private static WallType RequireWallType(Document document, ElementId id, string param) =>
         document.GetElement(id) is WallType { Kind: WallKind.Basic } type
             ? type
-            : throw RpcException.InvalidParams(param, "is not a Basic Wall type. Use exactType/nearestType IDs from scan_cad_walls.");
+            : throw RpcException.InvalidParams(param, "is not a Basic Wall type. Use exactType/nearestType IDs from scan_cad_walls, or \"new\".");
 
     private static ElementId ParseId(string text, string param) =>
         long.TryParse(text, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var id)

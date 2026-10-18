@@ -48,7 +48,7 @@ public sealed class ReviewWindowHost : IDisposable
         }
         if (_window is null)
         {
-            _model = new ReviewViewModel(_plans, CommitApproved);
+            _model = new ReviewViewModel(_plans, CommitApproved, () => Committer is not null && Settings.SettingsStore.Current.CommitOnApprove);
             _window = new ReviewWindow(_model, FocusElements);
             // Keeps the window above Revit and minimizes it together with Revit.
             _ = new WindowInteropHelper(_window) { Owner = application.MainWindowHandle };

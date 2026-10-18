@@ -51,6 +51,7 @@ public sealed class CommandRegistry
         new GetElementsCommand(),
         new GetSelectedElementsCommand(),
         new GetElementParametersCommand(),
+        new ProposeChangeTypeCommand(plans, review, changes),
         new ListCadSourcesCommand(),
         new SuggestLevelsFromFolderCommand(),
         new ProposeLevelsCommand(plans, review, changes),

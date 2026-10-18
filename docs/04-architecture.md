@@ -54,8 +54,16 @@ Server vẫn mỏng như hiện nay: mỗi tool chỉ khai báo schema rồi g�
 | `IPlanAction` | `addin/Planning/Actions/` | Cách thực thi một loại mục (tạo dầm, đặt móng, gán parameter…) |
 | Lệnh `propose_*` | `addin/Commands/<Nhóm>/` | Đọc dữ liệu, lập danh sách mục, gửi cho `PlanService` |
 | Tool chung | `server/src/tools/plans.ts` | `get_plan`, `get_plan_status`, `open_plan_review`, `commit_plan`, `cancel_plan` |
+| Chờ duyệt | `server/src/tools/wait.ts` | `wait_for_plan` (chỉ có ở server, dựa trên `get_plan_status`) |
 
 Mỗi loại công việc mới (cột, dầm, móng…) chỉ cần thêm **một lệnh `propose_*`** và **các `IPlanAction`** của nó. Phần khung dùng chung.
+
+Sửa phần tử **đã có** cũng đi qua khung này, không cần `send_code`:
+
+| Lệnh | Action | Mỗi mục là |
+| --- | --- | --- |
+| `propose_set_parameters` | `set_parameter` | một phần tử: parameter cũ → giá trị mới |
+| `propose_change_type` | `change_type` | một Type hiện tại → Type đích, kèm số phần tử, vd `Walls · CW 102-85-100p → BTC-VachKC_300 (14)`. Phần tử khác category với Type đích bị từ chối ngay lúc propose, phần tử đã đúng Type bị bỏ qua; lúc commit `ChangeTypeId` từng phần tử trong Transaction của mục, nên vẫn là một Ctrl+Z cùng các mục khác |
 
 ## Hợp đồng dữ liệu
 
@@ -107,7 +115,7 @@ Mỗi loại công việc mới (cột, dầm, móng…) chỉ cần thêm **m�
   - **Loại trừ là phủ quyết**, không phải điểm trừ (`loại trừ: …`): mảnh vách bị cửa cắt, ký hiệu lỗ mở sàn, đài bao lấy đài khác, dầm phụ to hơn dầm gối bị giữ tối đa **40%** (luôn phải xem); đường bao cột vẽ trong đài và dải tường mảnh bị giữ ở 10% (bỏ). Vòng tròn đầu trục −60%.
   - **≥ 50%: tự duyệt** (`PlanConfidence.AutoApproveFrom`, `tier: "auto"`, bắt đầu ở trạng thái "Tự duyệt"); 20–50%: cần xem (nhóm `-maybe` riêng, để một phần tử nghi ngờ không giữ lại cả nhóm); dưới 20%: bỏ, chỉ báo số lượng và lý do.
   - Một mục duyệt chứa cả nhóm, nên **bằng phần tử kém chắc nhất** (`ConfidenceRules.Group`). Mục sắp **tạo Type mới**, hay ký hiệu và hình vẽ lệch nhau, luôn phải xem (giữ dưới 50%). Dầm chính: 50% +20% hai gối +10% kích thước từ ký hiệu, −10% mỗi điều lệch (mượn ký hiệu, lệch bề rộng, nét đứt, không trên trục). Trục: theo `GridRecognizer`. Sàn, tầng, đặt tham số: chưa có luật, luôn phải duyệt.
-  - **Kế thừa quyết định tầng dưới** (`PlanHistory`): cột trùng vị trí và kích thước với cột người dùng đã **bỏ** ở các kế hoạch cột đã ghi của tầng dưới (top level = base level tầng này; kế hoạch sau thắng kế hoạch trước, nên vị trí đã dựng bù không còn bị bỏ) được gom thành mục riêng `K-<nhóm>-tangduoibo`, `tier: "auto"`, bắt đầu ở trạng thái **"Tự bỏ"** (`autoStatus: "Rejected"`). Người dùng vẫn có thể chọn Duyệt. Mục tự duyệt và tự bỏ ẩn khỏi danh sách cho đến khi bấm "Hiện cả mục tự duyệt"; mục nào người dùng đổi trạng thái thì hiện lại.
+  - **Kế thừa quyết định tầng dưới** (`PlanHistory`): cột trùng vị trí và kích thước với cột người dùng đã **bỏ** ở các kế hoạch cột đã ghi của tầng dưới (top level = base level tầng này; kế hoạch sau thắng kế hoạch trước, nên vị trí đã dựng bù không còn bị bỏ) được gom thành mục riêng `K-<nhóm>-tangduoibo`, `tier: "auto"`, bắt đầu ở trạng thái **"Tự bỏ"** (`autoStatus: "Rejected"`). Người dùng vẫn có thể chọn Duyệt. Danh sách chính chỉ có mục cần người dùng xem; mục tự duyệt và tự bỏ nằm trong hai phần thu gọn "N nhóm được hệ thống tự động duyệt / bỏ qua", mở ra khi muốn xem; mục nào người dùng đổi trạng thái thì về danh sách chính.
   - **Ghi ngay khi duyệt** (Settings, "Bấm Duyệt kế hoạch là ghi vào mô hình ngay", mặc định **bật**): bấm Duyệt kế hoạch thì cửa sổ duyệt gọi chính `commit_plan` (`CommitHandler`, qua ExternalEvent) nên vẫn đủ các luật: approvalId mới nhất, mô hình chưa đổi từ lúc đề xuất, chế độ chỉ đọc, lệnh `commit_plan` đang bật. Kết quả hiện ở dòng thông báo của cửa sổ. Claude đọc `get_plan_status` thấy `Committed` thì làm bước tiếp; gọi lại `commit_plan` chỉ trả kết quả cũ.
   - **Tự commit** (BIMTECH MCP Settings, "Tự commit kế hoạch khi mọi mục đủ tin cậy", mặc định tắt): khi bật, kế hoạch mà **mọi mục đều đã được quyết thay** (tự duyệt hoặc tự bỏ, ít nhất một mục duyệt) và không có mục bị chặn được duyệt thay người dùng ngay khi đề xuất (`approval.automatic`, kết quả có `autoApproved: true`), không mở cửa sổ duyệt; Claude gọi `commit_plan` luôn. Quyền này thuộc cài đặt người dùng bật trong Revit; không lệnh JSON-RPC nào tự duyệt (test hợp đồng vẫn kiểm).
 - `tier` có ba giá trị: `auto` (được ghi không cần duyệt từng mục), `review` (cần duyệt), `blocked` (không được ghi; chuyển thành câu hỏi cho thiết kế).
@@ -189,7 +197,7 @@ sequenceDiagram
     Claude->>User: Báo số phần tử đã tạo, bỏ qua, cách Undo
 ```
 
-Điểm quan trọng: `propose_*` **trả về ngay**, không chờ người dùng duyệt. Nếu chờ, kết nối TCP phải mở hàng phút và vượt timeout tối đa 120000 ms (xem [02 — Timeout](02-request-flow.md#timeout)). Claude không tự biết khi nào người dùng bấm Duyệt, nên người dùng báo "xong" trong chat và Claude đọc trạng thái bằng `get_plan_status`.
+Điểm quan trọng: `propose_*` **trả về ngay**, không chờ người dùng duyệt. Nếu chờ, kết nối TCP phải mở hàng phút và vượt timeout tối đa 120000 ms (xem [02 — Timeout](02-request-flow.md#timeout)). Để người dùng không phải quay lại chat báo "xong", Claude gọi **`wait_for_plan`** ngay sau khi đề xuất: tool này nằm ở server Node, hỏi `get_plan_status` mỗi 2 giây (`REVIT_MCP_WAIT_POLL_MS`) và gửi thông báo tiến độ để client không hết hạn chờ. Việc chờ không đi qua luồng chính của Revit, nên Revit vẫn dùng bình thường. Tool trả kết quả khi kế hoạch `Committed` (cửa sổ đã ghi: Claude làm bước tiếp), `Approved` quá 10 giây mà chưa ghi (đã tắt "ghi ngay khi duyệt": Claude gọi `commit_plan`), `Cancelled` hoặc `Stale` (dừng và báo), hoặc hết `timeoutSeconds` (mặc định 900). Mục bị chặn vẫn cần người dùng trả lời trong chat.
 
 ## Công cụ MCP
 
@@ -208,11 +216,12 @@ Annotations theo [03](03-add-a-tool.md#1-phía-server): `commit_plan` có `readO
 
 - **WPF modeless**: không khoá Revit, người dùng vẫn chọn, zoom, xoay mô hình khi cửa sổ đang mở.
 - Mở và cập nhật cửa sổ trên luồng giao diện của Revit (gọi từ trong `RevitRequestHandler.Execute`). Thao tác cần Revit API từ cửa sổ (chọn và zoom phần tử) đi qua một `ExternalEvent` riêng của cửa sổ.
-- Mỗi dòng là một mục: trạng thái, độ tin cậy, lý do, giá trị chính. Bấm vào dòng thì Revit chọn và zoom tới vị trí tương ứng (phần tử đã có, hoặc vùng toạ độ của phần tử sẽ tạo).
+- Giao diện tối, theo thẻ: tiêu đề kế hoạch và nhãn trạng thái (Chưa thực thi / Đã ghi / Đã huỷ / Đã cũ); ba thẻ số **Đã chọn tạo**, **Bỏ qua**, **Cần xem**; danh sách **Cần bạn xem (n)** (chỉ mục chưa được hệ thống tự quyết); các phần thu gọn: tự động duyệt, tự động bỏ qua, câu hỏi cho thiết kế; thẻ **Kết quả sẽ áp dụng** ("Tạo 50 cột (4 nhóm) trong mô hình Revit. Bỏ qua 21 nhóm còn lại.") và lời nhắc còn mấy mục cần xem.
+- Mỗi dòng là một mục: dấu tròn bấm để duyệt hoặc bỏ qua, phần tử và thay đổi, độ tin cậy, trạng thái (Đã duyệt, Tự duyệt, Cần xem, Bỏ qua, Tự bỏ, Đã ghi, Lỗi), hành động (Tạo cột...). Chọn một dòng thì lý do và chi tiết (vd. code của `send_code`) hiện bên dưới danh sách. Bấm vào dòng thì Revit chọn và zoom tới vị trí tương ứng (phần tử đã có, hoặc vùng toạ độ của phần tử sẽ tạo).
 - **Xem trước mục sẽ tạo**: khi chọn dòng `create_*` (cột, dầm, tường, đài cọc, sàn, trục), Revit vẽ tạm bằng nét cam vị trí các phần tử chưa có rồi zoom tới đó — đài cọc: đường bao và vòng tròn từng cọc; nhóm cột: hình chữ nhật từng cột; nhóm dầm, tường, trục: đường trục. Hình vẽ chỉ nằm trong đồ hoạ (`PreviewServer`, một server DirectContext3D), không ghi vào mô hình, không mở Transaction. Mặt bằng vẽ ở cao độ mặt cắt của khung nhìn, 3D vẽ ở cao độ level của mục. Hình biến mất khi đổi dòng chọn, đóng cửa sổ hoặc đóng mô hình. Đọc toạ độ từ `params` nằm ở `PreviewShapes` (không dùng Revit, có kiểm thử).
-- Thao tác: Duyệt / Bỏ từng mục, chọn nhiều dòng để duyệt hàng loạt, nút **Bỏ các mục còn chờ**, nút **Duyệt kế hoạch**, nút **Huỷ kế hoạch**. Sửa giá trị (`overrides`) để sang bước 2b.
+- Thao tác: dấu tròn từng dòng, **Duyệt tất cả** / **Bỏ duyệt tất cả** (trên danh sách cần xem, không đụng mục hệ thống tự quyết), **Khôi phục lựa chọn** (về đúng đề xuất ban đầu), nút chính **Duyệt và ghi (n)** (hoặc **Duyệt kế hoạch (n)** khi tắt ghi ngay), **Huỷ kế hoạch**. Nút chính chỉ bật khi không còn mục cần xem. Sửa giá trị (`overrides`) để sang bước 2b.
 - Đóng cửa sổ **không** huỷ kế hoạch; mở lại bằng `open_plan_review`. Như vậy lỡ tay đóng thì không mất công duyệt.
-- Mục `blocked` hiển thị riêng ở tab **Câu hỏi cho thiết kế**, không duyệt được.
+- Mục `blocked` hiển thị riêng ở phần thu gọn **câu hỏi cho thiết kế**, không duyệt được.
 
 ## Lưu trữ
 
@@ -251,7 +260,7 @@ Mỗi bước kết thúc bằng một phiên bản chạy được và kiểm t
 2. **Cửa sổ duyệt** *(đã làm, chờ thử trong Revit)*. `Plan.Approval`, `PlanService.SetItemStatus` / `Approve`, sự kiện `Changed`; cửa sổ WPF modeless trong `addin/Ui/` (một cửa sổ dùng chung, đóng theo model, chọn và zoom qua `FocusHandler`); `propose_set_parameters` tự mở cửa sổ; tool `open_plan_review`. Kiểm thử xUnit cho luật duyệt và ViewModel, kiểm thử bảo đảm không command nào gọi `Approve`.
    2b. Sửa giá trị (`overrides`) trong cửa sổ.
 3. **Ghi vào mô hình** *(đã làm, chờ thử trong Revit)*. `PlanCommitter` (luật commit, kiểm thử xUnit với writer giả), `RevitPlanWriter`, `IPlanAction` + `SetParameterAction`, `ModelChangeTracker` và `Plan.ModelStamp` (schema 3), nhật ký `audit.jsonl`; tool `commit_plan`.
-4. **Gắn tool móng, cột, dầm hiện có** vào khung: tách phần tính toán thành `propose_*`, phần tạo phần tử thành `IPlanAction`.
+4. **Gắn tool móng, cột, dầm hiện có** vào khung: tách phần tính toán thành `propose_*`, phần tạo phần tử thành `IPlanAction`. Thêm `propose_change_type` (action `change_type`) để sửa Type phần tử đã dựng qua cửa sổ duyệt thay cho `send_code`.
 5. **Độ tin cậy.** CAD preflight, luật chấm điểm theo từng mục, chính sách ngưỡng theo loại việc (để sau; xem phần dưới).
 6. **Vòng phản hồi với thiết kế.** Câu hỏi, xuất danh sách câu hỏi, ghi nhớ quyết định theo dự án.
 

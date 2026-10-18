@@ -22,6 +22,8 @@ internal sealed record WallScan(ElementId CadId, ElementId ViewId, IReadOnlyList
 //     thickness, on a grid, joined to a column, on a wall of the storey below, part of a core) and grouped by
 //     thickness into sure ("w300") and to-review ("w300-maybe") groups.
 //   With "layers": the older reading of parallel line pairs on those layers, for drawings without hatches.
+// exactType per group follows Recognition.WallTypes: "BTC-VachKC_<b>" of that thickness, else a concrete wall type
+// within 1 mm; template walls (CW..., Brick, Masonry...) are never exact, at most nearestType.
 public sealed class ScanCadWallsCommand : IRevitCommand
 {
     // Revit lines read to place the DWG file (enough long lines to vote and a sample to check).
@@ -92,6 +94,9 @@ public sealed class ScanCadWallsCommand : IRevitCommand
         // Columns of the storey (reaching 1 m above its base) and walls of the storey below.
         var columns = CadExtractor.ModelSupports(document, level.Elevation + Feet(1000)).Where(s => s.Kind == "column").ToList();
         var below = CadExtractor.ModelWallsBelow(document, level.Elevation);
+        // Pile caps under the storey: a wall over none and on no wall below is always reviewed.
+        var foundations = CadExtractor.ModelFoundationsBelow(document, level.Elevation);
+        below.AddRange(foundations);
         var result = WallRecognizer.Recognize(scene, frame, columns, below, region.Value, options);
         context.Cancellation.ThrowIfCancellationRequested();
 
@@ -109,7 +114,7 @@ public sealed class ScanCadWallsCommand : IRevitCommand
             level = StructuralJson.Ref(level),
             region = region.Value is { } r ? new { minX = r.MinX, minY = r.MinY, maxX = r.MaxX, maxY = r.MaxY } : null,
             regionFrom = region.From,
-            model = new { grids = grids.Count, columns = columns.Count, wallsBelow = below.Count },
+            model = new { grids = grids.Count, columns = columns.Count, wallsBelow = below.Count - foundations.Count, foundations = foundations.Count },
             hatchesInRegion = result.HatchesInRegion,
             hatchesSkipped = result.Skipped,
             columnPatterns = result.ColumnPatterns,
@@ -138,7 +143,8 @@ public sealed class ScanCadWallsCommand : IRevitCommand
                     + "the walls are hatched in this drawing."
                 : "Show the user the groups with their evidence. \"wNNN\" groups (enough evidence) are proposed by default; "
                     + "\"wNNN-maybe\" groups only when listed in 'include'. Then call propose_walls with this scanId and the base "
-                    + "and top levels. Groups without exactType get a new type \"BTC-VachKC_<thickness>\".",
+                    + "and top levels. Groups without exactType get a new type \"BTC-VachKC_<thickness>\"; types: {key: \"new\"} "
+                    + "asks for it even when exactType is set.",
         };
     }
 
@@ -223,7 +229,8 @@ public sealed class ScanCadWallsCommand : IRevitCommand
             }).ToList(),
             next = "Review the groups with the user. Groups with a tag name are proposed by default; groups without one "
                 + "(key like \"w200\") only when listed in 'include'. Then call propose_walls with this scanId and the base "
-                + "and top levels.",
+                + "and top levels. Groups without exactType get a new type \"BTC-VachKC_<thickness>\"; types: {key: \"new\"} "
+                + "asks for it even when exactType is set.",
         };
     }
 

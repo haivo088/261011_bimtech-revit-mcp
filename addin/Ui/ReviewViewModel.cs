@@ -10,11 +10,12 @@ namespace Bimtech.RevitMcp.Ui;
 // so tests can press the "buttons" without Revit. Every action goes through PlanService,
 // which saves the plan file; the window only redraws the result.
 // commitApproved: asked after the person approves a plan; returns true when it started writing the plan into the model
-// (setting CommitOnApprove), false when Claude should commit it.
-public sealed class ReviewViewModel(PlanService plans, Func<Plan, bool>? commitApproved = null) : INotifyPropertyChanged
+// (setting CommitOnApprove), false when Claude should commit it. writesOnApprove: whether approving will write at once,
+// for the wording of the main button.
+public sealed class ReviewViewModel(PlanService plans, Func<Plan, bool>? commitApproved = null, Func<bool>? writesOnApprove = null)
+    : INotifyPropertyChanged
 {
     private string _message = "";
-    private bool _showAutoItems;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -26,32 +27,77 @@ public sealed class ReviewViewModel(PlanService plans, Func<Plan, bool>? commitA
     public string Title => Plan?.Title ?? "";
     // The window's title bar names the plan, so a window left on an older plan is never mistaken for the new one.
     public string WindowTitle => Plan is null ? "BIMTECH · Duyệt kế hoạch" : $"BIMTECH · Duyệt kế hoạch {Plan.PlanId}";
-    public string ItemsHeader
+    // e.g. "261016 · pln_20261018_31de12 · 25 nhóm phần tử".
+    public string Subtitle => Plan is null ? "" : $"{Plan.Document.Title} · {Plan.PlanId} · {Items.Count + BlockedItems.Count} nhóm phần tử";
+
+    // The badge at the top right.
+    public string StatusBadge => Plan?.Status switch
+    {
+        PlanStatus.Committed => "Đã ghi",
+        PlanStatus.Cancelled => "Đã huỷ",
+        PlanStatus.Stale => "Đã cũ",
+        PlanStatus.Approved => "Đã duyệt, chưa ghi",
+        _ => "Chưa thực thi",
+    };
+    public string StatusKind => Plan?.Status switch
+    {
+        PlanStatus.Committed => "done",
+        PlanStatus.Cancelled or PlanStatus.Stale => "off",
+        _ => "open",
+    };
+
+    // The three cards: chosen to write (or written), skipped, still to look at.
+    public int SelectedCount => Items.Count(row => row.Status is PlanItemStatus.Approved or PlanItemStatus.Applied);
+    public int SkippedCount => Items.Count(row => row.Status == PlanItemStatus.Rejected);
+    public int PendingCount => Items.Count(row => row.Status == PlanItemStatus.Pending);
+
+    // The main list holds only what needs the person: items the system decided (approved by their confidence, or
+    // skipped as on the storey below) wait folded away below it, and come back once the person changes them.
+    public static bool IsInMainList(PlanItemRow row) => !row.IsDecidedForPerson;
+    public static bool IsAutoApproved(PlanItemRow row) => row.IsDecidedForPerson && row.Status == PlanItemStatus.Approved;
+    public static bool IsAutoSkipped(PlanItemRow row) => row.IsDecidedForPerson && row.Status == PlanItemStatus.Rejected;
+    public int ToReviewCount => Items.Count(IsInMainList);
+    public string ListHeader => $"Cần bạn xem ({ToReviewCount})";
+    public int AutoApprovedCount => Items.Count(IsAutoApproved);
+    public string AutoApprovedHeader => $"{AutoApprovedCount} nhóm được hệ thống tự động duyệt";
+    public bool HasAutoApproved => AutoApprovedCount > 0;
+    public int AutoSkippedCount => Items.Count(IsAutoSkipped);
+    public string AutoSkippedHeader => $"{AutoSkippedCount} nhóm được hệ thống tự động bỏ qua";
+    public bool HasAutoSkipped => AutoSkippedCount > 0;
+
+    public string BlockedHeader => $"{BlockedItems.Count} câu hỏi cho thiết kế (không ghi được)";
+    public bool HasBlocked => BlockedItems.Count > 0;
+
+    // "Tạo 50 cột (4 nhóm) trong mô hình Revit. Bỏ qua 21 nhóm còn lại."
+    public string ResultText
     {
         get
         {
-            var approved = Items.Count(row => row.IsDecidedForPerson && row.Status == PlanItemStatus.Approved);
-            var rejected = Items.Count(row => row.IsDecidedForPerson && row.Status == PlanItemStatus.Rejected);
-            if (approved + rejected == 0) return $"Mục cần duyệt ({Items.Count})";
-            return $"Cần xem ({Items.Count - approved - rejected})"
-                + (approved > 0 ? $" · tự duyệt {approved}" : "") + (rejected > 0 ? $" · tự bỏ {rejected}" : "");
+            var chosen = Items.Where(row => row.Status is PlanItemStatus.Approved or PlanItemStatus.Applied).ToList();
+            if (chosen.Count == 0) return "Chưa chọn mục nào để ghi.";
+            var parts = chosen.GroupBy(row => (row.Verb, row.Noun)).Select(group =>
+            {
+                var count = group.Sum(row => row.ElementCount);
+                return group.Count() == count
+                    ? $"{group.Key.Verb} {count} {group.Key.Noun}"
+                    : $"{group.Key.Verb} {count} {group.Key.Noun} ({group.Count()} nhóm)";
+            });
+            var done = Plan?.Status == PlanStatus.Committed ? "Đã ghi: " : "";
+            var skipped = SkippedCount > 0 ? $" Bỏ qua {SkippedCount} nhóm còn lại." : "";
+            return $"{done}{string.Join(", ", parts)} trong mô hình Revit.{skipped}";
         }
     }
 
-    // Items decided for the reviewer (approved by their confidence, or rejected as on the storey below) are hidden unless
-    // the reviewer asks to see them: the list shows what needs a look.
-    public bool ShowAutoItems
+    public string ResultNote => Plan?.Status switch
     {
-        get => _showAutoItems;
-        set
-        {
-            if (_showAutoItems == value) return;
-            _showAutoItems = value;
-            PropertyChanged?.Invoke(this, new(nameof(ShowAutoItems)));
-        }
-    }
+        PlanStatus.Committed => "Hoàn tác cả lần ghi bằng một lần Ctrl+Z trong Revit.",
+        _ when PendingCount > 0 => $"Còn {PendingCount} mục cần xem: chọn Duyệt hoặc Bỏ cho từng mục trước khi ghi.",
+        _ when WritesOnApprove => "Ghi vào mô hình ngay khi bấm nút bên phải, là một bước Ctrl+Z.",
+        _ => "Bấm duyệt rồi quay lại Claude để ghi vào mô hình.",
+    };
 
-    public bool IsVisible(PlanItemRow row) => ShowAutoItems || !row.IsDecidedForPerson;
+    private bool WritesOnApprove => writesOnApprove?.Invoke() ?? false;
+    public string PrimaryText => (WritesOnApprove ? "Duyệt và ghi" : "Duyệt kế hoạch") + $" ({SelectedCount})";
 
     // Why the plan can no longer be edited; empty while it can.
     public string ReadOnlyNotice => Plan?.Status switch
@@ -61,28 +107,10 @@ public sealed class ReviewViewModel(PlanService plans, Func<Plan, bool>? commitA
         PlanStatus.Stale => "Kế hoạch này đã cũ vì mô hình đổi sau khi đề xuất. Nhờ Claude đề xuất lại.",
         _ => "",
     };
-    public string BlockedHeader => $"Câu hỏi cho thiết kế ({BlockedItems.Count})";
     public bool CanEdit => Plan?.Status is PlanStatus.InReview or PlanStatus.Approved;
     public bool CanApprovePlan => Plan?.Status == PlanStatus.InReview
         && Items.All(row => row.Status != PlanItemStatus.Pending)
         && Items.Any(row => row.Status == PlanItemStatus.Approved);
-
-    // e.g. "DuAn_KetCau · Đang duyệt · 3 duyệt (2 tự duyệt) · 1 bỏ · 2 chờ".
-    public string StatusLine
-    {
-        get
-        {
-            if (Plan is null) return "";
-            var autoApproved = Items.Count(row => row.IsDecidedForPerson && row.Status == PlanItemStatus.Approved);
-            var autoRejected = Items.Count(row => row.IsDecidedForPerson && row.Status == PlanItemStatus.Rejected);
-            return string.Join(" · ",
-                Plan.Document.Title,
-                StatusName(Plan.Status),
-                $"{Count(PlanItemStatus.Approved)} duyệt" + (autoApproved > 0 ? $" ({autoApproved} tự duyệt)" : ""),
-                $"{Count(PlanItemStatus.Rejected)} bỏ" + (autoRejected > 0 ? $" ({autoRejected} tự bỏ)" : ""),
-                $"{Count(PlanItemStatus.Pending)} chờ");
-        }
-    }
 
     public string Message
     {
@@ -129,6 +157,34 @@ public sealed class ReviewViewModel(PlanService plans, Func<Plan, bool>? commitA
         Run(plan => plans.SetItemStatus(plan.Document, plan.PlanId, rows.Select(row => row.ItemId).ToList(), status), "");
     }
 
+    // The tick in front of a row: approved becomes skipped, anything else approved.
+    public void Toggle(PlanItemRow row) =>
+        SetStatus([row], row.Status == PlanItemStatus.Approved ? PlanItemStatus.Rejected : PlanItemStatus.Approved);
+
+    // "Duyệt tất cả" / "Bỏ duyệt tất cả" act on the main list; what the system decided stays as decided.
+    public void ApproveAll() => SetAll(PlanItemStatus.Approved);
+
+    public void RejectAll() => SetAll(PlanItemStatus.Rejected);
+
+    private void SetAll(PlanItemStatus status)
+    {
+        var rows = Items.Where(row => IsInMainList(row) && row.Status != status
+            && (row.Status is PlanItemStatus.Pending or PlanItemStatus.Approved or PlanItemStatus.Rejected)).ToList();
+        if (rows.Count > 0) SetStatus(rows, status);
+    }
+
+    // "Khôi phục lựa chọn": every item back to what was proposed (decided for the person, or to look at).
+    public void RestoreChoices()
+    {
+        foreach (var group in Items.Where(row => row.Status is PlanItemStatus.Pending or PlanItemStatus.Approved or PlanItemStatus.Rejected)
+                     .GroupBy(row => row.AutoStatus ?? PlanItemStatus.Pending))
+        {
+            var changing = group.Where(row => row.Status != group.Key).ToList();
+            if (changing.Count > 0 && !Run(plan => plans.SetItemStatus(plan.Document, plan.PlanId,
+                    changing.Select(row => row.ItemId).ToList(), group.Key), "")) return;
+        }
+    }
+
     public void RejectRemaining() =>
         SetStatus(Items.Where(row => row.Status == PlanItemStatus.Pending).ToList(), PlanItemStatus.Rejected);
 
@@ -163,15 +219,4 @@ public sealed class ReviewViewModel(PlanService plans, Func<Plan, bool>? commitA
             return false;
         }
     }
-
-    private int Count(PlanItemStatus status) => Items.Count(row => row.Status == status);
-
-    private static string StatusName(PlanStatus status) => status switch
-    {
-        PlanStatus.InReview => "Đang duyệt",
-        PlanStatus.Approved => "Đã duyệt",
-        PlanStatus.Committed => "Đã ghi",
-        PlanStatus.Stale => "Đã cũ, cần đề xuất lại",
-        _ => "Đã huỷ",
-    };
 }

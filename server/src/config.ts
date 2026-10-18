@@ -40,4 +40,6 @@ export const config = {
   availabilityPollMs: nonNegativeInteger("REVIT_MCP_AVAILABILITY_POLL_MS", 30000, 3600000),
   // BIMTECH_DEV=1 adds the developer tools (server/src/tools/dev.ts). Only the developer sets it.
   devTools: process.env.BIMTECH_DEV === "1",
+  // How often wait_for_plan asks Revit for the plan's status.
+  waitPollMs: positiveInteger("REVIT_MCP_WAIT_POLL_MS", 2000, 60000),
 };

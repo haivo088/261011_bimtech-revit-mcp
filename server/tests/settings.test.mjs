@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as pause } from "node:timers/promises";
 import test from "node:test";
-import { allTools } from "../build/tools/index.js";
+import { allTools, serverOnlyToolNames } from "../build/tools/index.js";
 import { bridge, mcpClient } from "./helpers.mjs";
 
 const everyMethod = allTools.map((tool) => tool.method);
@@ -66,7 +66,7 @@ test("all tools stay visible when Revit cannot be reached", async (t) => {
   const options = await bridge(t, (socket) => socket.destroy());
   const client = await mcpClient(t, options.port, { REVIT_MCP_AVAILABILITY_POLL_MS: "60000" });
   await pause(300);
-  assert.deepEqual((await visibleTools(client)).sort(), allTools.map((tool) => tool.name).sort());
+  assert.deepEqual((await visibleTools(client)).sort(), [...allTools.map((tool) => tool.name), ...serverOnlyToolNames].sort());
 });
 
 test("the server reads the bridge port from settings.json", async (t) => {

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { setTimeout as pause } from "node:timers/promises";
 import test from "node:test";
 import { callRevit } from "../build/revit-client.js";
-import { allTools } from "../build/tools/index.js";
+import { allTools, serverOnlyToolNames } from "../build/tools/index.js";
 import { devTools } from "../build/tools/dev.js";
 import { bridge, mcpClient } from "./helpers.mjs";
 
@@ -84,7 +84,7 @@ test("developer tools are listed only when BIMTECH_DEV=1", async (t) => {
   const options = await bridge(t, () => {});
   const developer = await mcpClient(t, options.port, { BIMTECH_DEV: "1" });
   const names = (await developer.listTools()).tools.map((tool) => tool.name).sort();
-  assert.deepEqual(names, [...allTools, ...devTools].map((tool) => tool.name).sort());
+  assert.deepEqual(names, [...[...allTools, ...devTools].map((tool) => tool.name), ...serverOnlyToolNames].sort());
   assert.ok(names.includes("send_code"));
 });
 
@@ -92,7 +92,7 @@ test("MCP lists tools with annotations and an input schema", async (t) => {
   const options = await bridge(t, () => {});
   const client = await mcpClient(t, options.port);
   const { tools } = await client.listTools();
-  assert.deepEqual(tools.map((tool) => tool.name).sort(), allTools.map((tool) => tool.name).sort());
+  assert.deepEqual(tools.map((tool) => tool.name).sort(), [...allTools.map((tool) => tool.name), ...serverOnlyToolNames].sort());
   for (const tool of tools) {
     assert.equal(typeof tool.annotations.readOnlyHint, "boolean", tool.name);
     assert.equal(typeof tool.annotations.destructiveHint, "boolean", tool.name);

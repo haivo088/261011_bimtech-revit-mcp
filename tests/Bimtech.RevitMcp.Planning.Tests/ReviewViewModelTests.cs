@@ -34,8 +34,8 @@ public sealed class ReviewViewModelTests : IDisposable
     {
         Assert.Equal(["E1", "E2"], _model.Items.Select(row => row.ItemId));
         Assert.Equal(["E3"], _model.BlockedItems.Select(row => row.ItemId));
-        Assert.Equal("Mục cần duyệt (2)", _model.ItemsHeader);
-        Assert.Equal("Câu hỏi cho thiết kế (1)", _model.BlockedHeader);
+        Assert.True(_model.HasBlocked);
+        Assert.Equal("1 câu hỏi cho thiết kế (không ghi được)", _model.BlockedHeader);
     }
 
     [Fact]
@@ -46,7 +46,8 @@ public sealed class ReviewViewModelTests : IDisposable
         Assert.Equal("Walls · Basic Wall (1)", row.Element);
         Assert.Equal("Comments: (trống) → Kiểm tra", row.Change);
         Assert.Equal(["1"], row.ElementIds);
-        Assert.Equal("Chờ", row.StatusText);
+        Assert.Equal("Cần xem", row.StatusText);
+        Assert.Equal("Đặt tham số", row.ActionText);
     }
 
     [Fact]
@@ -60,26 +61,73 @@ public sealed class ReviewViewModelTests : IDisposable
         Assert.Equal("Tự duyệt", _model.Items[0].StatusText);
         Assert.Equal("95%", _model.Items[0].ConfidenceText);
         Assert.Equal("", _model.Items[1].ConfidenceText);
-        Assert.Equal("DuAn · Đang duyệt · 1 duyệt (1 tự duyệt) · 0 bỏ · 1 chờ", _model.StatusLine);
-        Assert.Equal("Cần xem (1) · tự duyệt 1", _model.ItemsHeader);
+        Assert.Equal((1, 0, 1), (_model.SelectedCount, _model.SkippedCount, _model.PendingCount));
+        Assert.Equal("Chưa thực thi", _model.StatusBadge);
     }
 
     [Fact]
-    public void The_list_hides_automatic_approvals_until_asked()
+    public void Approve_all_skip_all_and_restore_act_on_the_main_list()
     {
         var sure = Item("E1", PlanTier.Review);
         sure.Confidence = 0.8;
         var document = new PlanDocument { Title = "DuAn", Path = @"D:\DuAn.rvt", StorageFolder = _folder };
         _model.Load(_plans.Create(document, "set_parameters", "Đặt Comments", scope: null, [sure, Item("E2", PlanTier.Review)]));
 
-        Assert.False(_model.IsVisible(_model.Items[0]));
-        Assert.True(_model.IsVisible(_model.Items[1]));
-        _model.ShowAutoItems = true;
-        Assert.True(_model.IsVisible(_model.Items[0]));
-        // An automatic approval the reviewer undoes needs a look again.
-        _model.ShowAutoItems = false;
-        _model.SetStatus([_model.Items[0]], PlanItemStatus.Rejected);
-        Assert.True(_model.IsVisible(_model.Items[0]));
+        _model.ApproveAll();
+        Assert.All(_model.Items, row => Assert.Equal(PlanItemStatus.Approved, row.Status));
+        Assert.True(_model.CanApprovePlan);
+
+        // Only what needs a look: the item the system approved stays approved, folded away.
+        Assert.False(ReviewViewModel.IsInMainList(_model.Items[0]));
+        _model.RejectAll();
+        Assert.Equal(PlanItemStatus.Approved, _model.Items[0].Status);
+        Assert.Equal(PlanItemStatus.Rejected, _model.Items[1].Status);
+        Assert.Equal("Bỏ qua", _model.Items[1].StatusText);
+
+        _model.Toggle(_model.Items[0]);
+        Assert.True(ReviewViewModel.IsInMainList(_model.Items[0]));
+        _model.RestoreChoices();
+        Assert.Equal(PlanItemStatus.Approved, _model.Items[0].Status);
+        Assert.Equal("Tự duyệt", _model.Items[0].StatusText);
+        Assert.Equal(PlanItemStatus.Pending, _model.Items[1].Status);
+    }
+
+    [Fact]
+    public void The_tick_toggles_a_row_between_approved_and_skipped()
+    {
+        var row = _model.Items[0];
+
+        _model.Toggle(row);
+        Assert.Equal(PlanItemStatus.Approved, row.Status);
+        _model.Toggle(row);
+        Assert.Equal(PlanItemStatus.Rejected, row.Status);
+    }
+
+    [Fact]
+    public void The_result_line_counts_elements_by_kind()
+    {
+        static PlanItem Columns(string id, int count) => new()
+        {
+            ItemId = id,
+            Action = "create_columns",
+            Params = JsonSerializer.SerializeToElement(new { summary = "350x1400" }),
+            Source = JsonSerializer.SerializeToElement(new { name = id, category = "Structural Columns", count }),
+            Confidence = 0.9,
+        };
+        var document = new PlanDocument { Title = "261016", Path = @"D:\261016.rvt", StorageFolder = _folder };
+        var skipped = Columns("K-150x150-tangduoibo", 13);
+        skipped.Confidence = 0.4;
+        (skipped.Tier, skipped.Status, skipped.AutoStatus) = (PlanTier.Auto, PlanItemStatus.Rejected, PlanItemStatus.Rejected);
+        var model = new ReviewViewModel(_plans, writesOnApprove: () => true);
+        model.Load(_plans.Create(document, "create_columns", "Dựng cột", scope: null, [Columns("K-350x1400", 27), Columns("K-1000x1000", 18), skipped]));
+
+        Assert.Equal("Tạo 45 cột (2 nhóm) trong mô hình Revit. Bỏ qua 1 nhóm còn lại.", model.ResultText);
+        Assert.Equal("Duyệt và ghi (2)", model.PrimaryText);
+        Assert.Equal("1 nhóm được hệ thống tự động bỏ qua", model.AutoSkippedHeader);
+        Assert.False(ReviewViewModel.IsInMainList(model.Items[2]));
+        Assert.Equal("Cần bạn xem (0)", model.ListHeader);
+        Assert.Equal("2 nhóm được hệ thống tự động duyệt", model.AutoApprovedHeader);
+        Assert.StartsWith(document.Title + " · pln_", model.Subtitle);
     }
 
     [Fact]
@@ -110,6 +158,22 @@ public sealed class ReviewViewModelTests : IDisposable
     }
 
     [Fact]
+    public void A_change_type_row_selects_every_element_of_its_group()
+    {
+        var row = new PlanItemRow(new PlanItem
+        {
+            ItemId = "T-5476",
+            Action = "change_type",
+            Params = JsonSerializer.SerializeToElement(new { summary = "Đổi Type 3 phần tử", typeId = "357621", elementIds = new[] { "360447", "360448", "360449" } }),
+            Source = JsonSerializer.SerializeToElement(new { name = "CW 102-85-100p → BTC-VachKC_300 (3)", category = "Walls", count = 3 }),
+        });
+
+        Assert.Equal(["360447", "360448", "360449"], row.ElementIds);
+        Assert.Equal("Đổi Type phần tử", row.ActionText);
+        Assert.Equal(3, row.ElementCount);
+    }
+
+    [Fact]
     public void Plan_can_be_approved_only_after_every_item_is_decided()
     {
         Assert.False(_model.CanApprovePlan);
@@ -117,6 +181,7 @@ public sealed class ReviewViewModelTests : IDisposable
         _model.SetStatus([_model.Items[0]], PlanItemStatus.Approved);
         Assert.False(_model.CanApprovePlan);
 
+        Assert.Contains("Còn 1 mục cần xem", _model.ResultNote);
         _model.RejectRemaining();
         Assert.True(_model.CanApprovePlan);
         Assert.Equal(PlanItemStatus.Rejected, _model.Items[1].Status);
@@ -125,7 +190,7 @@ public sealed class ReviewViewModelTests : IDisposable
         Assert.Equal(PlanStatus.Approved, _model.Plan!.Status);
         Assert.NotNull(_model.Plan.Approval);
         Assert.Contains("xong", _model.Message);
-        Assert.Contains("Đã duyệt", _model.StatusLine);
+        Assert.Equal("Đã duyệt, chưa ghi", _model.StatusBadge);
     }
 
     [Fact]
@@ -136,7 +201,7 @@ public sealed class ReviewViewModelTests : IDisposable
         _model.SetStatus([row], PlanItemStatus.Approved);
 
         Assert.Same(row, _model.Items[0]);
-        Assert.Equal("Duyệt", row.StatusText);
+        Assert.Equal("Đã duyệt", row.StatusText);
     }
 
     [Fact]
@@ -163,7 +228,7 @@ public sealed class ReviewViewModelTests : IDisposable
 
         Assert.False(_model.CanEdit);
         Assert.False(_model.CanApprovePlan);
-        Assert.Contains("Đã huỷ", _model.StatusLine);
+        Assert.Equal("Đã huỷ", _model.StatusBadge);
     }
 
     [Fact]
@@ -185,13 +250,12 @@ public sealed class ReviewViewModelTests : IDisposable
         _model.Load(_plans.Create(document, "set_parameters", "Đặt Comments", scope: null, [asBelow, Item("E2", PlanTier.Review)]));
 
         Assert.Equal("Tự bỏ", _model.Items[0].StatusText);
-        Assert.False(_model.IsVisible(_model.Items[0]));
-        Assert.Equal("Cần xem (1) · tự bỏ 1", _model.ItemsHeader);
-        Assert.Contains("1 bỏ (1 tự bỏ)", _model.StatusLine);
+        Assert.False(ReviewViewModel.IsInMainList(_model.Items[0]));
+        Assert.Equal(1, _model.AutoSkippedCount);
 
         // The reviewer may still approve it; it then shows again.
         _model.SetStatus([_model.Items[0]], PlanItemStatus.Approved);
-        Assert.True(_model.IsVisible(_model.Items[0]));
+        Assert.True(ReviewViewModel.IsInMainList(_model.Items[0]));
     }
 
     [Fact]

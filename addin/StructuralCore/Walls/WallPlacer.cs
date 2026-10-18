@@ -1,4 +1,5 @@
 using Autodesk.Revit.DB;
+using Bimtech.RevitMcp.Recognition;
 using View = Autodesk.Revit.DB.View;
 
 namespace Bimtech.StructuralCore.Walls;
@@ -53,19 +54,28 @@ internal static class WallPlacer
             .Select(g => new WallSizeGroup { TagName = null, SizeBMm = g.Key.Width, Sure = g.Key.Sure, Walls = g.ToList() })
             .OrderByDescending(g => g.Sure).ThenBy(g => g.SizeBMm).ToList();
 
-    /// <summary>Type gợi ý cho 1 nhóm: Type khớp đúng bề dày (IsExact = true), không thì Type có bề dày gần nhất.</summary>
+    /// <summary>Type gợi ý cho 1 nhóm: Type khớp đúng theo WallTypes (IsExact = true: BTC-VachKC_b, rồi vách bê tông
+    /// lệch ≤ 1mm), không thì Type có bề dày gần nhất (Type mẫu của template xếp sau).</summary>
     public static (T? Choice, bool IsExact) SuggestType<T>(double widthMm, IReadOnlyList<T> choices, Func<T, WallType> typeOf)
         where T : class
     {
-        var exact = choices.FirstOrDefault(choice => IsMatch(typeOf(choice), widthMm));
+        var exact = WallTypes.FindExact(choices, choice => Describe(typeOf(choice)), widthMm);
         if (exact is not null)
             return (exact, true);
-        var nearest = choices.OrderBy(c => Math.Abs(UnitUtils.ConvertFromInternalUnits(typeOf(c).Width, UnitTypeId.Millimeters) - widthMm)).FirstOrDefault();
-        return (nearest, false);
+        return (WallTypes.FindNearest(choices, choice => Describe(typeOf(choice)), widthMm), false);
     }
 
-    public static bool IsMatch(WallType type, double widthMm) =>
-        Math.Abs(UnitUtils.ConvertFromInternalUnits(type.Width, UnitTypeId.Millimeters) - widthMm) <= MatchToleranceMm;
+    public static bool IsMatch(WallType type, double widthMm) => WallTypes.IsExactMatch(Describe(type), widthMm);
+
+    /// <summary>Mô tả Revit-free của Wall Type cho WallTypes: tên, bề dày, lớp Structure có vật liệu bê tông không.</summary>
+    internal static WallTypes.Candidate Describe(WallType type)
+    {
+        var structure = type.GetCompoundStructure();
+        var concrete = structure?.GetLayers().Any(layer => layer.Function == MaterialFunctionAssignment.Structure
+            && type.Document.GetElement(layer.MaterialId) is Material material
+            && (WallTypes.MaterialSaysConcrete(material.MaterialClass) || WallTypes.MaterialSaysConcrete(material.Name))) == true;
+        return new(type.Name, UnitUtils.ConvertFromInternalUnits(type.Width, UnitTypeId.Millimeters), concrete, structure is not null);
+    }
 
     /// <summary>Union các tim tường CAD cùng trục, chồng lấn hoặc liền nhau. Phỏng theo
     /// PlaceFloor.CenterlineMerger nhưng giữ lại metadata/segment nguồn của RawWall.</summary>
@@ -158,17 +168,17 @@ internal static class WallPlacer
 
     // ------------------------------------------------------------------ Tạo Wall Type còn thiếu
 
-    /// <summary>Xem trước bước tạo Type, không sửa model: nhóm nào dùng lại Type cùng bề dày (kể cả Type sắp tạo cho nhóm
-    /// trước), nhóm nào tạo Type mới "BTC-VachKC_b".</summary>
+    /// <summary>Xem trước bước tạo Type, không sửa model: nhóm nào dùng lại Type khớp đúng (kể cả Type sắp tạo cho nhóm
+    /// trước), nhóm nào tạo Type mới "BTC-VachKC_b". Nhóm trong <paramref name="newTypeGroups"/> chỉ dùng lại Type BTC-VachKC_.</summary>
     public static List<(WallSizeGroup Group, WallType? Reuse, string? NewTypeName)> PlanMissingTypes(
-        IEnumerable<WallSizeGroup> groups, IReadOnlyList<WallType> pool)
+        IEnumerable<WallSizeGroup> groups, IReadOnlyList<WallType> pool, IReadOnlySet<WallSizeGroup>? newTypeGroups = null)
     {
         var names = pool.Select(type => type.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var planned = new List<(double Width, string Name)>();
         var previews = new List<(WallSizeGroup, WallType?, string?)>();
         foreach (var group in groups)
         {
-            var reuse = pool.FirstOrDefault(type => IsMatch(type, group.SizeBMm));
+            var reuse = WallTypes.FindExact(pool, Describe, group.SizeBMm, companyOnly: newTypeGroups?.Contains(group) == true);
             if (reuse is not null)
             {
                 previews.Add((group, reuse, null));
@@ -180,7 +190,7 @@ internal static class WallPlacer
                 previews.Add((group, null, shared.Name));
                 continue;
             }
-            var name = SymbolParameters.UniqueName($"BTC-VachKC_{Math.Round(group.SizeBMm):0}", names);
+            var name = SymbolParameters.UniqueName(WallTypes.NewTypeName(group.SizeBMm), names);
             names.Add(name);
             planned.Add((group.SizeBMm, name));
             previews.Add((group, null, name));
@@ -202,7 +212,7 @@ internal static class WallPlacer
 
         foreach (var group in groups)
         {
-            var reuse = choices.FirstOrDefault(choice => IsMatch(choice, group.SizeBMm));
+            var reuse = WallTypes.FindExact(choices, Describe, group.SizeBMm);
             if (reuse is not null)
             {
                 resolved[group] = reuse; continue;
@@ -213,7 +223,7 @@ internal static class WallPlacer
                 var existingNames = choices
                     .Select(choice => choice.Name)
                     .ToHashSet(StringComparer.OrdinalIgnoreCase);
-                var typeName = SymbolParameters.UniqueName($"BTC-VachKC_{Math.Round(group.SizeBMm):0}", existingNames);
+                var typeName = SymbolParameters.UniqueName(WallTypes.NewTypeName(group.SizeBMm), existingNames);
 
                 var newType = (WallType)templateType.Duplicate(typeName);
                 ResizeWallType(newType, group.SizeBMm);
@@ -348,22 +358,22 @@ internal static class WallPlacer
         return new(created, failed, skipped, errors, ids);
     }
 
-    /// <summary>Type mẫu mặc định để tạo Type còn thiếu: Basic Wall có cấu tạo lớp, bề dày gần <paramref name="widthMm"/> nhất.</summary>
+    /// <summary>Type mẫu mặc định để tạo Type còn thiếu (có cấu tạo lớp): Type BTC-VachKC_ có sẵn, không thì vách bê tông,
+    /// không thì bất kỳ; trong mỗi loại lấy bề dày gần <paramref name="widthMm"/> nhất.</summary>
     public static WallType? NearestTemplateType(IReadOnlyList<WallType> pool, double widthMm) =>
-        pool.Where(type => type.GetCompoundStructure() is not null)
-            .OrderBy(type => Math.Abs(UnitUtils.ConvertFromInternalUnits(type.Width, UnitTypeId.Millimeters) - widthMm))
-            .FirstOrDefault();
+        WallTypes.FindTemplate(pool, Describe, widthMm);
 
-    /// <summary>Type cho 1 nhóm trong Transaction đang mở: dùng lại Basic Wall Type cùng bề dày (kể cả Type vừa tạo ở mục
-    /// trước), không thì duplicate <paramref name="templateType"/> thành "BTC-VachKC_b". Created = true khi vừa tạo.</summary>
-    public static (WallType Type, bool Created) ResolveOrCreateType(Document doc, double widthMm, WallType templateType)
+    /// <summary>Type cho 1 nhóm trong Transaction đang mở: dùng lại Type khớp đúng theo WallTypes (kể cả Type vừa tạo ở mục
+    /// trước; <paramref name="companyOnly"/>: chỉ Type BTC-VachKC_), không thì duplicate <paramref name="templateType"/>
+    /// thành "BTC-VachKC_b". Created = true khi vừa tạo.</summary>
+    public static (WallType Type, bool Created) ResolveOrCreateType(Document doc, double widthMm, WallType templateType, bool companyOnly = false)
     {
         var pool = CollectBasicWallTypes(doc);
-        var reuse = pool.FirstOrDefault(type => IsMatch(type, widthMm));
+        var reuse = WallTypes.FindExact(pool, Describe, widthMm, companyOnly);
         if (reuse is not null) return (reuse, false);
 
         var names = pool.Select(type => type.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var newType = (WallType)templateType.Duplicate(SymbolParameters.UniqueName($"BTC-VachKC_{Math.Round(widthMm):0}", names));
+        var newType = (WallType)templateType.Duplicate(SymbolParameters.UniqueName(WallTypes.NewTypeName(widthMm), names));
         ResizeWallType(newType, widthMm);
         return (newType, true);
     }
@@ -532,7 +542,7 @@ internal static class WallScanPipeline
             UnitUtils.ConvertToInternalUnits(SupportSearchDepthMm, UnitTypeId.Millimeters));
 }
 
-/// <summary>Wall Type mặc định của công ty — Basic Wall dày 200mm, nhân bản từ Type sẵn có gần 200mm nhất.</summary>
+/// <summary>Wall Type mặc định của công ty — Basic Wall dày 200mm, nhân bản từ Type mẫu của WallPlacer.NearestTemplateType.</summary>
 internal static class WallDefaults
 {
     public const string DefaultWallTypeName = "BTC-VachKC_200";
@@ -548,10 +558,7 @@ internal static class WallDefaults
         if (types.Any(type => string.Equals(type.Name, DefaultWallTypeName, StringComparison.OrdinalIgnoreCase)))
             return true;
 
-        var seed = types
-            .Where(type => type.GetCompoundStructure() is not null)
-            .OrderBy(type => Math.Abs(UnitUtils.ConvertFromInternalUnits(type.Width, UnitTypeId.Millimeters) - DefaultWallThicknessMm))
-            .FirstOrDefault();
+        var seed = WallPlacer.NearestTemplateType(types, DefaultWallThicknessMm);
         if (seed is null)
         {
             error = "Project không có Basic Wall Type phù hợp để làm Type mẫu.";

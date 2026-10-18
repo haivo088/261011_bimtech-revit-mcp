@@ -34,6 +34,19 @@ internal static class StructuralJson
 
     public const string UndoHint = "Call undo_batch with this batchId, or press Ctrl+Z once in Revit.";
 
+    // A "types" value asking for a new company type for that group instead of an existing one.
+    public const string NewType = "new";
+
+    // The "types" map of propose_walls/propose_columns: each value is a type ID or "new".
+    public static IReadOnlyDictionary<string, string> ReadTypeMap(CommandParams p, int maxCount)
+    {
+        var map = p.GetStringMap("types", maxCount, maxLength: 32);
+        foreach (var (key, value) in map)
+            if (value != NewType && !long.TryParse(value, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out _))
+                throw RpcException.InvalidParams($"types.{key}", "expected a type ID such as \"12345\", or \"new\" for a new type.");
+        return map;
+    }
+
     // A type ID from a "types" map entry, checked to belong to the expected category.
     public static FamilySymbol RequireType(Document document, string idText, string param, BuiltInCategory category, string scanTool)
     {

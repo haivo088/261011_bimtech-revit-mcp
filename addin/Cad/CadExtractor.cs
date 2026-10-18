@@ -86,7 +86,7 @@ internal static class CadExtractor
 
     // An element's plan outline: the convex hull of its solids (its real shape, whatever its family calls its
     // parameters), centred on its insertion point.
-    private static CaseSupport? Outline(FamilyInstance element, string kind)
+    private static CaseSupport? Outline(Element element, string kind)
     {
         var hull = Bimtech.StructuralCore.Cad.CadGeometry.ConvexHull(SolidPoints(element));
         if (hull.Count < 3) return null;
@@ -98,6 +98,18 @@ internal static class CadExtractor
             Kind = kind, Id = RevitJson.Id(element.Id), Mark = Mark(element), Cx = Mm(center.X), Cy = Mm(center.Y),
             Points = hull.Select(p => new[] { Mm(p.X), Mm(p.Y) }).ToList(),
         };
+    }
+
+    // Pile caps and footings under the storey starting at the elevation (feet), at any depth, families and caps drawn
+    // as floors alike: a structural wall stands on one all the way down.
+    public static List<CaseSupport> ModelFoundationsBelow(Document document, double elevation)
+    {
+        var tolerance = UnitUtils.ConvertToInternalUnits(100, UnitTypeId.Millimeters);
+        return new FilteredElementCollector(document).OfCategory(BuiltInCategory.OST_StructuralFoundation)
+            .WhereElementIsNotElementType()
+            .Where(foundation => foundation.get_BoundingBox(null) is { } box && box.Max.Z <= elevation + tolerance)
+            .Select(foundation => Outline(foundation, "cap")).OfType<CaseSupport>()
+            .ToList();
     }
 
     // The straight walls whose top is at the elevation (feet), i.e. the walls of the storey below it.

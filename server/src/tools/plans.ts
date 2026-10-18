@@ -11,7 +11,7 @@ export const getPlanStatus = defineTool({
   method: "get_plan_status",
   title: "Get plan status",
   description:
-    "Read a plan's status and item counts. Call it when the user says they finished reviewing. "
+    "Read a plan's status and item counts. Call it when the user says they finished reviewing (to wait for their decision without them coming back to chat, use wait_for_plan). "
     + "Statuses: InReview, Approved, Committed, Stale, Cancelled. Only the user can approve a plan, "
     + "in the Revit review window; approvalId is set once they do. Committed right after their approval means the "
     + "review window already wrote it (Revit setting \"Bấm Duyệt kế hoạch là ghi vào mô hình ngay\", on by default): "

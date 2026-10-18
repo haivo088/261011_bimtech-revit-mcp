@@ -10,7 +10,7 @@ test("propose_columns forwards the type map and options", async (t) => {
   });
   const client = await mcpClient(t, options.port);
   const args = {
-    scanId: "scan-1", baseLevelId: "311", topLevelId: "694", types: { "C1": "12345", "300x500": "12346" },
+    scanId: "scan-1", baseLevelId: "311", topLevelId: "694", types: { "C1": "12345", "300x500": "12346", "C2": "new" },
     snapMm: 5, gridToleranceMm: 20, gridMarginMm: 400, writeMark: false,
   };
   const result = await client.callTool({ name: "propose_columns", arguments: args });
@@ -28,6 +28,8 @@ test("write tools are marked as such, read tools are not", async (t) => {
   assert.equal(annotations.load_default_family.destructiveHint, false);
   assert.equal(annotations.propose_columns.readOnlyHint, true);
   assert.equal(annotations.propose_beams.readOnlyHint, true);
+  assert.equal(annotations.propose_change_type.readOnlyHint, true);
+  assert.equal(annotations.propose_change_type.destructiveHint, false);
   assert.equal(annotations.undo_batch.readOnlyHint, false);
   assert.equal(annotations.undo_batch.destructiveHint, true);
   assert.equal(annotations.scan_cad_columns.readOnlyHint, true);
@@ -44,6 +46,7 @@ test("structural tools reject malformed input before contacting Revit", async (t
     { name: "scan_cad_columns", arguments: { cadId: "1", region: { minX: 0, minY: 0, maxX: 1 } } },
     { name: "propose_columns", arguments: { scanId: "scan-1", baseLevelId: "311" } },
     { name: "propose_columns", arguments: { scanId: "scan-1", baseLevelId: "311", topLevelId: "694", types: { "300x500": 12345 } } },
+    { name: "propose_columns", arguments: { scanId: "scan-1", baseLevelId: "311", topLevelId: "694", types: { "C1": "New" } } },
     { name: "propose_columns", arguments: { scanId: "scan-1", baseLevelId: "311", topLevelId: "694", snapMm: -1 } },
     { name: "undo_batch", arguments: {} },
   ];
@@ -165,7 +168,7 @@ test("wall and floor tools forward their input unchanged", async (t) => {
       name: "propose_walls",
       arguments: {
         scanId: "scan-4", baseLevelId: "311", topLevelId: "694", topOffsetMm: -100, include: ["w200"],
-        exclude: ["V9|300"], types: { "V1|200": "12345" }, onlySupported: true, extendToColumns: true,
+        exclude: ["V9|300"], types: { "V1|200": "12345", "w300": "new" }, onlySupported: true, extendToColumns: true,
       },
     },
     { name: "propose_floors", arguments: { levelId: "694", floorTypeId: "777", offsetMm: -50 } },
@@ -185,8 +188,40 @@ test("wall and floor tools reject malformed input before contacting Revit", asyn
     { name: "scan_cad_walls", arguments: { cadId: "1", gridToleranceMm: -1 } },
     { name: "propose_walls", arguments: { scanId: "scan-1", baseLevelId: "311" } },
     { name: "propose_walls", arguments: { scanId: "scan-1", baseLevelId: "311", topLevelId: "694", types: { w200: 1 } } },
+    { name: "propose_walls", arguments: { scanId: "scan-1", baseLevelId: "311", topLevelId: "694", types: { w200: "create" } } },
     { name: "propose_floors", arguments: {} },
     { name: "propose_floors", arguments: { levelId: "L2" } },
+  ];
+  for (const call of invalidCalls) {
+    const result = await client.callTool(call);
+    assert.equal(result.isError, true, JSON.stringify(call));
+  }
+  assert.equal(contacted, false);
+});
+
+test("propose_change_type forwards element and type IDs", async (t) => {
+  const requests = [];
+  const options = await bridge(t, (socket, request) => {
+    requests.push(request);
+    socket.end(JSON.stringify({ jsonrpc: "2.0", id: request.id, result: { plan: null } }) + "\n");
+  });
+  const client = await mcpClient(t, options.port);
+  const args = { elementIds: ["1001", "1002"], typeId: "777" };
+  assert.equal((await client.callTool({ name: "propose_change_type", arguments: args })).isError, false);
+  assert.equal(requests[0].method, "propose_change_type");
+  assert.deepEqual(requests[0].params, args);
+});
+
+test("propose_change_type rejects malformed input before contacting Revit", async (t) => {
+  let contacted = false;
+  const options = await bridge(t, (socket) => { contacted = true; socket.destroy(); });
+  const client = await mcpClient(t, options.port);
+  const invalidCalls = [
+    { name: "propose_change_type", arguments: {} },
+    { name: "propose_change_type", arguments: { elementIds: ["1001"] } },
+    { name: "propose_change_type", arguments: { elementIds: [], typeId: "777" } },
+    { name: "propose_change_type", arguments: { elementIds: ["W-1"], typeId: "777" } },
+    { name: "propose_change_type", arguments: { elementIds: ["1001"], typeId: "new" } },
   ];
   for (const call of invalidCalls) {
     const result = await client.callTool(call);

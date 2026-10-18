@@ -2,120 +2,373 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="{Binding WindowTitle}"
-        Width="760" Height="420" MinWidth="520" MinHeight="260"
-        FontFamily="Segoe UI" FontSize="12"
+        Width="880" SizeToContent="Height" MaxHeight="940" MinWidth="620" MinHeight="420"
+        FontFamily="Segoe UI" FontSize="13"
+        Background="{DynamicResource BgBrush}" Foreground="{DynamicResource TextBrush}"
         ShowInTaskbar="False" WindowStartupLocation="CenterOwner">
-    <!-- Compact on purpose: small margins, one-line rows, horizontal grid lines only. -->
+    <!-- Dark cards: counts at the top, the proposals in the middle, what will be written at the bottom. -->
     <Window.Resources>
-        <Style TargetType="Button">
-            <Setter Property="Padding" Value="8,1" />
-            <Setter Property="Margin" Value="0,0,4,0" />
+        <BooleanToVisibilityConverter x:Key="Shown" />
+        <SolidColorBrush x:Key="BgBrush" Color="#18191C" />
+        <SolidColorBrush x:Key="CardBrush" Color="#202125" />
+        <SolidColorBrush x:Key="CardBorderBrush" Color="#33353A" />
+        <SolidColorBrush x:Key="HoverBrush" Color="#2A2C31" />
+        <SolidColorBrush x:Key="SelectedBrush" Color="#30333A" />
+        <SolidColorBrush x:Key="TextBrush" Color="#ECEDEF" />
+        <SolidColorBrush x:Key="MutedBrush" Color="#9A9DA5" />
+        <SolidColorBrush x:Key="GreenBrush" Color="#3FBF6A" />
+        <SolidColorBrush x:Key="GreenBgBrush" Color="#173323" />
+        <SolidColorBrush x:Key="OrangeBrush" Color="#F08A3C" />
+        <SolidColorBrush x:Key="OrangeBgBrush" Color="#3A2416" />
+        <SolidColorBrush x:Key="RedBrush" Color="#E5534B" />
+        <SolidColorBrush x:Key="RedBgBrush" Color="#3A1D1C" />
+        <SolidColorBrush x:Key="BlueBrush" Color="#4C9AFF" />
+
+        <Style x:Key="Card" TargetType="Border">
+            <Setter Property="Background" Value="{StaticResource CardBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource CardBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="10" />
+            <Setter Property="Padding" Value="16,12" />
         </Style>
+
+        <!-- Buttons: outline (secondary), green outline, white pill (main), plain text (cancel). -->
+        <Style x:Key="OutlineButton" TargetType="Button">
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource CardBorderBrush}" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Padding" Value="14,7" />
+            <Setter Property="Margin" Value="8,0,0,0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Box" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="1" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Box" Property="Background" Value="{StaticResource HoverBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Box" Property="Opacity" Value="0.4" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="GreenButton" TargetType="Button" BasedOn="{StaticResource OutlineButton}">
+            <Setter Property="Foreground" Value="{StaticResource GreenBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource GreenBrush}" />
+        </Style>
+        <Style x:Key="PrimaryButton" TargetType="Button">
+            <Setter Property="Foreground" Value="#111214" />
+            <Setter Property="Background" Value="#F2F3F5" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Padding" Value="18,8" />
+            <Setter Property="Margin" Value="8,0,0,0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Box" Background="{TemplateBinding Background}" CornerRadius="18" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Box" Property="Background" Value="White" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Box" Property="Opacity" Value="0.35" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="TextButton" TargetType="Button">
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <ContentPresenter x:Name="Text" VerticalAlignment="Center" />
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Foreground" Value="{StaticResource RedBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Text" Property="Opacity" Value="0.4" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- The round tick in front of a row: click to approve or skip. -->
+        <Style x:Key="TickButton" TargetType="Button">
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid Width="22" Height="22" Background="Transparent">
+                            <Ellipse x:Name="Disc" Fill="Transparent" Stroke="{StaticResource MutedBrush}" StrokeThickness="1.5" />
+                            <Path x:Name="Tick" Data="M6,11.5 L9.5,15 L16,7.5" Stroke="#111214" StrokeThickness="2.2"
+                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Visibility="Collapsed" />
+                            <Path x:Name="Cross" Data="M7.5,7.5 L14.5,14.5 M14.5,7.5 L7.5,14.5" Stroke="{StaticResource RedBrush}"
+                                  StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Visibility="Collapsed" />
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <DataTrigger Binding="{Binding Status}" Value="Approved">
+                                <Setter TargetName="Disc" Property="Fill" Value="#F2F3F5" />
+                                <Setter TargetName="Disc" Property="Stroke" Value="#F2F3F5" />
+                                <Setter TargetName="Tick" Property="Visibility" Value="Visible" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding Status}" Value="Applied">
+                                <Setter TargetName="Disc" Property="Fill" Value="{StaticResource GreenBrush}" />
+                                <Setter TargetName="Disc" Property="Stroke" Value="{StaticResource GreenBrush}" />
+                                <Setter TargetName="Tick" Property="Visibility" Value="Visible" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding Status}" Value="Rejected">
+                                <Setter TargetName="Disc" Property="Stroke" Value="{StaticResource RedBrush}" />
+                                <Setter TargetName="Cross" Property="Visibility" Value="Visible" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding Status}" Value="Failed">
+                                <Setter TargetName="Disc" Property="Stroke" Value="{StaticResource RedBrush}" />
+                                <Setter TargetName="Cross" Property="Visibility" Value="Visible" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding Status}" Value="Pending">
+                                <Setter TargetName="Disc" Property="Stroke" Value="{StaticResource OrangeBrush}" />
+                            </DataTrigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.6" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Status pill: green approved or written, grey skipped, orange to look at, red failed. -->
+        <DataTemplate x:Key="StatusCell">
+            <Border x:Name="Pill" CornerRadius="6" Padding="8,3" HorizontalAlignment="Left" Background="{StaticResource HoverBrush}">
+                <TextBlock x:Name="Word" Text="{Binding StatusText}" FontWeight="SemiBold" FontSize="12" Foreground="{StaticResource MutedBrush}" />
+            </Border>
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding Status}" Value="Approved">
+                    <Setter TargetName="Pill" Property="Background" Value="{StaticResource GreenBgBrush}" />
+                    <Setter TargetName="Word" Property="Foreground" Value="{StaticResource GreenBrush}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Status}" Value="Applied">
+                    <Setter TargetName="Pill" Property="Background" Value="{StaticResource GreenBgBrush}" />
+                    <Setter TargetName="Word" Property="Foreground" Value="{StaticResource GreenBrush}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Status}" Value="Pending">
+                    <Setter TargetName="Pill" Property="Background" Value="{StaticResource OrangeBgBrush}" />
+                    <Setter TargetName="Word" Property="Foreground" Value="{StaticResource OrangeBrush}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Status}" Value="Failed">
+                    <Setter TargetName="Pill" Property="Background" Value="{StaticResource RedBgBrush}" />
+                    <Setter TargetName="Word" Property="Foreground" Value="{StaticResource RedBrush}" />
+                </DataTrigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
+
+        <DataTemplate x:Key="TickCell">
+            <Button Style="{StaticResource TickButton}" Click="Toggle_Click" ToolTip="Bấm để duyệt hoặc bỏ qua"
+                    IsEnabled="{Binding DataContext.CanEdit, RelativeSource={RelativeSource AncestorType=Window}}" />
+        </DataTemplate>
+        <!-- The element on the first line, the change below it in grey. -->
+        <DataTemplate x:Key="ElementCell">
+            <StackPanel>
+                <TextBlock Text="{Binding Element}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip="{Binding Element}" />
+                <TextBlock Text="{Binding Change}" Foreground="{StaticResource MutedBrush}" FontSize="12" Margin="0,2,0,0"
+                           TextTrimming="CharacterEllipsis" ToolTip="{Binding Change}" />
+            </StackPanel>
+        </DataTemplate>
+
         <Style TargetType="DataGrid">
             <Setter Property="AutoGenerateColumns" Value="False" />
+            <!-- Nothing selected on opening: selecting a row zooms Revit to it. -->
+            <Setter Property="IsSynchronizedWithCurrentItem" Value="False" />
             <Setter Property="IsReadOnly" Value="True" />
             <Setter Property="SelectionMode" Value="Extended" />
             <Setter Property="HeadersVisibility" Value="Column" />
             <Setter Property="GridLinesVisibility" Value="Horizontal" />
-            <Setter Property="HorizontalGridLinesBrush" Value="#E6E6E6" />
+            <Setter Property="HorizontalGridLinesBrush" Value="{StaticResource CardBorderBrush}" />
             <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="Background" Value="White" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="RowBackground" Value="Transparent" />
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
             <Setter Property="RowHeaderWidth" Value="0" />
+            <Setter Property="CanUserResizeRows" Value="False" />
+            <Setter Property="VerticalScrollBarVisibility" Value="Auto" />
+            <Setter Property="HorizontalScrollBarVisibility" Value="Disabled" />
         </Style>
         <Style TargetType="DataGridColumnHeader">
-            <Setter Property="Padding" Value="4,2" />
+            <Setter Property="Background" Value="{StaticResource CardBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
             <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Padding" Value="10,10" />
+            <Setter Property="BorderBrush" Value="{StaticResource CardBorderBrush}" />
+            <Setter Property="BorderThickness" Value="0,0,0,1" />
+        </Style>
+        <Style TargetType="DataGridRow">
+            <Setter Property="MinHeight" Value="48" />
+            <Setter Property="Background" Value="Transparent" />
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{StaticResource HoverBrush}" />
+                </Trigger>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="{StaticResource SelectedBrush}" />
+                </Trigger>
+            </Style.Triggers>
         </Style>
         <Style TargetType="DataGridCell">
             <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="Padding" Value="4,1" />
-            <Setter Property="ToolTip" Value="{Binding RelativeSource={RelativeSource Self}, Path=Content.Text}" />
+            <Setter Property="Padding" Value="10,6" />
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="DataGridCell">
-                        <Border Padding="{TemplateBinding Padding}" Background="{TemplateBinding Background}">
+                        <Border Padding="{TemplateBinding Padding}" Background="Transparent">
                             <ContentPresenter VerticalAlignment="Center" />
                         </Border>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
         </Style>
-        <Style TargetType="TabItem">
-            <Setter Property="Padding" Value="8,2" />
+
+        <!-- Thin dark scroll bars. -->
+        <Style TargetType="ScrollBar">
+            <Setter Property="Width" Value="10" />
+            <Setter Property="MinWidth" Value="10" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ScrollBar">
+                        <Track x:Name="PART_Track" IsDirectionReversed="True" Margin="2">
+                            <Track.Thumb>
+                                <Thumb>
+                                    <Thumb.Template>
+                                        <ControlTemplate TargetType="Thumb">
+                                            <Border CornerRadius="3" Background="#4A4D55" />
+                                        </ControlTemplate>
+                                    </Thumb.Template>
+                                </Thumb>
+                            </Track.Thumb>
+                        </Track>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="Orientation" Value="Horizontal">
+                    <Setter Property="Width" Value="Auto" />
+                    <Setter Property="MinWidth" Value="0" />
+                    <Setter Property="Height" Value="10" />
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="ScrollBar">
+                                <Track x:Name="PART_Track" Margin="2">
+                                    <Track.Thumb>
+                                        <Thumb>
+                                            <Thumb.Template>
+                                                <ControlTemplate TargetType="Thumb">
+                                                    <Border CornerRadius="3" Background="#4A4D55" />
+                                                </ControlTemplate>
+                                            </Thumb.Template>
+                                        </Thumb>
+                                    </Track.Thumb>
+                                </Track>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Trigger>
+            </Style.Triggers>
         </Style>
 
-        <SolidColorBrush x:Key="ApprovedBrush" Color="#2E9E44" />
-        <SolidColorBrush x:Key="RejectedBrush" Color="#D64545" />
-        <SolidColorBrush x:Key="PendingBrush" Color="#E08A1E" />
+        <!-- A folding section in a card: a header line with a chevron, the content below when open. -->
+        <Style x:Key="FoldSection" TargetType="Expander">
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Expander">
+                        <Border Style="{StaticResource Card}" Padding="0">
+                            <DockPanel>
+                                <ToggleButton DockPanel.Dock="Top" Foreground="{TemplateBinding Foreground}" IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}}"
+                                              Cursor="Hand">
+                                    <ToggleButton.Template>
+                                        <ControlTemplate TargetType="ToggleButton">
+                                            <DockPanel Background="Transparent" Margin="16,12">
+                                                <Path x:Name="Chevron" DockPanel.Dock="Right" Data="M0,0 L5,5 L10,0" Stroke="{StaticResource MutedBrush}"
+                                                      StrokeThickness="1.6" VerticalAlignment="Center" RenderTransformOrigin="0.5,0.5">
+                                                    <Path.RenderTransform>
+                                                        <RotateTransform x:Name="Turn" Angle="0" />
+                                                    </Path.RenderTransform>
+                                                </Path>
+                                                <ContentPresenter Content="{Binding Header, RelativeSource={RelativeSource AncestorType=Expander}}"
+                                                                  VerticalAlignment="Center" />
+                                            </DockPanel>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsChecked" Value="True">
+                                                    <Setter TargetName="Chevron" Property="RenderTransform">
+                                                        <Setter.Value>
+                                                            <RotateTransform Angle="180" />
+                                                        </Setter.Value>
+                                                    </Setter>
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </ToggleButton.Template>
+                                </ToggleButton>
+                                <ContentPresenter x:Name="Body" Visibility="Collapsed" Margin="0,0,0,4" />
+                            </DockPanel>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsExpanded" Value="True">
+                                <Setter TargetName="Body" Property="Visibility" Value="Visible" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
 
-        <!-- Status as an icon and a word: green tick approved or written, red cross rejected or failed, orange ring pending. -->
-        <DataTemplate x:Key="StatusCell">
-            <StackPanel Orientation="Horizontal">
-                <Grid Width="12" Height="12" Margin="0,0,4,0" VerticalAlignment="Center">
-                    <Path x:Name="Tick" Data="M1.5,6.5 L4.5,9.5 L10.5,2.5" Stroke="{StaticResource ApprovedBrush}"
-                          StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
-                          Visibility="Collapsed" />
-                    <Path x:Name="Cross" Data="M2.5,2.5 L9.5,9.5 M9.5,2.5 L2.5,9.5" Stroke="{StaticResource RejectedBrush}"
-                          StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Visibility="Collapsed" />
-                    <Ellipse x:Name="Ring" Width="10" Height="10" Stroke="{StaticResource PendingBrush}"
-                             StrokeThickness="2" Visibility="Collapsed" />
-                </Grid>
-                <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center" />
-            </StackPanel>
-            <DataTemplate.Triggers>
-                <DataTrigger Binding="{Binding Status}" Value="Approved">
-                    <Setter TargetName="Tick" Property="Visibility" Value="Visible" />
-                </DataTrigger>
-                <DataTrigger Binding="{Binding Status}" Value="Applied">
-                    <Setter TargetName="Tick" Property="Visibility" Value="Visible" />
-                </DataTrigger>
-                <DataTrigger Binding="{Binding Status}" Value="Rejected">
-                    <Setter TargetName="Cross" Property="Visibility" Value="Visible" />
-                </DataTrigger>
-                <DataTrigger Binding="{Binding Status}" Value="Failed">
-                    <Setter TargetName="Cross" Property="Visibility" Value="Visible" />
-                </DataTrigger>
-                <DataTrigger Binding="{Binding Status}" Value="Pending">
-                    <Setter TargetName="Ring" Property="Visibility" Value="Visible" />
-                </DataTrigger>
-            </DataTemplate.Triggers>
-        </DataTemplate>
+        <Style x:Key="Info" TargetType="Path">
+            <Setter Property="Data" Value="M8,1 A7,7 0 1 1 7.99,1 Z M8,7 L8,11.5 M8,4.6 L8,4.8" />
+            <Setter Property="Stroke" Value="{StaticResource BlueBrush}" />
+            <Setter Property="StrokeThickness" Value="1.5" />
+            <Setter Property="StrokeStartLineCap" Value="Round" />
+            <Setter Property="StrokeEndLineCap" Value="Round" />
+            <Setter Property="Width" Value="16" />
+            <Setter Property="Height" Value="16" />
+            <Setter Property="Margin" Value="0,0,10,0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
     </Window.Resources>
 
-    <DockPanel Margin="6">
-        <StackPanel DockPanel.Dock="Top" Margin="0,0,0,4">
-            <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-            <TextBlock Text="{Binding StatusLine}" Foreground="#666666" TextTrimming="CharacterEllipsis" />
-            <Border Background="#FFF4E5" BorderBrush="#E0A94A" BorderThickness="1" Padding="6,3" Margin="0,4,0,0">
-                <Border.Style>
-                    <Style TargetType="Border">
-                        <Style.Triggers>
-                            <DataTrigger Binding="{Binding ReadOnlyNotice}" Value="">
-                                <Setter Property="Visibility" Value="Collapsed" />
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </Border.Style>
-                <TextBlock Text="{Binding ReadOnlyNotice}" TextWrapping="Wrap" FontWeight="SemiBold" />
-            </Border>
-        </StackPanel>
-
-        <DockPanel DockPanel.Dock="Bottom" Margin="0,4,0,0">
-            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                <Button Content="Huỷ kế hoạch" Click="CancelPlan_Click" IsEnabled="{Binding CanEdit}" />
-                <Button Content="Duyệt kế hoạch" Click="ApprovePlan_Click" IsEnabled="{Binding CanApprovePlan}"
-                        FontWeight="SemiBold" Margin="0" />
-            </StackPanel>
-            <StackPanel Orientation="Horizontal">
-                <Button Content="Duyệt" Click="Approve_Click" IsEnabled="{Binding CanEdit}" />
-                <Button Content="Bỏ" Click="Reject_Click" IsEnabled="{Binding CanEdit}" />
-                <Button Content="Chờ lại" Click="Reset_Click" IsEnabled="{Binding CanEdit}" />
-                <Button Content="Bỏ các mục còn chờ" Click="RejectRemaining_Click" IsEnabled="{Binding CanEdit}" />
-                <CheckBox Content="Hiện cả mục tự duyệt" IsChecked="{Binding ShowAutoItems}" VerticalAlignment="Center" Margin="8,0,0,0" />
+    <!-- Only what needs a look is open; what the system decided waits folded. Result and buttons stay at the bottom. -->
+    <DockPanel Margin="20,14,20,16">
+        <DockPanel DockPanel.Dock="Bottom" Margin="0,12,0,0">
+            <Button DockPanel.Dock="Left" Style="{StaticResource TextButton}" Content="Huỷ kế hoạch" Click="CancelPlan_Click" IsEnabled="{Binding CanEdit}" />
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Style="{StaticResource OutlineButton}" Content="Khôi phục lựa chọn" Click="Restore_Click" IsEnabled="{Binding CanEdit}" />
+                <Button Style="{StaticResource PrimaryButton}" Click="ApprovePlan_Click" IsEnabled="{Binding CanApprovePlan}">
+                    <StackPanel Orientation="Horizontal">
+                        <Grid Width="16" Height="16" Margin="0,0,8,0" VerticalAlignment="Center">
+                            <Ellipse Stroke="#111214" StrokeThickness="1.5" />
+                            <Path Data="M6.2,4.8 L11,8 L6.2,11.2 Z" Fill="#111214" />
+                        </Grid>
+                        <TextBlock Text="{Binding PrimaryText}" />
+                    </StackPanel>
+                </Button>
             </StackPanel>
         </DockPanel>
-
-        <TextBlock DockPanel.Dock="Bottom" Text="{Binding Message}" TextWrapping="Wrap" Margin="0,4,0,0">
+        <TextBlock DockPanel.Dock="Bottom" Text="{Binding Message}" TextWrapping="Wrap" Margin="2,10,0,0" Foreground="{StaticResource BlueBrush}">
             <TextBlock.Style>
                 <Style TargetType="TextBlock">
                     <Style.Triggers>
@@ -126,48 +379,225 @@
                 </Style>
             </TextBlock.Style>
         </TextBlock>
+        <Border DockPanel.Dock="Bottom" Style="{StaticResource Card}" Margin="0,12,0,0">
+            <StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <Path Style="{StaticResource Info}" />
+                    <TextBlock Text="Kết quả sẽ áp dụng" FontWeight="SemiBold" />
+                </StackPanel>
+                <TextBlock Text="{Binding ResultText}" TextWrapping="Wrap" Margin="0,8,0,0" />
+                <TextBlock Text="{Binding ResultNote}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" FontSize="12" Margin="0,6,0,0" />
+            </StackPanel>
+        </Border>
 
-        <TabControl Padding="0">
-            <TabItem Header="{Binding ItemsHeader}">
-                <DockPanel>
-                    <!-- The selected item's detail, e.g. the code a send_code item will run. Hidden when empty. -->
-                    <TextBox DockPanel.Dock="Bottom" Height="180" Margin="0,4,0,0" IsReadOnly="True"
-                             FontFamily="Consolas" FontSize="11" TextWrapping="NoWrap"
-                             HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
-                             Text="{Binding SelectedItem.Detail, ElementName=ItemsGrid, Mode=OneWay}">
-                        <TextBox.Style>
-                            <Style TargetType="TextBox">
+        <StackPanel DockPanel.Dock="Top">
+            <DockPanel Margin="0,0,0,14">
+                <!-- Orange until written, green once written, grey when cancelled or stale. -->
+                <Border DockPanel.Dock="Right" CornerRadius="8" Padding="10,4" VerticalAlignment="Center">
+                    <Border.Style>
+                        <Style TargetType="Border">
+                            <Setter Property="Background" Value="{StaticResource OrangeBgBrush}" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding StatusKind}" Value="done">
+                                    <Setter Property="Background" Value="{StaticResource GreenBgBrush}" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding StatusKind}" Value="off">
+                                    <Setter Property="Background" Value="{StaticResource HoverBrush}" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                    <TextBlock Text="{Binding StatusBadge}" FontWeight="SemiBold" FontSize="12">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Foreground" Value="{StaticResource OrangeBrush}" />
                                 <Style.Triggers>
-                                    <DataTrigger Binding="{Binding SelectedItem.Detail, ElementName=ItemsGrid}" Value="">
-                                        <Setter Property="Visibility" Value="Collapsed" />
+                                    <DataTrigger Binding="{Binding StatusKind}" Value="done">
+                                        <Setter Property="Foreground" Value="{StaticResource GreenBrush}" />
                                     </DataTrigger>
-                                    <DataTrigger Binding="{Binding SelectedItem, ElementName=ItemsGrid}" Value="{x:Null}">
-                                        <Setter Property="Visibility" Value="Collapsed" />
+                                    <DataTrigger Binding="{Binding StatusKind}" Value="off">
+                                        <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
                                     </DataTrigger>
                                 </Style.Triggers>
                             </Style>
-                        </TextBox.Style>
-                    </TextBox>
-                    <DataGrid x:Name="ItemsGrid" ItemsSource="{Binding Items}" SelectionChanged="Grid_SelectionChanged">
+                        </TextBlock.Style>
+                    </TextBlock>
+                </Border>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <Path Data="M1,15 L1,4 L7,1 L7,15 M7,6 L13,6 L13,15 M3.5,6 L4.5,6 M3.5,9 L4.5,9 M9.5,9 L10.5,9 M9.5,12 L10.5,12 M0,15 L14,15"
+                          Stroke="{StaticResource BlueBrush}" StrokeThickness="1.4" Width="15" Height="16" Margin="0,0,8,0" VerticalAlignment="Center" />
+                    <TextBlock Text="BIMTECH" FontWeight="Bold" />
+                    <TextBlock Text="  /  Duyệt kế hoạch" Foreground="{StaticResource MutedBrush}" />
+                </StackPanel>
+            </DockPanel>
+
+            <StackPanel Margin="0,0,0,14">
+                <TextBlock Text="{Binding Title}" FontSize="24" FontWeight="Bold" TextWrapping="Wrap" />
+                <TextBlock Text="{Binding Subtitle}" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" TextTrimming="CharacterEllipsis" />
+            </StackPanel>
+
+            <Border Margin="0,0,0,14">
+                <Border.Style>
+                    <Style TargetType="Border" BasedOn="{StaticResource Card}">
+                        <Setter Property="Background" Value="{StaticResource OrangeBgBrush}" />
+                        <Setter Property="BorderBrush" Value="{StaticResource OrangeBrush}" />
+                        <Setter Property="Padding" Value="14,8" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding ReadOnlyNotice}" Value="">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                <TextBlock Text="{Binding ReadOnlyNotice}" TextWrapping="Wrap" FontWeight="SemiBold" Foreground="{StaticResource OrangeBrush}" />
+            </Border>
+
+            <UniformGrid Columns="3" Margin="-6,0,-6,16">
+                <Border Style="{StaticResource Card}" Margin="6,0">
+                    <StackPanel>
+                        <TextBlock Text="Đã chọn tạo" Foreground="{StaticResource MutedBrush}" />
+                        <TextBlock Text="{Binding SelectedCount}" FontSize="32" FontWeight="Bold" Foreground="{StaticResource GreenBrush}" Margin="0,6,0,0" />
+                    </StackPanel>
+                </Border>
+                <Border Style="{StaticResource Card}" Margin="6,0">
+                    <StackPanel>
+                        <TextBlock Text="Bỏ qua" Foreground="{StaticResource MutedBrush}" />
+                        <TextBlock Text="{Binding SkippedCount}" FontSize="32" FontWeight="Bold" Margin="0,6,0,0" />
+                    </StackPanel>
+                </Border>
+                <Border Style="{StaticResource Card}" Margin="6,0">
+                    <StackPanel>
+                        <TextBlock Text="Cần xem" Foreground="{StaticResource MutedBrush}" />
+                        <TextBlock Text="{Binding PendingCount}" FontSize="32" FontWeight="Bold" Margin="0,6,0,0">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Foreground" Value="{StaticResource OrangeBrush}" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding PendingCount}" Value="0">
+                                            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </StackPanel>
+                </Border>
+            </UniformGrid>
+
+            <DockPanel Margin="0,0,0,10">
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <Button Style="{StaticResource GreenButton}" Click="ApproveAll_Click" IsEnabled="{Binding CanEdit}">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Data="M1,6 L4,9 L10,2 M7,8 L8,9 L14,2" Stroke="{StaticResource GreenBrush}" StrokeThickness="1.6"
+                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Margin="0,0,8,0" VerticalAlignment="Center" />
+                            <TextBlock Text="Duyệt tất cả" />
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource OutlineButton}" Click="RejectAll_Click" IsEnabled="{Binding CanEdit}">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Data="M1,1 L9,9 M9,1 L1,9" Stroke="{StaticResource TextBrush}" StrokeThickness="1.5"
+                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round" Margin="0,0,8,0" VerticalAlignment="Center" />
+                            <TextBlock Text="Bỏ duyệt tất cả" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+                <TextBlock Text="{Binding ListHeader}" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" />
+            </DockPanel>
+        </StackPanel>
+
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+                <Border Style="{StaticResource Card}" Padding="0" Margin="0,0,0,12">
+                    <Grid>
+                        <DataGrid x:Name="ItemsGrid" MaxHeight="420" SelectionChanged="Grid_SelectionChanged">
+                            <DataGrid.Columns>
+                                <DataGridTemplateColumn Header="" CellTemplate="{StaticResource TickCell}" Width="46" />
+                                <DataGridTemplateColumn Header="Nhóm phần tử" CellTemplate="{StaticResource ElementCell}" Width="*" />
+                                <DataGridTextColumn Header="Tin cậy" Binding="{Binding ConfidenceText}" Width="70" />
+                                <DataGridTemplateColumn Header="Trạng thái" CellTemplate="{StaticResource StatusCell}" Width="118" />
+                                <DataGridTextColumn Header="Hành động" Binding="{Binding ActionText}" Width="104" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+                        <!-- Nothing left to look at: the grid shows only its header, this line says why. -->
+                        <TextBlock Text="Không còn mục nào cần xem. Hệ thống đã tự quyết các mục bên dưới; mở ra nếu muốn xem lại."
+                                   Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="16,52,16,16">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding ToReviewCount}" Value="0">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Grid>
+                </Border>
+
+                <!-- Why the selected item was proposed, and its code or other detail. -->
+                <Border x:Name="DetailCard" Style="{StaticResource Card}" Margin="0,0,0,12" Visibility="Collapsed">
+                    <StackPanel>
+                        <TextBlock x:Name="DetailReasons" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" />
+                        <TextBox x:Name="DetailText" Margin="0,8,0,0" MaxHeight="170" IsReadOnly="True" FontFamily="Consolas" FontSize="11"
+                                 Background="{StaticResource BgBrush}" Foreground="{StaticResource TextBrush}" BorderBrush="{StaticResource CardBorderBrush}"
+                                 TextWrapping="NoWrap" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" />
+                    </StackPanel>
+                </Border>
+
+                <Expander x:Name="ApprovedSection" Style="{StaticResource FoldSection}" Margin="0,0,0,12"
+                          Visibility="{Binding HasAutoApproved, Converter={StaticResource Shown}}">
+                    <Expander.Header>
+                        <StackPanel Orientation="Horizontal">
+                            <Path Style="{StaticResource Info}" Stroke="{StaticResource GreenBrush}" />
+                            <TextBlock Text="{Binding AutoApprovedHeader}" />
+                        </StackPanel>
+                    </Expander.Header>
+                    <DataGrid x:Name="ApprovedGrid" MaxHeight="240" SelectionChanged="Grid_SelectionChanged">
                         <DataGrid.Columns>
-                            <DataGridTemplateColumn Header="Trạng thái" CellTemplate="{StaticResource StatusCell}" Width="84" />
-                            <DataGridTextColumn Header="Tin cậy" Binding="{Binding ConfidenceText}" Width="52" />
-                            <DataGridTextColumn Header="Phần tử" Binding="{Binding Element}" Width="3*" />
-                            <DataGridTextColumn Header="Thay đổi" Binding="{Binding Change}" Width="3*" />
-                            <DataGridTextColumn Header="Lý do" Binding="{Binding Reasons}" Width="2*" />
+                            <DataGridTemplateColumn Header="" CellTemplate="{StaticResource TickCell}" Width="46" />
+                            <DataGridTemplateColumn Header="Nhóm phần tử" CellTemplate="{StaticResource ElementCell}" Width="*" />
+                            <DataGridTextColumn Header="Tin cậy" Binding="{Binding ConfidenceText}" Width="70" />
+                            <DataGridTemplateColumn Header="Trạng thái" CellTemplate="{StaticResource StatusCell}" Width="118" />
+                            <DataGridTextColumn Header="Hành động" Binding="{Binding ActionText}" Width="104" />
                         </DataGrid.Columns>
                     </DataGrid>
-                </DockPanel>
-            </TabItem>
-            <TabItem Header="{Binding BlockedHeader}">
-                <DataGrid ItemsSource="{Binding BlockedItems}" SelectionChanged="Grid_SelectionChanged">
-                    <DataGrid.Columns>
-                        <DataGridTextColumn Header="Phần tử" Binding="{Binding Element}" Width="2*" />
-                        <DataGridTextColumn Header="Thay đổi" Binding="{Binding Change}" Width="2*" />
-                        <DataGridTextColumn Header="Lý do" Binding="{Binding Reasons}" Width="3*" />
-                    </DataGrid.Columns>
-                </DataGrid>
-            </TabItem>
-        </TabControl>
+                </Expander>
+
+                <Expander x:Name="AutoSection" Style="{StaticResource FoldSection}" Margin="0,0,0,12"
+                          Visibility="{Binding HasAutoSkipped, Converter={StaticResource Shown}}">
+                    <Expander.Header>
+                        <StackPanel Orientation="Horizontal">
+                            <Path Style="{StaticResource Info}" Stroke="{StaticResource MutedBrush}" />
+                            <TextBlock Text="{Binding AutoSkippedHeader}" />
+                        </StackPanel>
+                    </Expander.Header>
+                    <DataGrid x:Name="AutoGrid" MaxHeight="240" SelectionChanged="Grid_SelectionChanged">
+                        <DataGrid.Columns>
+                            <DataGridTemplateColumn Header="" CellTemplate="{StaticResource TickCell}" Width="46" />
+                            <DataGridTemplateColumn Header="Nhóm phần tử" CellTemplate="{StaticResource ElementCell}" Width="*" />
+                            <DataGridTextColumn Header="Tin cậy" Binding="{Binding ConfidenceText}" Width="70" />
+                            <DataGridTemplateColumn Header="Trạng thái" CellTemplate="{StaticResource StatusCell}" Width="118" />
+                            <DataGridTextColumn Header="Hành động" Binding="{Binding ActionText}" Width="104" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Expander>
+
+                <Expander Style="{StaticResource FoldSection}" Visibility="{Binding HasBlocked, Converter={StaticResource Shown}}">
+                    <Expander.Header>
+                        <StackPanel Orientation="Horizontal">
+                            <Path Style="{StaticResource Info}" Stroke="{StaticResource RedBrush}" />
+                            <TextBlock Text="{Binding BlockedHeader}" />
+                        </StackPanel>
+                    </Expander.Header>
+                    <DataGrid x:Name="BlockedGrid" ItemsSource="{Binding BlockedItems}" MaxHeight="200" SelectionChanged="Grid_SelectionChanged">
+                        <DataGrid.Columns>
+                            <DataGridTemplateColumn Header="Nhóm phần tử" CellTemplate="{StaticResource ElementCell}" Width="2*" />
+                            <DataGridTextColumn Header="Lý do" Binding="{Binding Reasons}" Width="3*" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Expander>
+            </StackPanel>
+        </ScrollViewer>
     </DockPanel>
 </Window>

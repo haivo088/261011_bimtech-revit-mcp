@@ -8,6 +8,7 @@ using Bimtech.RevitMcp.Protocol;
 using Bimtech.RevitMcp.Recognition;
 using Bimtech.RevitMcp.Ui;
 using Bimtech.StructuralCore.Columns;
+using Bimtech.StructuralCore.Families;
 using Bimtech.StructuralCore.Piles;
 
 namespace Bimtech.RevitMcp.Commands.Structural;
@@ -15,6 +16,8 @@ namespace Bimtech.RevitMcp.Commands.Structural;
 // Plans structural columns from a scan_cad_columns scan between two levels: one review item per group (mark and size).
 // Read-only: it saves a plan but never opens a Transaction.
 //   - Type per group: "types" entry → existing type with matching b/h → type in templateFamilyId (reused or created).
+//     A "types" value of "new" skips the matching: the b×h type in templateFamilyId (default BTC-CotCN_BeTong when
+//     loaded), reused if that family has it, else created at commit.
 //   - Columns usually stand at grid crossings (GridIntersections): per direction, an offset within gridToleranceMm of
 //     centred or face-on-grid is set exactly, any other offset is rounded to snapMm (default 5). Items list the
 //     crossings ("A-1"); columns on one grid only or on none are flagged, and crossings with no column are returned.
@@ -55,11 +58,13 @@ public sealed class ProposeColumnsCommand(PlanService plans, ReviewWindowHost re
             throw RpcException.InvalidParams("scanId",
                 $"the scan has {total} columns, above the limit of {context.Settings.MaxElementsPerWrite} per call set in "
                 + "BIMTECH MCP Settings. Scan a smaller region, or ask the user to raise the limit.");
-        var assigned = p.GetStringMap("types", maxCount: 200, maxLength: 32);
+        var assigned = StructuralJson.ReadTypeMap(p, maxCount: 200);
         StructuralJson.RequireKnownKeys(assigned.Keys, scan.Groups.Select(group => group.Key).ToList(), "types");
         var templateFamily = p.Has("templateFamilyId")
             ? StructuralJson.RequireFamily(document, p.RequireElementId("templateFamilyId"), BuiltInCategory.OST_StructuralColumns)
             : null;
+        // Groups given "new" fall back to the company family when no templateFamilyId is passed.
+        var newTypeFamily = templateFamily ?? DefaultFamilies.Find(document, DefaultFamilies.ColumnFamilyName);
         var snapMm = p.GetDouble("snapMm", PileBoundaryRegularizer.DefaultSnapMm, 0, 100);
         var toleranceMm = p.GetDouble("gridToleranceMm", GridIntersections.DefaultToleranceMm, 0, 100);
         var marginMm = p.GetDouble("gridMarginMm", GridIntersections.DefaultMarginMm, 0, 5000);
@@ -80,7 +85,7 @@ public sealed class ProposeColumnsCommand(PlanService plans, ReviewWindowHost re
         foreach (var group in scan.Groups)
         {
             context.Cancellation.ThrowIfCancellationRequested();
-            var type = ChooseType(document, group, assigned, available, templateFamily);
+            var type = ChooseType(document, group, assigned, available, templateFamily, newTypeFamily);
             var reasons = new List<string>();
             if (type.Problem is not null) reasons.Add(type.Problem);
             if (scan.TagMismatches.TryGetValue(group.Key, out var mismatch)) reasons.Add(mismatch);
@@ -298,9 +303,14 @@ public sealed class ProposeColumnsCommand(PlanService plans, ReviewWindowHost re
 
     private static TypeChoice ChooseType(
         Document document, ColumnSizeGroup group, IReadOnlyDictionary<string, string> assigned,
-        IReadOnlyList<FamilySymbol> available, Family? templateFamily)
+        IReadOnlyList<FamilySymbol> available, Family? templateFamily, Family? newTypeFamily)
     {
-        if (assigned.TryGetValue(group.Key, out var typeId))
+        if (assigned.TryGetValue(group.Key, out var typeId) && typeId == StructuralJson.NewType)
+            return newTypeFamily is not null
+                ? new TypeChoice(null, newTypeFamily, $"Type mới {group.SizeKey} trong {newTypeFamily.Name}", null)
+                : new TypeChoice(null, null, "chưa có Type",
+                    $"types.{group.Key} = \"new\" cần templateFamilyId hoặc family {DefaultFamilies.ColumnFamilyName} (load_default_family kind=column).");
+        if (typeId is not null)
         {
             var symbol = StructuralJson.RequireType(document, typeId, $"types.{group.Key}", BuiltInCategory.OST_StructuralColumns, "scan_cad_columns");
             return new TypeChoice(symbol, null, $"Type {symbol.Name}", null);

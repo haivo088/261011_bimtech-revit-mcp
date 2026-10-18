@@ -14,6 +14,8 @@
     <Compile Include="..\..\addin\Planning\PlanCommitter.cs" Link="Linked\PlanCommitter.cs" />
     <Compile Include="..\..\addin\Planning\PlanHistory.cs" Link="Linked\PlanHistory.cs" />
     <Compile Include="..\..\addin\Protocol\RpcException.cs" Link="Linked\RpcException.cs" />
+    <!-- How propose_change_type sorts elements into review items. -->
+    <Compile Include="..\..\addin\Commands\Elements\TypeChangeGroups.cs" Link="Linked\TypeChangeGroups.cs" />
     <!-- The review window's view model uses no WPF or Revit types. -->
     <Compile Include="..\..\addin\Ui\ReviewViewModel.cs" Link="Linked\ReviewViewModel.cs" />
     <Compile Include="..\..\addin\Ui\PlanItemRow.cs" Link="Linked\PlanItemRow.cs" />

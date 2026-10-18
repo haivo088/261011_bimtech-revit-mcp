@@ -9,7 +9,8 @@ namespace Bimtech.RevitMcp.Recognition;
 //     wall of the storey below, part of a cluster of walls (a core), lift text inside that core, a wall-like layer name;
 //   − thickness of a masonry wall, short for its thickness (a flat column), layer off in the DWG, a column or masonry
 //     layer name.
-// A hatch no longer than a column (ColumnMaxLengthMm) is a column, never a wall. Layer names are a hint, never a gate. Weighed on the
+// A hatch no longer than a column (ColumnMaxLengthMm) is a column, unless it lines up with a wall of its thickness a
+// door away (a wall cut by doors). Layer names are a hint, never a gate. Weighed on the
 // Evidence scale: a hatched strip starts at 50% (the hatch is why it is a candidate), a wall below +20%, other relations
 // ±10%, layer names ±5%, masonry thickness −20%, layer off −30%; sure from 50%, to review from 20%, dropped below,
 // still reported with its reasons.
@@ -30,6 +31,8 @@ public static partial class WallRecognizer
         public double WallElongation { get; init; } = 4;
         // A hatch whose longer side is at most this is a column (a flat 300 x 800 one included), not a wall.
         public double ColumnMaxLengthMm { get; init; } = 1000;
+        // A short piece in line with a wall of its thickness, at most this far from its end, is that wall cut by a door.
+        public double MaxDoorMm { get; init; } = 2500;
         public double GridToleranceMm { get; init; } = 15;
         public double JoinGapMm { get; init; } = 10;
         public double ColumnContactMm { get; init; } = 50;
@@ -77,6 +80,9 @@ public static partial class WallRecognizer
     public const string WallLayerReason = "tên layer giống vách";
     public const string OtherLayerReason = "tên layer giống cột hoặc tường xây";
     public const string UnsupportedReason = "không nối cột, không có vách tầng dưới";
+    public const string ConcretePatternReason = "hatch kiểu bê tông";
+    public const string FoundationReason = "nằm trên đài móng";
+    public const string NoFoundationReason = "không nằm trên đài móng hay vách tầng dưới";
 
     private static readonly double[] MasonrySizes = [100, 105, 110, 115, 120, 210, 220, 230];
 
@@ -87,23 +93,30 @@ public static partial class WallRecognizer
         var skipped = new Dictionary<string, int>();
         void Skip(string reason) => skipped[reason] = skipped.GetValueOrDefault(reason) + 1;
 
+        // Every separate area of a hatch on its own, with the holes inside it: one hatch often fills a whole core in
+        // several pieces (the walls cut by doors, an H-shaped part beside them).
         var hatches = scene.Hatches
-            .Select(hatch => (Hatch: hatch, Outer: hatch.Loops.MaxBy(loop => Math.Abs(Area(loop)))!))
+            .SelectMany(hatch => ColumnRecognizer.OuterLoops(hatch).Select(outer => (Hatch: hatch, Outer: outer,
+                Loops: hatch.Loops.Where(loop => ReferenceEquals(loop, outer) || (loop.Count >= 3
+                    && Math.Abs(Area(loop)) < Math.Abs(Area(outer)) && Inside(outer, loop[0][0], loop[0][1]))).ToList())))
             .Where(h => region is null || region.Contains(h.Outer.Average(p => p[0]), h.Outer.Average(p => p[1])))
             .ToList();
 
         var (columnPatterns, fromModel) = ColumnPatterns(hatches.Select(h => (h.Hatch.Pattern, h.Outer)).ToList(), columns);
 
         var strips = new List<Wall>();
-        foreach (var (hatch, outer) in hatches)
+        var shortPieces = new List<(CadHatch Hatch, List<double[]> Outer, List<List<double[]>> Loops, CadStyle? Style)>();
+        foreach (var (hatch, outer, loops) in hatches)
         {
             var style = hatch.Style >= 0 && hatch.Style < scene.Styles.Count ? scene.Styles[hatch.Style] : null;
             if (BoxSize(outer, LongestEdgeAngle(outer)).Length <= options.ColumnMaxLengthMm)
             {
-                Skip("hatch cỡ cột (cạnh dài ≤ " + options.ColumnMaxLengthMm.ToString("0") + " mm)");
+                // Kept aside: a short piece in line with a wall, a door away, is that wall cut by the door.
+                shortPieces.Add((hatch, outer, loops, style));
+                Skip(ColumnSizedSkip(options));
                 continue;
             }
-            var found = Strips(outer, hatch.Loops, frame.ThetaRad, options) ?? Strips(outer, hatch.Loops, LongestEdgeAngle(outer), options);
+            var found = Strips(outer, loops, frame.ThetaRad, options) ?? Strips(outer, loops, LongestEdgeAngle(outer), options);
             if (found is null)
             {
                 Skip("hatch không phải ghép từ hình chữ nhật (cong, xiên)");
@@ -125,6 +138,15 @@ public static partial class WallRecognizer
         var walls = Merge(strips, options);
         Join(walls, options);
         walls = walls.Where(wall => wall.Length >= 2 * wall.ThicknessMm).ToList();
+        walls.AddRange(PiecesInLine(shortPieces, walls, frame, options, skipped, ColumnSizedSkip(options)));
+        // A strip that is a modeled column (a long column's own hatch) is that column, not a wall.
+        var modelColumns = columns.Where(c => c.Kind == "column").ToList();
+        walls = walls.Where(wall =>
+        {
+            if (!modelColumns.Any(column => Inside(column.Points, (wall.X0 + wall.X1) / 2, (wall.Y0 + wall.Y1) / 2))) return true;
+            Skip("dải hatch nằm trong cột đã dựng");
+            return false;
+        }).ToList();
 
         foreach (var wall in walls) Score(wall, frame, columns, wallsBelow, columnPatterns, fromModel, options);
         ScoreCores(walls, scene.Texts, options);
@@ -189,11 +211,30 @@ public static partial class WallRecognizer
             var (a, b) = alongU ? (Model(u0, (v0 + v1) / 2), Model(u1, (v0 + v1) / 2)) : (Model((u0 + u1) / 2, v0), Model((u0 + u1) / 2, v1));
             result.Add((Math.Round(a.X, 2), Math.Round(a.Y, 2), Math.Round(b.X, 2), Math.Round(b.Y, 2), thickness));
         }
+        // How much of a band's long side is open (not hatched): a wall has open space on both long sides, a band
+        // inside a larger hatched area (a floor zone) has hatch on one side or both.
+        double OpenU(int first, int last, int j)
+        {
+            if (j < 0 || j >= vs.Count - 1) return 1;
+            double open = 0;
+            for (var i = first; i <= last; i++) if (!inside[i, j]) open += us[i + 1] - us[i];
+            return open / (us[last + 1] - us[first]);
+        }
+        double OpenV(int first, int last, int i)
+        {
+            if (i < 0 || i >= us.Count - 1) return 1;
+            double open = 0;
+            for (var j = first; j <= last; j++) if (!inside[i, j]) open += vs[j + 1] - vs[j];
+            return open / (vs[last + 1] - vs[first]);
+        }
+        const double openSides = 0.5;
         // Runs of inside cells along each row; rows with the very same run are one strip (a split thickness).
         foreach (var (first, last, from, to) in Runs(us.Count - 1, vs.Count - 1, (i, j) => inside[i, j]))
-            Add(us[first], us[last + 1], vs[from], vs[to + 1], alongU: true);
+            if (OpenU(first, last, from - 1) >= openSides && OpenU(first, last, to + 1) >= openSides)
+                Add(us[first], us[last + 1], vs[from], vs[to + 1], alongU: true);
         foreach (var (first, last, from, to) in Runs(vs.Count - 1, us.Count - 1, (j, i) => inside[i, j]))
-            Add(us[from], us[to + 1], vs[first], vs[last + 1], alongU: false);
+            if (OpenV(first, last, from - 1) >= openSides && OpenV(first, last, to + 1) >= openSides)
+                Add(us[from], us[to + 1], vs[first], vs[last + 1], alongU: false);
         return result;
     }
 
@@ -296,7 +337,10 @@ public static partial class WallRecognizer
         else if (OtherLayer().IsMatch(wall.Layer)) Add(-5, OtherLayerReason);
 
         var t = wall.ThicknessMm;
-        if (MasonrySizes.Any(size => Math.Abs(size - t) < 3)) Add(-20, MasonrySizeReason);
+        // A concrete hatch says concrete whatever the thickness: a 220 concrete wall is not masonry.
+        var concrete = ConcretePattern().IsMatch(wall.Pattern ?? "");
+        if (concrete) Add(10, ConcretePatternReason);
+        if (MasonrySizes.Any(size => Math.Abs(size - t) < 3)) { if (!concrete) Add(-20, MasonrySizeReason); }
         else if (t < 150) Add(-10, ThinReason);
         else if (t <= 500 && Math.Abs(t / 50 - Math.Round(t / 50)) < 0.01) Add(10, ConcreteSizeReason);
 
@@ -330,7 +374,71 @@ public static partial class WallRecognizer
             return overlap >= 0.5 * wall.Length;
         });
         if (onWallBelow) Add(20, BelowReason);
-        if (!touchesColumn && !onWallBelow) Add(-20, UnsupportedReason);
+        // A structural wall goes down to the foundation: over a pile cap (at any depth), or on the wall below.
+        var foundations = wallsBelow.Where(s => s.Kind == "cap").ToList();
+        var onFoundation = foundations.Count > 0 && OnFoundation(wall, foundations);
+        if (onFoundation) Add(20, FoundationReason);
+        if (foundations.Count > 0)
+        {
+            // Foundations are modeled, so a wall over none and on no wall is not carried: always reviewed.
+            if (!onWallBelow && !onFoundation) wall.Veto(NoFoundationReason);
+        }
+        else if (!touchesColumn && !onWallBelow) Add(-20, UnsupportedReason);
+    }
+
+    private static string ColumnSizedSkip(Options options) => "hatch cỡ cột (cạnh dài ≤ " + options.ColumnMaxLengthMm.ToString("0") + " mm)";
+
+    // Column-sized pieces that continue a wall: same thickness, on its centre line, a door's width or less from it.
+    private static List<Wall> PiecesInLine(
+        List<(CadHatch Hatch, List<double[]> Outer, List<List<double[]>> Loops, CadStyle? Style)> pieces, List<Wall> walls,
+        BeamCase.Frame frame, Options options, Dictionary<string, int> skipped, string skipReason)
+    {
+        var found = new List<Wall>();
+        foreach (var (hatch, outer, loops, style) in pieces)
+        {
+            var strips = Strips(outer, loops, frame.ThetaRad, options) ?? Strips(outer, loops, LongestEdgeAngle(outer), options) ?? [];
+            var added = false;
+            foreach (var (x0, y0, x1, y1, thickness) in strips)
+            {
+                var piece = new Wall
+                {
+                    X0 = x0, Y0 = y0, X1 = x1, Y1 = y1, ThicknessMm = Math.Round(thickness / 5) * 5,
+                    Layer = style?.Layer ?? "", Pattern = hatch.Pattern, LayerOff = style?.Off == true,
+                };
+                var (dx, dy) = piece.Direction;
+                // Gap along the wall's centre line from the wall to the piece; null when not on that line.
+                double? Gap(Wall wall)
+                {
+                    if (Math.Abs(wall.ThicknessMm - piece.ThicknessMm) > 5) return null;
+                    var (wx, wy) = wall.Direction;
+                    if (Math.Abs(wx * dy - wy * dx) > 0.017) return null;
+                    if (Math.Abs(Across(wall, piece.X0, piece.Y0)) > 5 || Math.Abs(Across(wall, piece.X1, piece.Y1)) > 5) return null;
+                    var (a, b) = (Along(wall, piece.X0, piece.Y0), Along(wall, piece.X1, piece.Y1));
+                    return Math.Max(Math.Min(a, b) - wall.Length, -Math.Max(a, b));
+                }
+                if (!walls.Any(wall => Gap(wall) is >= 0 and var gap && gap <= options.MaxDoorMm)) continue;
+                added = true;
+                // The same piece drawn twice (two identical hatches) is placed once.
+                if (found.Concat(walls).Any(other => Gap(other) is < 0)) continue;
+                found.Add(piece);
+            }
+            if (added) skipped[skipReason]--;
+        }
+        foreach (var key in skipped.Where(pair => pair.Value <= 0).Select(pair => pair.Key).ToList()) skipped.Remove(key);
+        return found;
+    }
+
+    // At least 80% of the centre line lies over the caps' outlines.
+    private static bool OnFoundation(Wall wall, IReadOnlyList<CaseSupport> foundations)
+    {
+        const int samples = 20;
+        var over = 0;
+        for (var i = 0; i <= samples; i++)
+        {
+            var (x, y) = (wall.X0 + (wall.X1 - wall.X0) * i / samples, wall.Y0 + (wall.Y1 - wall.Y0) * i / samples);
+            if (foundations.Any(cap => Inside(cap.Points, x, y))) over++;
+        }
+        return over >= 0.8 * (samples + 1);
     }
 
     // Walls joined end to face form clusters; a cluster of three or more walls in both directions is a core, and
@@ -496,6 +604,10 @@ public static partial class WallRecognizer
 
     [GeneratedRegex(@"V[AÁ]CH|WALL|CORE|L[OÕ]I", RegexOptions.IgnoreCase)]
     private static partial Regex WallLayer();
+
+    // Concrete hatch patterns: BETONG, AR-CONC, CONCRETE, BTCT, "bê tông".
+    [GeneratedRegex(@"b[eê]\s?t[oô]ng|conc|btct", RegexOptions.IgnoreCase)]
+    private static partial Regex ConcretePattern();
 
     [GeneratedRegex(@"C[OỘ]T|COL|T[UƯ][OỜ]NG|G[AẠ]CH", RegexOptions.IgnoreCase)]
     private static partial Regex OtherLayer();

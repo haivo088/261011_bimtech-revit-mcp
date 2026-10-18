@@ -15,7 +15,9 @@ Công cụ đọc dữ liệu:
 Công cụ đề xuất, duyệt và ghi (xem [04 — Kiến trúc đề xuất và duyệt](docs/04-architecture.md)):
 
 - `propose_set_parameters`: lập kế hoạch gán một giá trị parameter cho các phần tử đang chọn và mở cửa sổ duyệt trong Revit; **không sửa mô hình**.
+- `propose_change_type`: lập kế hoạch đổi Type của phần tử đã có sang một Type cùng category (vd vách dựng nhầm Type), mỗi Type hiện tại một mục duyệt kèm số lượng; từ chối phần tử khác category, bỏ qua phần tử đã đúng Type; **không sửa mô hình**.
 - `get_plan`, `get_plan_status`, `open_plan_review`, `cancel_plan`: đọc kế hoạch, mở lại cửa sổ duyệt, huỷ kế hoạch (xem [04 — Kiến trúc](docs/04-architecture.md)). Chỉ người dùng duyệt được kế hoạch, trong cửa sổ Revit.
+- `wait_for_plan`: Claude chờ người dùng duyệt trong Revit rồi tự làm tiếp, không cần quay lại chat báo "xong". Server hỏi `get_plan_status` vài giây một lần, Revit không bị giữ.
 - `commit_plan`: ghi các mục người dùng đã duyệt vào mô hình, cần `approvalId` từ `get_plan_status`; cả lần ghi là một bước Undo. Từ chối khi mô hình đã đổi kể từ lúc propose.
 
 Công cụ dựng model kết cấu từ CAD (xem [05 — Dựng model kết cấu từ CAD](docs/05-cad-to-structure.md)):
@@ -23,11 +25,11 @@ Công cụ dựng model kết cấu từ CAD (xem [05 — Dựng model kết c�
 - `suggest_levels_from_folder`: đề xuất bảng tầng (tên, cao độ) từ tên các file DWG trong một thư mục.
 - `propose_levels`: kế hoạch tạo Level + Structural Plan `KC - <tên>` cho từng tầng và nhập CAD tầng đó vào plan (đổi tên level template cùng cao độ thay vì tạo trùng, đề xuất xoá level thừa); duyệt rồi `commit_plan`.
 - `propose_grids`: kế hoạch dựng trục từ layer Grid/Trục/Axis của một CAD và dời CAD các tầng để trục 1-A trùng Project Base Point; duyệt rồi `commit_plan`.
-- `scan_cad_walls` / `propose_walls`: vách từ **hatch** của file DWG (đọc thẳng từ ổ đĩa), chấm điểm bằng chứng như kỹ sư (cùng kiểu hatch với cột, bề dày, trục, nối cột, trùng vách tầng dưới, lõi); nhóm theo mức chắc chắn + bề dày, mỗi nhóm một mục duyệt kèm "vì sao"; tự tạo Type `BTC-VachKC_<b>` khi thiếu. Bản vẽ không hatch: cách cũ theo cặp line.
+- `scan_cad_walls` / `propose_walls`: vách từ **hatch** của file DWG (đọc thẳng từ ổ đĩa), chấm điểm bằng chứng như kỹ sư (cùng kiểu hatch với cột, bề dày, trục, nối cột, trùng vách tầng dưới, lõi); nhóm theo mức chắc chắn + bề dày, mỗi nhóm một mục duyệt kèm "vì sao"; Type: `BTC-VachKC_<b>` đúng bề dày → vách bê tông lệch ≤ 1 mm (không bao giờ dùng Type mẫu CW/Brick/Masonry của template) → tự tạo `BTC-VachKC_<b>`; `types: {nhóm: "new"}` buộc dùng Type công ty. Bản vẽ không hatch: cách cũ theo cặp line.
 - `propose_floors`: ô sàn dò từ tim dầm và vách đã có trên một tầng; mỗi ô một mục duyệt; Type mặc định `BTC_SanKC_150`.
 - `list_cad_sources`: các file CAD import/link trong model.
 - `load_default_family`: nạp family chuẩn công ty (`kind`: column, beam, pile); với cọc còn tạo Type đài/lót mặc định.
-- `scan_cad_columns` / `propose_columns`: cột chữ nhật từ mọi layer, cân bằng chứng (giao trục, hatch, kích thước lặp, ký hiệu, cột tầng dưới), nhóm theo ký hiệu và kích thước, mỗi nhóm một mục duyệt; vị trí làm tròn 5 mm theo trục.
+- `scan_cad_columns` / `propose_columns`: cột chữ nhật từ mọi layer, cân bằng chứng (giao trục, hatch, kích thước lặp, ký hiệu, cột tầng dưới), nhóm theo ký hiệu và kích thước, mỗi nhóm một mục duyệt; vị trí làm tròn 5 mm theo trục; `types: {nhóm: "new"}` dùng Type b×h trong family mẫu thay cho Type có sẵn.
 - `propose_beams`: dầm chính lan từ cột đã dựng tới cột/vách kế tiếp, tim cột tới tim cột, chỉ chia tại gối tựa; ký hiệu và kích thước đọc từ Text Note; mỗi nhóm một mục duyệt; báo đầu dầm lơ lửng. Bước hai `secondary=true`: dầm phụ gác lên dầm chính đã dựng, đầu ở tim dầm gối, cân bằng chứng (ký hiệu DP/D2-…, chia đều nhịp, nét khuất; loại dầm to hơn gối, trùng tường).
 - `scan_cad_piles` / `propose_piles`: cọc tròn + đài móng từ mọi layer, cân bằng chứng (cọc trong đài, đài ở giao trục, ký hiệu; loại vòng tròn đầu trục), mỗi đài một mục duyệt; chiều dày đài theo ký hiệu bản vẽ hoặc người dùng; làm tròn 5 mm theo trục; lớp lót; join cọc với đài của nó.
 - Mọi `propose_*` chỉ đọc; model chỉ thay đổi qua `commit_plan` sau khi duyệt trong Revit.
@@ -94,7 +96,7 @@ bimtech-revit-mcp/
 │   │   ├── Common/                 # Dùng chung: phân trang, bộ lọc, đơn vị, parameter, WriteSession
 │   │   ├── Diagnostics/            # ping
 │   │   ├── Documents/              # get_document_info, get_levels, list_categories
-│   │   ├── Elements/               # get_elements, get_selected_elements, get_element_parameters
+│   │   ├── Elements/               # get_elements, get_selected_elements, get_element_parameters, propose_change_type
 │   │   ├── Parameters/             # propose_set_parameters
 │   │   ├── Plans/                  # get_plan, get_plan_status, open_plan_review, cancel_plan, commit_plan
 │   │   └── Structural/             # CAD → kết cấu: scan/place cột, dầm, cọc, undo_batch

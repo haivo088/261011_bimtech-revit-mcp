@@ -211,4 +211,89 @@ public class WallRecognizerTests
         Assert.Contains(wall.Reasons, r => r.EndsWith(WallRecognizer.ShortReason));
         Assert.False(wall.Sure);
     }
+    private static CaseSupport Cap(double x0, double y0, double x1, double y1) => new()
+    {
+        Kind = "cap", Cx = (x0 + x1) / 2, Cy = (y0 + y1) / 2, Points = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]],
+    };
+
+    [Fact]
+    public void Every_separate_area_of_one_hatch_is_read()
+    {
+        // One hatch, two areas: a 300 wall and, apart from it, an H of three 300 walls.
+        var scene = new Scene();
+        scene.Box("BETONG", 0, 0, 300, 4000);
+        scene.Case.Hatches[0].Loops.Add([[2000, 0], [2300, 0], [2300, 1350], [4700, 1350], [4700, 0], [5000, 0], [5000, 3000],
+            [4700, 3000], [4700, 1650], [2300, 1650], [2300, 3000], [2000, 3000]]);
+
+        var result = scene.Run();
+
+        Assert.Equal(4, result.Walls.Count);
+        Assert.Equal(1500, Near(result, 3500, 1500).Y0, 1);
+    }
+
+    [Fact]
+    public void A_band_inside_a_larger_hatched_area_is_not_a_wall()
+    {
+        // An L-shaped floor zone 3000 x 3000 with a 300 arm: the arm has hatch on one side, so it is part of the zone.
+        var result = new Scene().Hatch("DOLMIT", 0, 0, 3000, 0, 3000, 300, 3300, 300, 3300, 3000, 0, 3000).Run();
+
+        Assert.DoesNotContain(result.Walls, wall => wall.ThicknessMm == 300 && wall.Length > 2900);
+    }
+
+    [Fact]
+    public void A_concrete_hatch_220_thick_is_not_masonry()
+    {
+        var result = new Scene().Box("BETONG", 0, 0, 2500, 220).Run();
+
+        var wall = Assert.Single(result.Walls.Concat(result.Dropped));
+        Assert.Contains("+10% " + WallRecognizer.ConcretePatternReason, wall.Reasons);
+        Assert.DoesNotContain(wall.Reasons, reason => reason.EndsWith(WallRecognizer.MasonrySizeReason));
+    }
+
+    [Fact]
+    public void A_wall_over_a_pile_cap_is_carried_and_one_over_none_is_reviewed()
+    {
+        var scene = new Scene().Box("BETONG", 0, 0, 300, 4000).Box("BETONG", 9000, 0, 9300, 4000);
+        scene.Below.Add(Cap(-500, -500, 800, 4500));
+
+        var result = scene.Run();
+
+        var carried = Near(result, 150, 0);
+        Assert.Contains("+20% " + WallRecognizer.FoundationReason, carried.Reasons);
+        Assert.True(carried.Sure);
+        var loose = Near(result, 9150, 0);
+        Assert.Contains(Evidence.VetoReason(WallRecognizer.NoFoundationReason), loose.Reasons);
+        Assert.False(loose.Sure);
+        Assert.Equal(Evidence.VetoCapPercent, loose.Percent);
+    }
+
+    [Fact]
+    public void Without_modeled_foundations_an_unsupported_wall_only_loses_points()
+    {
+        var wall = Assert.Single(new Scene().Box("BETONG", 0, 0, 300, 4000).Run().Walls);
+
+        Assert.Contains("-20% " + WallRecognizer.UnsupportedReason, wall.Reasons);
+        Assert.DoesNotContain(wall.Reasons, reason => reason.Contains(WallRecognizer.NoFoundationReason));
+    }
+
+    [Fact]
+    public void A_long_column_hatch_inside_a_modeled_column_is_not_a_wall()
+    {
+        var result = new Scene().Box("SOLID", 0, 0, 350, 1400).Column(175, 700, 750).Run();
+
+        Assert.Empty(result.Walls);
+        Assert.Equal(1, result.Skipped["dải hatch nằm trong cột đã dựng"]);
+    }
+    [Fact]
+    public void A_short_piece_in_line_with_a_wall_a_door_away_is_that_wall()
+    {
+        // A 300 wall, a 1100 door, then a 300 x 1000 piece on the same line; a lone 300 x 1000 elsewhere stays a column.
+        var result = new Scene().Box("BETONG", 0, 0, 300, 3000).Box("BETONG", 0, 4100, 300, 5100)
+            .Box("BETONG", 6000, 0, 6300, 1000).Run();
+
+        var walls = result.Walls.Concat(result.Dropped).ToList();
+        Assert.Equal(2, walls.Count);
+        Assert.Contains(walls, wall => Math.Abs(wall.Y0 - 4100) < 1 || Math.Abs(wall.Y1 - 4100) < 1);
+        Assert.Equal(1, result.Skipped.Single(pair => pair.Key.StartsWith("hatch cỡ cột")).Value);
+    }
 }

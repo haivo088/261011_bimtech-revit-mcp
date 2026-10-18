@@ -45,6 +45,7 @@ public sealed class PlanActions
         new CreatePileCapAction(),
         new CreateColumnsAction(),
         new CreateBeamsAction(),
+        new ChangeTypeAction(),
     ]);
 
     public bool TryGet(string action, out IPlanAction handler) => _actions.TryGetValue(action, out handler!);

@@ -16,10 +16,13 @@ public sealed class PlanItemRow : INotifyPropertyChanged
         Change = DescribeChange(item.Params);
         Reasons = string.Join(" ", item.Reasons);
         Detail = ReadString(item.Params, "detail") ?? "";
-        ElementIds = (ReadString(item.Params, "elementId") ?? ReadString(item.Source, "elementId")) is { } id ? [id] : [];
+        ElementIds = ReadStrings(item.Params, "elementIds") is { Count: > 0 } ids ? ids
+            : (ReadString(item.Params, "elementId") ?? ReadString(item.Source, "elementId")) is { } id ? [id] : [];
         IsAuto = item.Tier == PlanTier.Auto;
         AutoStatus = IsAuto ? item.AutoStatus ?? PlanItemStatus.Approved : null;
         ConfidenceText = item.Confidence is { } confidence ? $"{Math.Round(confidence * 100):0}%" : "";
+        (Verb, Noun) = Describe(item.Action);
+        ElementCount = ReadInt(item.Source, "count") ?? 1;
         var shapes = PreviewShapes.From(item.Action, item.Params);
         Preview = shapes.Count == 0 ? PreviewGroup.None : new PreviewGroup(PreviewShapes.LevelId(item.Params), shapes);
         _status = item.Status;
@@ -33,7 +36,8 @@ public sealed class PlanItemRow : INotifyPropertyChanged
     public string Reasons { get; }
     // Long text shown below the list when the row is selected, e.g. the code of a send_code item. Empty for most items.
     public string Detail { get; }
-    // Revit elements to select and zoom to when the row is selected.
+    // Revit elements to select and zoom to when the row is selected: params.elementIds (e.g. a change_type group), else
+    // the one elementId.
     public IReadOnlyList<string> ElementIds { get; }
     // Decided automatically: approved because its confidence reached PlanConfidence.AutoApproveFrom, or rejected as the
     // person did before (PlanTier.Auto).
@@ -46,6 +50,13 @@ public sealed class PlanItemRow : INotifyPropertyChanged
     public string ConfidenceText { get; }
     // Where the item's new elements will be, drawn in Revit while the row is selected. Empty for items on existing elements.
     public PreviewGroup Preview { get; }
+
+    // What the item does to the model, e.g. "Tạo" "cột", and how many elements: "Tạo cột" in the list,
+    // "Tạo 50 cột" in the result line.
+    public string Verb { get; }
+    public string Noun { get; }
+    public int ElementCount { get; }
+    public string ActionText => $"{Verb} {Noun}";
 
     public PlanItemStatus Status
     {
@@ -61,9 +72,9 @@ public sealed class PlanItemRow : INotifyPropertyChanged
 
     public string StatusText => Status switch
     {
-        PlanItemStatus.Pending => "Chờ",
-        PlanItemStatus.Approved => IsDecidedForPerson ? "Tự duyệt" : "Duyệt",
-        PlanItemStatus.Rejected => IsDecidedForPerson ? "Tự bỏ" : "Bỏ",
+        PlanItemStatus.Pending => "Cần xem",
+        PlanItemStatus.Approved => IsDecidedForPerson ? "Tự duyệt" : "Đã duyệt",
+        PlanItemStatus.Rejected => IsDecidedForPerson ? "Tự bỏ" : "Bỏ qua",
         PlanItemStatus.Applied => "Đã ghi",
         _ => "Lỗi",
     };
@@ -92,6 +103,45 @@ public sealed class PlanItemRow : INotifyPropertyChanged
         var raw = parameters.ValueKind == JsonValueKind.Undefined ? "" : parameters.GetRawText();
         return raw.Length <= 120 ? raw : raw[..117] + "...";
     }
+
+    private static (string Verb, string Noun) Describe(string action) => action switch
+    {
+        "create_columns" => ("Tạo", "cột"),
+        "create_walls" => ("Tạo", "vách"),
+        "create_beams" => ("Tạo", "dầm"),
+        "create_pile_cap" => ("Tạo", "đài cọc"),
+        "create_floor" => ("Tạo", "sàn"),
+        "create_grid" => ("Tạo", "trục"),
+        "create_level" => ("Tạo", "cao độ"),
+        "delete_level" => ("Xoá", "cao độ"),
+        "move_cad" => ("Dời", "CAD"),
+        "set_parameter" => ("Đặt", "tham số"),
+        "run_code" => ("Chạy", "code"),
+        "change_type" => ("Đổi Type", "phần tử"),
+        _ => ("Sửa", "mục"),
+    };
+
+    // A JSON array of IDs, as strings or numbers.
+    private static List<string>? ReadStrings(JsonElement? json, string name) =>
+        json is { ValueKind: JsonValueKind.Object } value
+            && value.TryGetProperty(name, out var property)
+            && property.ValueKind == JsonValueKind.Array
+            ? property.EnumerateArray()
+                .Select(entry => entry.ValueKind switch
+                {
+                    JsonValueKind.String => entry.GetString(),
+                    JsonValueKind.Number => entry.GetRawText(),
+                    _ => null,
+                })
+                .OfType<string>().ToList()
+            : null;
+
+    private static int? ReadInt(JsonElement? json, string name) =>
+        json is { ValueKind: JsonValueKind.Object } value
+            && value.TryGetProperty(name, out var property)
+            && property.ValueKind == JsonValueKind.Number && property.TryGetInt32(out var number)
+            ? number
+            : null;
 
     private static string? ReadString(JsonElement? json, string name) =>
         json is { ValueKind: JsonValueKind.Object } value

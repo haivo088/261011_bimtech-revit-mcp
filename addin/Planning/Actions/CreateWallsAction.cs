@@ -7,10 +7,10 @@ namespace Bimtech.RevitMcp.Planning.Actions;
 
 // Writes the items of propose_walls: one wall group per item, placed between two levels.
 //   { "thicknessMm": 200, "tagName": "V1", "typeId": "123" | null, "templateTypeId": "456" | null,
-//     "baseLevelId": "..", "topLevelId": "..", "baseOffsetMm": 0, "topOffsetMm": 0, "tagParameterName": null,
-//     "lines": [[x0, y0, x1, y1], ...] }   (mm, model coordinates)
-// Without typeId, a Basic Wall type of that thickness is reused (also one an earlier item just created), else one
-// is duplicated from templateTypeId. Parts of a centerline already covered by a wall are skipped (WallPlacer).
+//     "companyTypeOnly": false, "baseLevelId": "..", "topLevelId": "..", "baseOffsetMm": 0, "topOffsetMm": 0,
+//     "tagParameterName": null, "lines": [[x0, y0, x1, y1], ...] }   (mm, model coordinates)
+// Without typeId, a type matching by Recognition.WallTypes is reused (also one an earlier item just created; with
+// companyTypeOnly only a BTC-VachKC_ type), else "BTC-VachKC_<b>" is duplicated from templateTypeId. Parts of a centerline already covered by a wall are skipped (WallPlacer).
 public sealed class CreateWallsAction : IPlanAction
 {
     public string Action => "create_walls";
@@ -64,7 +64,8 @@ public sealed class CreateWallsAction : IPlanAction
             ?? throw new PlanActionException("The template wall type no longer exists.");
         try
         {
-            return WallPlacer.ResolveOrCreateType(document, thicknessMm, template);
+            return WallPlacer.ResolveOrCreateType(document, thicknessMm, template,
+                companyOnly: ActionParams.OptionalBool(parameters, "companyTypeOnly") == true);
         }
         catch (InvalidOperationException exception)
         {

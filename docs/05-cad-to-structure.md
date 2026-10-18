@@ -62,12 +62,18 @@ Sau khi nhập CAD (`propose_levels`), kết quả commit có `cadWarning` khi C
 
 **Vách:** `scan_cad_walls` → `propose_walls` → duyệt → `commit_plan`.
 
-1. `scan_cad_walls` đọc vách **từ hatch của chính file DWG** (đọc từ ổ đĩa vì Revit không cho đọc hatch; CAD link tự lấy đường dẫn, CAD import truyền `dwgPath`). File được đặt lên CAD bằng cách khớp line, không tin cách Revit đặt. Mỗi vùng hatch được cắt thành các nhánh (lõi chữ L, T, U ra mỗi nhánh một vách), dải cùng bề dày trên một đường được gộp, đầu vách chạm mặt vách vuông góc được kéo về tim (như Revit nối vách). Hatch có cạnh dài ≤ 1 m là **cột**, không bao giờ là vách.
-   Mỗi vách được **chấm điểm như kỹ sư**, mỗi điểm kèm lý do: +1 có hatch; +2 cùng kiểu hatch với cột đã dựng (+1 nếu chỉ đoán theo hình vuông); +1 dày đúng cỡ vách bê tông (150–500, bội 50); +1 nằm trên trục; +1 nối vào cột; +2 trùng vách tầng dưới; +1 thuộc cụm vách (lõi); +1 có chữ thang máy trong lõi; ±1 tên layer giống vách / giống cột, tường xây; −2 dày cỡ tường xây (100/110/220…); −1 ngắn so với bề dày (cột dẹt); −3 layer đang tắt. Từ 3 điểm: nhóm `"w300"` (đề xuất mặc định); 1–2 điểm: nhóm `"w300-maybe"` (phải `include`); ≤ 0: loại, vẫn báo lý do. Vùng đọc mặc định là phạm vi trục trong model + 3 m (một file DWG thường có nhiều mặt bằng), nên **dựng trục và cột trước**.
+1. `scan_cad_walls` đọc vách **từ hatch của chính file DWG** (đọc từ ổ đĩa vì Revit không cho đọc hatch; CAD link tự lấy đường dẫn, CAD import truyền `dwgPath`). File được đặt lên CAD bằng cách khớp line, không tin cách Revit đặt. Mỗi vùng rời của một hatch được đọc riêng (một hatch lõi thường gồm nhiều mảnh: khối chữ U, các mảnh vách bị cửa cắt, phần chữ H bên cạnh) và cắt thành các nhánh (lõi chữ L, T, U, H ra mỗi nhánh một vách); một nhánh chỉ là vách khi **hai bên dọc theo nó là khoảng trống**, dải nằm trong một vùng hatch lớn (vùng sàn, khu vực DOLMIT, ANSI…) không phải vách, dải cùng bề dày trên một đường được gộp, đầu vách chạm mặt vách vuông góc được kéo về tim (như Revit nối vách). Hatch có cạnh dài ≤ 1 m là **cột**, trừ khi nó **thẳng hàng với một vách cùng bề dày và cách vách đó không quá một ô cửa** (≤ 2,5 m): đó là mảnh vách bị cửa cắt (vd. 300x1000 giữa hai cửa lõi thang).
+   Mỗi vách được **chấm điểm như kỹ sư** trên thang tin cậy chung (từ 50%), mỗi điểm kèm lý do: +10% hatch kiểu bê tông (BETONG, CONC, BTCT); +20% cùng kiểu hatch với cột đã dựng (+10% nếu chỉ đoán); +10% dày đúng cỡ vách bê tông (150–500, bội 50); +10% nằm trên trục; +10% nối vào cột; +20% trùng vách tầng dưới; **+20% nằm trên đài móng** (ít nhất 80% tim vách nằm trên đường bao một đài đã dựng, ở bất kỳ độ sâu nào); +10% thuộc cụm vách (lõi); +10% có chữ thang máy; ±5% tên layer; −20% dày cỡ tường xây (100/110/220…, **trừ khi hatch là bê tông**); −10% ngắn so với bề dày (cột dẹt); −30% layer đang tắt. **Vách phải đứng trên đài móng hoặc trên vách tầng dưới**: khi model đã có đài, vách không nằm trên đài nào và không trên vách nào bị **loại trừ** (giữ ≤ 40%, luôn phải xem); chưa có đài thì chỉ −20% khi không nối cột và không có vách dưới. Dải hatch nằm trong cột đã dựng (hatch của cột dài 350x1400) là cột, không phải vách. Từ 50%: nhóm `"w300"` (đề xuất mặc định); 20–50%: nhóm `"w300-maybe"` (phải `include`); dưới 20%: loại, vẫn báo lý do. Thứ tự dựng: **trục → đài cọc → cột → vách**. Vùng đọc mặc định là phạm vi trục trong model + 3 m (một file DWG thường có nhiều mặt bằng), nên **dựng trục và cột trước**.
    Bản vẽ không có hatch: truyền `layers` để dùng cách cũ (ghép cặp line song song, tên từ Text Note).
 2. `propose_walls` với `scanId`, `baseLevelId`, `topLevelId` (offset tuỳ chọn). Nhóm `wNNN` (hoặc có tên, cách cũ) được đề xuất mặc định, nhóm còn lại phải nằm trong `include`. Mỗi mục trong cửa sổ duyệt có dòng **"Vì sao"** đếm bằng chứng của nhóm (vd `+1 nằm trên trục (12/14)`) và các trục vách nằm trên. Tuỳ chọn như tool WPF: `onlySupported` bỏ vách không có vách/móng đỡ trong 500 mm bên dưới; `extendToColumns` kéo đầu vách tới cột gần nhất.
 3. **Mỗi nhóm là một mục** `create_walls` (không phải mỗi bức vách), để cửa sổ duyệt không có hàng trăm dòng. Muốn bỏ một nhóm thì bỏ mục đó, hoặc gọi lại với `exclude`.
-4. Type: `types` → Basic Wall cùng bề dày → Type mới `BTC-VachKC_<b>` nhân bản lúc commit từ `templateTypeId` (mặc định Type có cấu tạo lớp gần bề dày nhất). Các nhóm cùng bề dày dùng chung Type mới.
+4. Type (luật Revit-free `addin/Recognition/WallTypes.cs`, có kiểm thử):
+   1. mục trong `types`: ID một Basic Wall Type, hoặc `"new"` để nhóm đó dùng Type công ty `BTC-VachKC_<b>` dù đã có Type khác cùng bề dày;
+   2. `BTC-VachKC_<b>` đúng bề dày đó;
+   3. Basic Wall **bê tông** lệch ≤ 1 mm: lớp Structure có vật liệu bê tông (class hoặc tên), hoặc tên Type có *bê tông / concrete / BTCT / vách*;
+   4. không có thì tạo `BTC-VachKC_<b>` lúc commit, nhân bản từ `templateTypeId` (mặc định: Type `BTC-VachKC_` có sẵn, không thì Type bê tông, gần bề dày nhất).
+
+   Type mẫu của template Revit (`CW 102-85-100p`, Brick, Masonry, Stud, Render, Block, Generic, Partition, gạch…) **không bao giờ** là `exactType`, dù đúng bề dày; nhiều nhất là `nearestType`. (Model 261016: nhóm w300 từng bị gán `CW 102-85-100p` dày 299 mm thay vì `BTC-VachKC_300`.) Các nhóm cùng bề dày dùng chung Type mới.
 5. Lúc commit, phần tim đã có vách cùng trục bị trừ đi (kể cả vách vừa tạo ở mục trước), chỉ tạo đoạn còn thiếu ≥ 50 mm.
 
 **Sàn:** `propose_floors` → duyệt → `commit_plan`. Sàn không đọc từ CAD mà từ **model**: tim dầm có Reference Level là tầng đó và tim vách thẳng cắt qua cao độ tầng (theo view), dò thành các ô kín; ô dưới 1 m² coi là lỗ mở. Vì vậy cần dựng dầm, vách trước.
@@ -108,7 +114,17 @@ flowchart LR
    - Ký hiệu được ghi vào tham số **Mark** (`writeMark`, mặc định có).
 6. Duyệt → `commit_plan`: mỗi nhóm một Transaction, cả lượt một Ctrl+Z.
 
-Type cho mỗi nhóm: mục trong `types` → Type có sẵn khớp b/h → Type `b×h` tạo trong `templateFamilyId` → chưa có Type (mục bị chặn). Cột tròn chưa hỗ trợ.
+Type cho mỗi nhóm: mục trong `types` → Type có sẵn khớp b/h → Type `b×h` tạo trong `templateFamilyId` → chưa có Type (mục bị chặn). Giá trị `"new"` trong `types` bỏ qua bước khớp: nhóm dùng Type `b×h` trong `templateFamilyId` (mặc định `BTC-CotCN_BeTong` nếu đã nạp), dùng lại nếu family đó đã có, không thì tạo lúc commit; dù family khác đã có Type cùng kích thước. Cột tròn chưa hỗ trợ.
+
+## Đổi Type phần tử đã dựng
+
+`propose_change_type` → duyệt → `commit_plan`. Dùng khi phần tử đã dựng sai Type (trước đây phải dùng `send_code`).
+
+- Tham số: `elementIds` (tối đa 1000) và `typeId` (Type đích). Vách cần Wall Type, phần tử family (cột, dầm…) cần Family Type **cùng category**; Type khác có category (sàn…) cũng được, miễn Revit cho phép (`Element.GetValidTypes`).
+- **Mỗi Type hiện tại là một mục** `change_type`, cột Phần tử ghi `Walls · CW 102-85-100p → BTC-VachKC_300 (14)`. Vách đổi bề dày có ghi chú `Bề dày đổi 299 → 300 mm`.
+- Phần tử đã đúng Type bị bỏ qua (`alreadyOfType`); phần tử khác category, không có Type hoặc Revit không cho đổi bị từ chối và liệt kê trong `refused` kèm lý do. Không còn phần tử nào đổi được thì báo lỗi.
+- Lúc commit đổi Type từng phần tử (`ChangeTypeId`) trong Transaction của mục; phần tử đã bị xoá đếm vào `missing`, phần tử Revit từ chối chỉ lỗi riêng nó. Cả lượt một Ctrl+Z.
+- Cách sắp xếp phần tử vào mục là luật Revit-free `addin/Commands/Elements/TypeChangeGroups.cs`, có kiểm thử.
 
 ## Dầm
 

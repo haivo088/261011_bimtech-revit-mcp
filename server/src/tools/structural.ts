@@ -17,6 +17,11 @@ const layerList = (what: string) => z.array(z.string().min(1).max(255)).max(50).
   .describe(`CAD layer names holding ${what}, exactly as returned by the first call.`);
 const typeMap = (example: string) => z.record(z.string(), elementId).optional()
   .describe(`Type to use per group key, e.g. {"${example}": "12345"}. Overrides automatic matching.`);
+// Walls and columns also take "new": that group gets a new company type even when an existing type has its size.
+const typeMapOrNew = (example: string, newType: string) =>
+  z.record(z.string(), z.union([elementId, z.literal("new")])).optional()
+    .describe(`Type to use per group key: an existing type ID, or "new" for ${newType}, e.g. {"${example}": "12345",`
+      + ` "${example}b": "new"}. Overrides automatic matching.`);
 
 export const listCadSources = defineTool({
   name: "list_cad_sources",
@@ -132,11 +137,14 @@ export const scanCadWalls = defineTool({
   title: "Scan CAD for walls",
   description:
     "Read structural walls from a CAD drawing. Normally (no layers): from the hatches of the DWG file itself, read from"
-    + " disk (a linked CAD's own file, or dwgPath for an imported one) and placed on the CAD by matching lines. Each"
-    + " hatched strip is weighed like an engineer would: hatch pattern shared with the columns, concrete thickness, on a"
-    + " grid, joined to a modeled column, on a wall of the storey below, part of a core (with lift text); masonry"
-    + " thickness, flat-column proportions or a column/masonry layer name count against. Column-sized hatches are never"
-    + " walls. Walls are grouped by thickness: \"w300\" (enough evidence, proposed by default) and \"w300-maybe\" (to"
+    + " disk (a linked CAD's own file, or dwgPath for an imported one) and placed on the CAD by matching lines. Every"
+    + " separate area of a hatch is read; a wall is a thin band with open space on both long sides (bands inside a"
+    + " larger hatched area, e.g. a floor zone, are not walls). Each wall is weighed like an engineer would: concrete"
+    + " hatch pattern (BETONG...) or one shared with the columns, concrete thickness, on a grid, joined to a modeled"
+    + " column, on a wall of the storey below, over a modeled pile cap, part of a core (with lift text); masonry"
+    + " thickness (unless the hatch is concrete), flat-column proportions or a column/masonry layer name count against."
+    + " When pile caps are modeled, a wall over none and on no wall below is always to review. Column-sized hatches and"
+    + " strips inside modeled columns are never walls. Model the foundations first. Walls are grouped by thickness: \"w300\" (enough evidence, proposed by default) and \"w300-maybe\" (to"
     + " review, only when included), each with its evidence counts, type suggestions and a scanId for propose_walls."
     + " Model the grids and columns first: the region defaults to the grids' extent and they add evidence. With"
     + " layers: the older reading of parallel line pairs on those layers, for drawings without hatches. Reading a"
@@ -166,10 +174,12 @@ export const proposeWalls = defineTool({
   description:
     "Plan structural walls from a scan between two levels, without changing the model. One review item per wall group;"
     + " parts of centerlines already covered by a wall are skipped. Groups proposed by default (\"wNNN\" from"
-    + " hatches, or with a tag name) are proposed unless listed in 'exclude'; the others only when listed in 'include'. Type per group: 'types' entry, else a Basic"
-    + " Wall type of that thickness, else a new type \"BTC-VachKC_<b>\" duplicated at commit from templateTypeId"
-    + " (default: the Basic Wall type closest in thickness). Opens the review window and returns a planId at once;"
-    + " then get_plan_status and commit_plan.",
+    + " hatches, or with a tag name) are proposed unless listed in 'exclude'; the others only when listed in 'include'. Type per group: 'types' entry, else"
+    + " \"BTC-VachKC_<b>\" of exactly that thickness, else an existing concrete Basic Wall within 1 mm (Revit template"
+    + " walls such as CW..., Brick, Masonry, Stud are never used), else a new type \"BTC-VachKC_<b>\" duplicated at"
+    + " commit from templateTypeId (default: an existing BTC-VachKC_ type, else a concrete one). A 'types' value of"
+    + " \"new\" asks for BTC-VachKC_<b> even when another type matches. Opens the review window and returns a planId"
+    + " at once; then get_plan_status and commit_plan.",
   inputSchema: {
     scanId: z.string().min(1).max(64).describe("scanId from scan_cad_walls."),
     baseLevelId: elementId.describe("Level at the bottom of the walls."),
@@ -180,9 +190,9 @@ export const proposeWalls = defineTool({
       .describe("Keys of groups not proposed by default to propose as well (\"w300-maybe\", or groups without a tag name)."),
     exclude: z.array(z.string().min(1).max(200)).max(500).optional()
       .describe("Keys of groups not to propose."),
-    types: typeMap("V1|200"),
+    types: typeMapOrNew("w300", "the company type BTC-VachKC_<b>"),
     templateTypeId: elementId.optional()
-      .describe("Basic Wall type to duplicate for groups with no type of their thickness."),
+      .describe("Basic Wall type to duplicate for groups that get a new type BTC-VachKC_<b>."),
     onlySupported: z.boolean().optional()
       .describe("Keep only walls with a wall or foundation within 500 mm below. Default false."),
     extendToColumns: z.boolean().optional()
@@ -281,15 +291,16 @@ export const proposeColumns = defineTool({
     + " committed column plans ending at baseLevelId; a spot built later is no longer rejected) get their own item per group, already rejected (\"Tự bỏ\";"
     + " rejectedAsBelow counts them); the user may still approve it."
     + " Type per group: its entry in 'types', else an existing type with matching b/h, else a b×h type"
-    + " created in templateFamilyId. The mark goes to the Mark parameter (writeMark, default true). Opens the review"
+    + " created in templateFamilyId. A 'types' value of \"new\" skips the matching: the b×h type in templateFamilyId"
+    + " (default BTC-CotCN_BeTong when loaded). The mark goes to the Mark parameter (writeMark, default true). Opens the review"
     + " window and returns a planId at once; then get_plan_status, and commit_plan unless the window already wrote it.",
   inputSchema: {
     scanId: z.string().min(1).max(64).describe("scanId from scan_cad_columns."),
     baseLevelId: elementId.describe("Bottom level of the columns."),
     topLevelId: elementId.describe("Top level of the columns; must be higher than the base level."),
-    types: typeMap("C1"),
+    types: typeMapOrNew("C1", "a b×h type in templateFamilyId"),
     templateFamilyId: elementId.optional()
-      .describe("Column family (familyId from a scan type or load_default_family) in which to create types for groups with no matching type."),
+      .describe("Column family (familyId from a scan type or load_default_family) in which to create types for groups with no matching type or \"new\"."),
     snapMm: z.number().min(0).max(100).optional()
       .describe("Round each column's offset from the nearest grid to this (default 5); 0 keeps the drawing's position."),
     gridToleranceMm: z.number().min(0).max(100).optional()
