@@ -5,13 +5,14 @@ using Bimtech.RevitMcp.Planning;
 
 namespace Bimtech.RevitMcp.Ui;
 
-// Thin code-behind: buttons call the view model; selecting rows asks Revit to show the elements.
+// Thin code-behind: buttons call the view model; selecting rows asks Revit to show the elements,
+// or to draw where the new ones will be.
 public partial class ReviewWindow : Window
 {
     private readonly ReviewViewModel _model;
-    private readonly Action<IReadOnlyList<string>> _focus;
+    private readonly Action<IReadOnlyList<string>, IReadOnlyList<PreviewGroup>> _focus;
 
-    public ReviewWindow(ReviewViewModel model, Action<IReadOnlyList<string>> focus)
+    public ReviewWindow(ReviewViewModel model, Action<IReadOnlyList<string>, IReadOnlyList<PreviewGroup>> focus)
     {
         InitializeComponent();
         DataContext = _model = model;
@@ -47,8 +48,10 @@ public partial class ReviewWindow : Window
 
     private void Grid_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        var ids = ((DataGrid)sender).SelectedItems.Cast<PlanItemRow>()
-            .SelectMany(row => row.ElementIds).Distinct().ToList();
-        if (ids.Count > 0) _focus(ids);
+        // Also called when nothing is selected, so the previous preview is cleared.
+        var rows = ((DataGrid)sender).SelectedItems.Cast<PlanItemRow>().ToList();
+        var ids = rows.SelectMany(row => row.ElementIds).Distinct().ToList();
+        var previews = rows.Select(row => row.Preview).Where(preview => preview.Shapes.Count > 0).ToList();
+        _focus(ids, previews);
     }
 }

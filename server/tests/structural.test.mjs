@@ -159,7 +159,7 @@ test("wall and floor tools forward their input unchanged", async (t) => {
   });
   const client = await mcpClient(t, options.port);
   const calls = [
-    { name: "scan_cad_walls", arguments: { cadId: "501", levelId: "311", dwgPath: "D:\plans\L1.dwg", sureScore: 4 } },
+    { name: "scan_cad_walls", arguments: { cadId: "501", levelId: "311", dwgPath: "D:\plans\L1.dwg" } },
     { name: "scan_cad_walls", arguments: { cadId: "501", layers: ["S-VACH"], textSearchMm: 800 } },
     {
       name: "propose_walls",
@@ -182,7 +182,7 @@ test("wall and floor tools reject malformed input before contacting Revit", asyn
   const invalidCalls = [
     { name: "scan_cad_walls", arguments: {} },
     { name: "scan_cad_walls", arguments: { cadId: "1", textSearchMm: 0 } },
-    { name: "scan_cad_walls", arguments: { cadId: "1", sureScore: 0 } },
+    { name: "scan_cad_walls", arguments: { cadId: "1", gridToleranceMm: -1 } },
     { name: "propose_walls", arguments: { scanId: "scan-1", baseLevelId: "311" } },
     { name: "propose_walls", arguments: { scanId: "scan-1", baseLevelId: "311", topLevelId: "694", types: { w200: 1 } } },
     { name: "propose_floors", arguments: {} },

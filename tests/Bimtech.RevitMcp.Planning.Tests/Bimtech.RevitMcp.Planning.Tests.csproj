@@ -16,6 +16,7 @@
     <!-- The review window's view model uses no WPF or Revit types. -->
     <Compile Include="..\..\addin\Ui\ReviewViewModel.cs" Link="Linked\ReviewViewModel.cs" />
     <Compile Include="..\..\addin\Ui\PlanItemRow.cs" Link="Linked\PlanItemRow.cs" />
+    <Compile Include="..\..\addin\Ui\PreviewShapes.cs" Link="Linked\PreviewShapes.cs" />
   </ItemGroup>
 
   <ItemGroup>

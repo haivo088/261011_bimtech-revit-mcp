@@ -19,6 +19,8 @@ public sealed class PlanItemRow : INotifyPropertyChanged
         ElementIds = (ReadString(item.Params, "elementId") ?? ReadString(item.Source, "elementId")) is { } id ? [id] : [];
         IsAuto = item.Tier == PlanTier.Auto;
         ConfidenceText = item.Confidence is { } confidence ? $"{Math.Round(confidence * 100):0}%" : "";
+        var shapes = PreviewShapes.From(item.Action, item.Params);
+        Preview = shapes.Count == 0 ? PreviewGroup.None : new PreviewGroup(PreviewShapes.LevelId(item.Params), shapes);
         _status = item.Status;
     }
 
@@ -36,6 +38,8 @@ public sealed class PlanItemRow : INotifyPropertyChanged
     public bool IsAuto { get; }
     // e.g. "95%"; empty when the command gives no confidence.
     public string ConfidenceText { get; }
+    // Where the item's new elements will be, drawn in Revit while the row is selected. Empty for items on existing elements.
+    public PreviewGroup Preview { get; }
 
     public PlanItemStatus Status
     {
