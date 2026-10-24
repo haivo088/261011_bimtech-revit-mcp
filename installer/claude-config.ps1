@@ -10,6 +10,7 @@
 
 .EXAMPLE
     .\claude-config.ps1 -Action add -Node "C:\...\node.exe" -Server "C:\...\index.mjs"
+    .\claude-config.ps1 -Action add -Node "..." -Server "..." -DataDir "$env:USERPROFILE\Documents\BIMTECH MCP"
     .\claude-config.ps1 -Action remove
 #>
 param(
@@ -17,7 +18,10 @@ param(
     [string]$Node,
     [string]$Server,
     # One config file to change instead of the ones found (used by the test install).
-    [string]$Config
+    [string]$Config,
+    # Developer install: turns the developer tools on (BIMTECH_DEV=1) with their command sets, CAD cases and code run
+    # history in this folder instead of the repository's.
+    [string]$DataDir
 )
 
 $ErrorActionPreference = "Stop"
@@ -66,11 +70,14 @@ try {
             if ($null -eq $servers) {
                 $data | Add-Member -NotePropertyName mcpServers -NotePropertyValue ([pscustomobject]@{})
             }
-            $entry = [pscustomobject]@{
-                command = $Node
-                args    = @($Server)
-                env     = [pscustomobject]@{ REVIT_MCP_HOST = "127.0.0.1"; REVIT_MCP_PORT = "8081"; REVIT_MCP_TIMEOUT_MS = "15000" }
+            $variables = [ordered]@{ REVIT_MCP_HOST = "127.0.0.1"; REVIT_MCP_PORT = "8081"; REVIT_MCP_TIMEOUT_MS = "15000" }
+            if ($DataDir) {
+                $variables.BIMTECH_DEV = "1"
+                $variables.BIMTECH_COMMANDSETS_DIR = Join-Path $DataDir "commandsets"
+                $variables.BIMTECH_CASES_DIR = Join-Path $DataDir "cases"
+                $variables.BIMTECH_CODE_HISTORY = Join-Path $DataDir "logs\code-runs.jsonl"
             }
+            $entry = [pscustomobject]@{ command = $Node; args = @($Server); env = [pscustomobject]$variables }
             $data.mcpServers | Add-Member -NotePropertyName $name -NotePropertyValue $entry -Force
             Write-Config $path $data
             Write-Output "Added $name to $path"

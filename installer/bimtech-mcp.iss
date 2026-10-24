@@ -3,7 +3,10 @@
 ;   - the add-in into %APPDATA%\Autodesk\Revit\Addins\2025 (or /ADDINSDIR=),
 ;   - Node.js and the bundled MCP server into %LOCALAPPDATA%\BIMTECH MCP,
 ;   - the bimtech-revit-mcp entry into Claude Desktop's config (or /CLAUDECONFIG=), via claude-config.ps1.
-; The developer tools are never part of it. Test install: package.ps1 -TestInstall.
+; Compiled with /DDev it is the developer installer: also the developer tools (send_code, command sets, CAD cases),
+; turned on with BIMTECH_DEV=1, their data in Documents\BIMTECH MCP (or /DATADIR=), kept on uninstall. Both share one
+; AppId, so either replaces the other; the user installer removes developer files a dev install left.
+; Test install: package.ps1 -TestInstall [-Dev].
 
 #ifndef AppVersion
   #define AppVersion "0.0.0"
@@ -14,12 +17,19 @@
 #ifndef OutDir
   #define OutDir "..\dist"
 #endif
+#ifdef Dev
+  #define Flavor " (dev)"
+  #define SetupName "BIMTECH-MCP-Dev-Setup-"
+#else
+  #define Flavor ""
+  #define SetupName "BIMTECH-MCP-Setup-"
+#endif
 
 [Setup]
 AppId={{85A06FC6-325F-4E4E-9F2F-B8CA85F40C9B}
 AppName=BIMTECH Revit MCP
 AppVersion={#AppVersion}
-AppVerName=BIMTECH Revit MCP {#AppVersion}
+AppVerName=BIMTECH Revit MCP{#Flavor} {#AppVersion}
 AppPublisher=BIMTECH
 DefaultDirName={localappdata}\BIMTECH MCP
 DisableDirPage=yes
@@ -29,22 +39,40 @@ PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir={#OutDir}
-OutputBaseFilename=BIMTECH-MCP-Setup-{#AppVersion}
+OutputBaseFilename={#SetupName}{#AppVersion}
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
-UninstallDisplayName=BIMTECH Revit MCP {#AppVersion}
+UninstallDisplayName=BIMTECH Revit MCP{#Flavor} {#AppVersion}
 CloseApplications=no
 SetupLogging=yes
 
 [Messages]
 WelcomeLabel2=Trình cài đặt sẽ cài [name/ver] cho Revit 2025 và Claude Desktop trên máy này.%n%nHãy đóng Revit và Claude Desktop trước khi tiếp tục.
+#ifndef Dev
 FinishedLabel=Đã cài xong [name].%n%n1. Khởi động lại Claude Desktop.%n2. Mở Revit 2025, chọn Always Load nếu Revit hỏi về add-in.%n3. Add-Ins → BIMTECH MCP → MCP Bridge để bật cầu nối.%n4. Hỏi Claude: "ping revit".
+#else
+FinishedLabel=Đã cài xong [name] kèm bộ công cụ cho người phát triển.%n%n1. Khởi động lại Claude Desktop.%n2. Mở Revit 2025, chọn Always Load nếu Revit hỏi về add-in.%n3. Add-Ins → BIMTECH MCP → MCP Bridge để bật cầu nối.%n4. Hỏi Claude: "ping revit" — phải thấy devTools: loaded.%n%nCommand set, case CAD và lịch sử chạy code nằm trong Documents\BIMTECH MCP.
+#endif
 
 [Files]
 Source: "{#Stage}\addin\Bimtech.RevitMcp.addin"; DestDir: "{code:AddinsDir}"; Flags: ignoreversion
 Source: "{#Stage}\addin\Bimtech.RevitMcp\*"; DestDir: "{code:AddinsDir}\Bimtech.RevitMcp"; Flags: ignoreversion recursesubdirs
 Source: "{#Stage}\app\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs
+#ifdef Dev
+; The command sets that ship with this version; ones the developer already has or changed are kept.
+Source: "{#Stage}\data\commandsets\*"; DestDir: "{code:DataDir}\commandsets"; Flags: onlyifdoesntexist uninsneveruninstall recursesubdirs
+
+[Dirs]
+Name: "{code:DataDir}\cases"; Flags: uninsneveruninstall
+Name: "{code:DataDir}\logs"; Flags: uninsneveruninstall
+#else
+
+[InstallDelete]
+; Developer tools left by a dev install: they must not stay in a user install.
+Type: files; Name: "{code:AddinsDir}\Bimtech.RevitMcp\Bimtech.RevitMcp.DevTools.*"
+Type: files; Name: "{code:AddinsDir}\Bimtech.RevitMcp\Microsoft.CodeAnalysis*.dll"
+#endif
 
 [UninstallDelete]
 Type: files; Name: "{app}\install.ini"
@@ -62,6 +90,21 @@ begin
       ExpandConstant('{app}\install.ini'))
   else
     Result := ExpandConstant('{param:ADDINSDIR|{userappdata}\Autodesk\Revit\Addins\2025}');
+end;
+
+// Command sets, CAD cases and code history of the developer tools; the developer's data, never uninstalled.
+function DataDir(Param: String): String;
+begin
+  Result := ExpandConstant('{param:DATADIR|{userdocs}\BIMTECH MCP}');
+end;
+
+function DataArgument: String;
+begin
+#ifdef Dev
+  Result := ' -DataDir "' + DataDir('') + '"';
+#else
+  Result := '';
+#endif
 end;
 
 // Revit locks the add-in DLL while it runs.
@@ -109,7 +152,11 @@ end;
 
 function InitializeUninstall: Boolean;
 begin
-  Result := WaitForRevitClosed;
+  // The test install (package.ps1 -TestInstall) uninstalls while Revit may run: its add-in is not Revit's.
+  if ExpandConstant('{param:SKIPREVITCHECK|0}') = '1' then
+    Result := True
+  else
+    Result := WaitForRevitClosed;
 end;
 
 // Runs claude-config.ps1; returns its exit code and output.
@@ -147,7 +194,7 @@ begin
   SetIniString('install', 'AddinsDir', AddinsDir(''), ExpandConstant('{app}\install.ini'));
   SetIniString('install', 'ClaudeConfig', ExpandConstant('{param:CLAUDECONFIG|}'), ExpandConstant('{app}\install.ini'));
   Code := RunClaudeConfig('-Action add -Node "' + ExpandConstant('{app}\node\node.exe') + '" -Server "' +
-    ExpandConstant('{app}\server\index.mjs') + '"' + ConfigArgument, Output);
+    ExpandConstant('{app}\server\index.mjs') + '"' + DataArgument + ConfigArgument, Output);
   if Code <> 0 then
     SuppressibleMsgBox('Đã cài add-in nhưng chưa thêm được BIMTECH MCP vào cấu hình Claude Desktop:' + #13#10 + Output + #13#10 +
       'Thêm tay theo hướng dẫn trong ' + ExpandConstant('{app}\README.txt') + '.', mbError, MB_OK, IDOK);

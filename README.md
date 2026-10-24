@@ -170,6 +170,7 @@ Người dùng nhận một file `BIMTECH-MCP-Setup-<phiên bản>.exe` (khoản
 ```powershell
 .\scripts\package.ps1                # build Release và tạo dist\BIMTECH-MCP-Setup-<phiên bản>.exe
 .\scripts\package.ps1 -TestInstall   # thêm: cài im lặng vào dist\test-install, kiểm tra, rồi gỡ
+.\scripts\package.ps1 -Dev -TestInstall   # bản cho người phát triển: dist\BIMTECH-MCP-Dev-Setup-<phiên bản>.exe
 ```
 
 Cần Inno Setup 6 (`winget install JRSoftware.InnoSetup`). Phiên bản lấy từ `App.Version` trong `addin/App.cs`; tăng số đó trước khi gửi bản mới. Setup.exe:
@@ -179,6 +180,8 @@ Cần Inno Setup 6 (`winget install JRSoftware.InnoSetup`). Phiên bản lấy t
 - chép `node.exe` của máy đóng gói và server đã gom thành một file (`index.mjs`, esbuild) vào `%LOCALAPPDATA%\BIMTECH MCP`;
 - thêm `bimtech-revit-mcp` vào cấu hình Claude Desktop (bản thường và bản Microsoft Store) bằng `installer/claude-config.ps1`: sao lưu file trước, giữ mọi server và cài đặt khác, không bật `BIMTECH_DEV`, không đụng file JSON hỏng;
 - có trình gỡ cài đặt trong Windows Settings, gỡ cả add-in và mục cấu hình.
+
+**Bản cho người phát triển** (`-Dev`, khoảng 28 MB) cài thêm bộ dev ([07](docs/07-dev-tools.md)): `Bimtech.RevitMcp.DevTools.dll` và Roslyn, bật `BIMTECH_DEV=1`, và để command set, case CAD, lịch sử chạy code trong `Documents\BIMTECH MCP` (biến `BIMTECH_COMMANDSETS_DIR`, `BIMTECH_CASES_DIR`, `BIMTECH_CODE_HISTORY`). Command set của repo được chép vào đó khi chưa có, không ghi đè bản người dùng đã sửa; thư mục này giữ lại khi gỡ. Case và log của repo không bao giờ được đóng gói. Hai bản dùng chung một AppId nên cài bản này sẽ thay bản kia; cài bản thường đè lên bản dev sẽ xoá file dev và tắt `BIMTECH_DEV`. `send_code` chạy C# bất kỳ trong Revit: chỉ đưa bản dev cho người phát triển tin cậy.
 
 Setup.exe và add-in chưa ký số: Windows SmartScreen báo "Unknown publisher" (người dùng chọn **More info → Run anyway**) và lần đầu Revit hỏi tải add-in (**Always Load**). Không chạy Setup.exe trên máy người phát triển: nó sẽ trỏ mục `bimtech-revit-mcp` của Claude Desktop sang server đã cài thay vì repo này (dùng `-TestInstall` để thử).
 
