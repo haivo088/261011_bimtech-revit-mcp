@@ -11,3 +11,6 @@ cases/
 
 # send_code history (devtools): one line per run, may hold model names.
 logs/
+
+# Installer builds (scripts/package.ps1).
+dist/

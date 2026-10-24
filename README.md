@@ -106,6 +106,8 @@ bimtech-revit-mcp/
 ├── tests/
 │   └── Bimtech.RevitMcp.Planning.Tests/  # xUnit cho Planning/ và ViewModel, chạy không cần Revit
 ├── config/claude-desktop.example.json
+├── installer/                    # Setup.exe cho người dùng: bimtech-mcp.iss (Inno Setup), claude-config.ps1
+├── scripts/                      # install.ps1 (máy người phát triển), package.ps1 (đóng gói Setup.exe)
 └── docs/
     ├── 01-folder-map.md
     ├── 02-request-flow.md
@@ -160,6 +162,25 @@ Cài tay: đóng Revit trước khi chép DLL. Trong `%APPDATA%\Autodesk\Revit\A
 Revit cung cấp các DLL API của chính nó khi chạy, nên không chép `RevitAPI.dll` hoặc `RevitAPIUI.dll` vào thư mục add-in.
 
 Mở Revit, mở một mô hình thử nghiệm, vào **Add-Ins → BIMTECH MCP → MCP Bridge**. Nhãn nút đổi thành "Đang chạy" khi cầu nối đã mở. Nút **Settings** bật chế độ chỉ đọc, tắt từng lệnh, đổi cổng, hoặc cho cầu nối tự bật khi mở Revit; xem [06 — Cài đặt và quản lý lệnh](docs/06-settings.md).
+
+## Đóng gói cho người dùng
+
+Người dùng nhận một file `BIMTECH-MCP-Setup-<phiên bản>.exe` (khoảng 25 MB): cài cho tài khoản hiện tại, không cần quyền admin, không cần cài Node.js hay .NET SDK. Máy họ cần Revit 2025 và Claude Desktop.
+
+```powershell
+.\scripts\package.ps1                # build Release và tạo dist\BIMTECH-MCP-Setup-<phiên bản>.exe
+.\scripts\package.ps1 -TestInstall   # thêm: cài im lặng vào dist\test-install, kiểm tra, rồi gỡ
+```
+
+Cần Inno Setup 6 (`winget install JRSoftware.InnoSetup`). Phiên bản lấy từ `App.Version` trong `addin/App.cs`; tăng số đó trước khi gửi bản mới. Setup.exe:
+
+- kiểm tra có Revit 2025 và Revit đã đóng;
+- chép add-in vào `%APPDATA%\Autodesk\Revit\Addins\2025`, không có bộ dev và file `.pdb`;
+- chép `node.exe` của máy đóng gói và server đã gom thành một file (`index.mjs`, esbuild) vào `%LOCALAPPDATA%\BIMTECH MCP`;
+- thêm `bimtech-revit-mcp` vào cấu hình Claude Desktop (bản thường và bản Microsoft Store) bằng `installer/claude-config.ps1`: sao lưu file trước, giữ mọi server và cài đặt khác, không bật `BIMTECH_DEV`, không đụng file JSON hỏng;
+- có trình gỡ cài đặt trong Windows Settings, gỡ cả add-in và mục cấu hình.
+
+Setup.exe và add-in chưa ký số: Windows SmartScreen báo "Unknown publisher" (người dùng chọn **More info → Run anyway**) và lần đầu Revit hỏi tải add-in (**Always Load**). Không chạy Setup.exe trên máy người phát triển: nó sẽ trỏ mục `bimtech-revit-mcp` của Claude Desktop sang server đã cài thay vì repo này (dùng `-TestInstall` để thử).
 
 ## Kết nối Claude Desktop
 

@@ -9,6 +9,8 @@
 | `server/` | Định nghĩa công cụ MCP và chuyển lệnh đến Revit | Tiến trình Node.js |
 | `addin/` | Nhận lệnh và gọi Revit API | Bên trong tiến trình Revit |
 | `config/` | Ví dụ cấu hình ứng dụng AI | Claude đọc sau khi áp dụng cấu hình |
+| `installer/` | Script Inno Setup và script gộp cấu hình Claude cho Setup.exe | `scripts/package.ps1` biên dịch; chạy trên máy người dùng khi cài/gỡ |
+| `scripts/` | `install.ps1` cài cho người phát triển, `package.ps1` đóng gói Setup.exe | Máy người phát triển |
 | `docs/` | Tài liệu học cấu trúc và luồng gọi lệnh | Người phát triển đọc |
 
 Mỗi công cụ có một file định nghĩa ở `server/src/tools/` và một class command ở `addin/Commands/`. Hai phía nối với nhau bằng tên method. Chưa cần một hệ thống nạp command DLL động để hiểu kết nối cơ bản.
