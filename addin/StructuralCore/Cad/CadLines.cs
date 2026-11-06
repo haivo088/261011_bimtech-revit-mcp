@@ -3,15 +3,15 @@ using View = Autodesk.Revit.DB.View;
 
 namespace Bimtech.StructuralCore.Cad;
 
-/// <summary>Mọi đoạn thẳng (Line và từng cạnh PolyLine) của 1 CAD như hiển thị trong view, kèm layer và nét đứt hay
-/// không (theo line pattern của layer), Z = 0 — kể cả trong block lồng nhau. Cung tròn bỏ qua.</summary>
+/// <summary>Mọi đoạn thẳng (Line và từng cạnh PolyLine) của 1 CAD như hiển thị trong view, kèm layer, nét đứt hay
+/// không và tên line pattern (theo layer), Z = 0 — kể cả trong block lồng nhau. Cung tròn bỏ qua.</summary>
 internal static class CadLines
 {
     private const int MaxRecursionDepth = 8;
 
-    public static List<(string Layer, XYZ A, XYZ B, bool Dashed)> Read(Document doc, ImportInstance cad, View view, IReadOnlyCollection<string>? layers = null)
+    public static List<(string Layer, XYZ A, XYZ B, bool Dashed, string? Pattern)> Read(Document doc, ImportInstance cad, View view, IReadOnlyCollection<string>? layers = null)
     {
-        var result = new List<(string, XYZ, XYZ, bool)>();
+        var result = new List<(string, XYZ, XYZ, bool, string?)>();
         GeometryElement? geometry;
         try
         {
@@ -21,14 +21,14 @@ internal static class CadLines
         {
             return result;
         }
-        var dashed = new Dictionary<ElementId, bool>();
-        if (geometry is not null) Walk(doc, geometry, layers, result, dashed, 0);
+        var patterns = new Dictionary<ElementId, (bool Dashed, string? Name)>();
+        if (geometry is not null) Walk(doc, geometry, layers, result, patterns, 0);
         return result;
     }
 
     private static void Walk(
-        Document doc, GeometryElement geometry, IReadOnlyCollection<string>? layers, List<(string, XYZ, XYZ, bool)> result,
-        Dictionary<ElementId, bool> dashed, int depth)
+        Document doc, GeometryElement geometry, IReadOnlyCollection<string>? layers, List<(string, XYZ, XYZ, bool, string?)> result,
+        Dictionary<ElementId, (bool Dashed, string? Name)> dashed, int depth)
     {
         if (depth > MaxRecursionDepth) return;
         foreach (var obj in geometry)
@@ -58,22 +58,23 @@ internal static class CadLines
     }
 
     private static void Add(
-        Document doc, ElementId styleId, XYZ a, XYZ b, IReadOnlyCollection<string>? layers, List<(string, XYZ, XYZ, bool)> result,
-        Dictionary<ElementId, bool> dashed)
+        Document doc, ElementId styleId, XYZ a, XYZ b, IReadOnlyCollection<string>? layers, List<(string, XYZ, XYZ, bool, string?)> result,
+        Dictionary<ElementId, (bool Dashed, string? Name)> patterns)
     {
         var layer = CadGeometry.ResolveLayerName(doc, styleId);
         if (layers is { Count: > 0 } && !layers.Contains(layer)) return;
         var (flatA, flatB) = (new XYZ(a.X, a.Y, 0), new XYZ(b.X, b.Y, 0));
         if (flatA.DistanceTo(flatB) <= 1e-9) return;
-        if (!dashed.TryGetValue(styleId, out var isDashed)) dashed[styleId] = isDashed = IsDashed(doc, styleId);
-        result.Add((layer, flatA, flatB, isDashed));
+        if (!patterns.TryGetValue(styleId, out var pattern)) patterns[styleId] = pattern = Pattern(doc, styleId);
+        result.Add((layer, flatA, flatB, pattern.Dashed, pattern.Name));
     }
 
-    /// <summary>Layer vẽ bằng nét đứt (nét khuất, nét tâm...): line pattern khác nét liền.</summary>
-    private static bool IsDashed(Document doc, ElementId styleId)
+    /// <summary>Line pattern của layer: nét đứt (nét khuất, nét tâm...) khi khác nét liền, và tên của nó.</summary>
+    private static (bool Dashed, string? Name) Pattern(Document doc, ElementId styleId)
     {
-        if (doc.GetElement(styleId) is not GraphicsStyle { GraphicsStyleCategory: { } category }) return false;
+        if (doc.GetElement(styleId) is not GraphicsStyle { GraphicsStyleCategory: { } category }) return (false, null);
         var pattern = category.GetLinePatternId(GraphicsStyleType.Projection);
-        return pattern != ElementId.InvalidElementId && pattern != LinePatternElement.GetSolidPatternId();
+        if (pattern == ElementId.InvalidElementId || pattern == LinePatternElement.GetSolidPatternId()) return (false, null);
+        return (true, doc.GetElement(pattern)?.Name);
     }
 }

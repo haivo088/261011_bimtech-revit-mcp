@@ -3,7 +3,7 @@ namespace Bimtech.RevitMcp.Recognition;
 // Main beams from a CAD plan, found from the columns already in the model ("column first, grids as the ruler").
 // Everything is in the grid's own frame (u, v in mm), so beams along the grids run along u or v.
 //   1. CAD lines within 2° of u or v are kept (others counted as skewed); lines lying inside a column or a wall
-//      (outlines, hatch) are dropped.
+//      (outlines, hatch) are dropped, and so are grids and axes (drawn with a centre pattern).
 //   2. At each face of each column, a pair of parallel lines leaving the face (within probeMm), 100-1000 mm apart,
 //      with its middle inside the column's width, starts a beam. A line exactly midway between two others is a
 //      centre line, not an edge.
@@ -18,8 +18,9 @@ namespace Bimtech.RevitMcp.Recognition;
 // next beam, column or wall is a secondary beam. Its ends sit on the supports' centre lines, as for main beams.
 public static class BeamRecognizer
 {
-    // Dashed: drawn with a hidden-line pattern, as beams under a slab often are.
-    public sealed record Line(double U0, double V0, double U1, double V1, bool Dashed = false);
+    // Dashed: drawn with a hidden-line pattern, as beams under a slab often are. Axis: drawn with a grid pattern
+    // (centre, dash-dot): a grid or an axis, never a beam edge, even where it runs between two edges or along one.
+    public sealed record Line(double U0, double V0, double U1, double V1, bool Dashed = false, bool Axis = false);
 
     // A column, wall or beam in the model: its extent in the frame and its centre. Label: "A-1", a mark, or a position.
     // A beam support also says which way it runs and its depth (from its type), when known.
@@ -77,6 +78,7 @@ public static class BeamRecognizer
         int skewed = 0, masked = 0;
         foreach (var line in lines)
         {
+            if (line.Axis) continue;
             var (du, dv) = (line.U1 - line.U0, line.V1 - line.V0);
             var length = Math.Sqrt(du * du + dv * dv);
             if (length < 20) continue;

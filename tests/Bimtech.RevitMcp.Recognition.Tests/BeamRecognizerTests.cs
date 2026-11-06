@@ -147,6 +147,46 @@ public sealed class BeamRecognizerTests
     }
 
     [Fact]
+    public void A_grid_line_beside_a_beam_is_not_taken_as_its_edge()
+    {
+        // As D2-X6A on grid C of MB_KC_Tang2: the grid (centre pattern) at v = 0, the beam 400 wide from 100 to 500.
+        // Paired with the grid, the near edge made a beam 100 wide centred at 50.
+        List<Line> lines =
+        [
+            new(-1000, 0, 7000, 0, Dashed: true, Axis: true),
+            .. BeamU(300, 150, 5850, 400),
+        ];
+
+        // Columns 1300 long across the beam, from v = -300 to 1000, so both pairs leave a column.
+        List<Support> columns =
+        [
+            new("C-1", -175, 175, -300, 1000, 0, 350, true),
+            new("C-2", 5825, 6175, -300, 1000, 6000, 350, true),
+        ];
+
+        var beam = Assert.Single(Recognize(lines, columns, []).Beams);
+
+        Assert.Equal(400, beam.WidthMm, 6);
+        Assert.Equal(300, beam.Cross, 6);
+    }
+
+    [Fact]
+    public void A_solid_edge_on_the_grid_is_still_an_edge()
+    {
+        // As D2-Y1 on grid 1: the beam's face drawn solid on the grid line itself.
+        List<Line> lines =
+        [
+            new(-1000, 0, 7000, 0, Dashed: true, Axis: true),
+            new(150, 0, 5850, 0), new(150, 300, 5850, 300),
+        ];
+
+        var beam = Assert.Single(Recognize(lines, Columns((0, 150), (6000, 150)), []).Beams);
+
+        Assert.Equal(300, beam.WidthMm, 6);
+        Assert.Equal(150, beam.Cross, 6);
+    }
+
+    [Fact]
     public void A_mark_is_measured_from_the_beam_face_not_its_centre_line()
     {
         // As on grid A of MB_KC_Tang2: a 350 beam, its mark below a wall hatch, 1010 mm from the centre line but

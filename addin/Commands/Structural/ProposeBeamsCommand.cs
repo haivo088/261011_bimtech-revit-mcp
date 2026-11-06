@@ -95,7 +95,8 @@ public sealed class ProposeBeamsCommand(PlanService plans, ReviewWindowHost revi
             throw RpcException.InvalidParams("levelId",
                 "no structural column reaches this level. Model the columns below it first (propose_columns).");
         var lines = CadLines.Read(document, cad, view, layers)
-            .Select(line => new BeamRecognizer.Line(U(line.A), V(line.A), U(line.B), V(line.B), line.Dashed))
+            .Select(line => new BeamRecognizer.Line(U(line.A), V(line.A), U(line.B), V(line.B), line.Dashed,
+                GridRecognizer.IsGridPattern(line.Pattern)))
             .ToList();
         if (layers.Count > 0 && lines.Count == 0)
             throw RpcException.InvalidParams("layers", "no line of the CAD is on these layers in this view.");

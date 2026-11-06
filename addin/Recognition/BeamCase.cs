@@ -94,14 +94,16 @@ public static class BeamCase
     {
         var frame = FrameOf(data.Truth?.Grids ?? []);
         var lines = new List<BeamRecognizer.Line>();
-        void Add(double x0, double y0, double x1, double y1) =>
-            lines.Add(new(frame.U(x0, y0), frame.V(x0, y0), frame.U(x1, y1), frame.V(x1, y1)));
-        foreach (var line in data.Lines) Add(line.X0, line.Y0, line.X1, line.Y1);
+        // Grids and axes are told by their pattern, as propose_beams does.
+        bool Axis(int style) => style >= 0 && style < data.Styles.Count && GridRecognizer.IsGridPattern(data.Styles[style].LinePattern);
+        void Add(double x0, double y0, double x1, double y1, int style) =>
+            lines.Add(new(frame.U(x0, y0), frame.V(x0, y0), frame.U(x1, y1), frame.V(x1, y1), Axis: Axis(style)));
+        foreach (var line in data.Lines) Add(line.X0, line.Y0, line.X1, line.Y1, line.Style);
         foreach (var polyline in data.Polylines)
         {
             var points = polyline.Points;
-            for (var i = 0; i + 1 < points.Count; i++) Add(points[i][0], points[i][1], points[i + 1][0], points[i + 1][1]);
-            if (polyline.Closed && points.Count > 2) Add(points[^1][0], points[^1][1], points[0][0], points[0][1]);
+            for (var i = 0; i + 1 < points.Count; i++) Add(points[i][0], points[i][1], points[i + 1][0], points[i + 1][1], polyline.Style);
+            if (polyline.Closed && points.Count > 2) Add(points[^1][0], points[^1][1], points[0][0], points[0][1], polyline.Style);
         }
         var texts = data.Texts.Select(t => new BeamRecognizer.Text(t.Text, frame.U(t.X, t.Y), frame.V(t.X, t.Y),
             t.RotationDeg * Math.PI / 180 - frame.ThetaRad)).ToList();
