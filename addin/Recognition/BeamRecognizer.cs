@@ -140,7 +140,7 @@ public static class BeamRecognizer
                 .Where(s => P1(s, dir) >= face - o.ProbeMm && P0(s, dir) <= face + o.ProbeMm)
                 .ToList();
             var edges = Distinct(near.Select(s => s.Y), o.EdgeToleranceMm);
-            Beam? best = null;
+            var candidates = new List<(Beam Beam, double Y1, double Y2)>();
             Dangling? longest = null;
             foreach (var (y1, y2) in Pairs(edges, o))
             {
@@ -162,24 +162,44 @@ public static class BeamRecognizer
                     var dashed = spanSegs.Count > 0 && spanSegs.Count(s => s.Dashed) * 2 > spanSegs.Count;
                     var beam = new Beam(box.Support, target.Support, alongU, middle, box.CenterX, target.CenterX, y2 - y1,
                         Math.Min(1, coverage), null, false, dashed);
-                    if (best is null || beam.Coverage > best.Coverage + 1e-9
-                        || (Math.Abs(beam.Coverage - best.Coverage) <= 1e-9 && Math.Abs(middle - Mid(box)) < Math.Abs(best.Cross - Mid(box))))
-                        best = beam;
+                    if (!(o.Secondary && AlongBeam(beam))) candidates.Add((beam, y1, y2));
                 }
                 else if (reach - face >= o.MinDanglingMm && (longest is null || reach - face > longest.LengthMm))
                     longest = new Dangling(box.Support, alongU, middle, Math.Min(reach, targetFace) - face);
             }
-            if (best is not null && o.Secondary && AlongBeam(best)) best = null;
-            if (best is not null)
+            var kept = Choose(candidates, box, !box.Support.IsColumn);
+            foreach (var beam in kept)
             {
-                var (a, b) = (boxes.IndexOf(box), boxes.FindIndex(x => x.Support == best.To));
-                var key = (Math.Min(a, b), Math.Max(a, b), (long)Math.Round(best.Cross / 10));
-                if (!found.TryGetValue(key, out var other) || best.Coverage > other.Coverage) found[key] = best;
+                var (a, b) = (boxes.IndexOf(box), boxes.FindIndex(x => x.Support == beam.To));
+                var key = (Math.Min(a, b), Math.Max(a, b), (long)Math.Round(beam.Cross / 10));
+                if (!found.TryGetValue(key, out var other) || beam.Coverage > other.Coverage + CoverageTolerance) found[key] = beam;
             }
-            else if (longest is not null)
+            if (kept.Count == 0 && longest is not null)
                 dangling.Add(longest);
         }
         return found.Values.ToList();
+    }
+
+    // Coverages this close are equal: drawings carry noise of a few micrometres, which must not pick between beams.
+    private const double CoverageTolerance = 1e-3;
+
+    // The beams leaving one face in one direction. A column holds one: the best drawn, then the one nearest its middle.
+    // A beam or a wall face is long and several beams can leave it side by side (secondary beams framing into a main
+    // beam), so every candidate is kept that overlaps no better one.
+    private static List<Beam> Choose(List<(Beam Beam, double Y1, double Y2)> candidates, Box box, bool several)
+    {
+        var ordered = candidates
+            .OrderByDescending(c => Math.Round(c.Beam.Coverage / CoverageTolerance))
+            .ThenBy(c => Math.Abs(c.Beam.Cross - Mid(box)))
+            .ToList();
+        var kept = new List<(Beam Beam, double Y1, double Y2)>();
+        foreach (var candidate in ordered)
+        {
+            if (!several && kept.Count > 0) break;
+            if (kept.Any(k => candidate.Y1 < k.Y2 && k.Y1 < candidate.Y2)) continue;
+            kept.Add(candidate);
+        }
+        return kept.Select(k => k.Beam).ToList();
     }
 
     private static double Mid(Box box) => (box.MinY + box.MaxY) / 2;

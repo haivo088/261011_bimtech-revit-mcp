@@ -42,6 +42,32 @@ public sealed class SecondaryBeamTests
     }
 
     [Fact]
+    public void Several_beams_leaving_one_main_beam_side_by_side_are_all_found()
+    {
+        var result = BeamRecognizer.Recognize([.. Across(2000, 220), .. Across(4000, 220)], Bay(), [], new BeamRecognizer.Options { Secondary = true });
+
+        Assert.Equal([2000.0, 4000.0], result.Beams.Where(b => b.IsSecondary).Select(b => b.Cross).Order());
+    }
+
+    [Fact]
+    public void A_beam_beside_the_drawn_edges_of_a_modeled_beam_is_still_found()
+    {
+        // As D2-X7 on MB_KC_Tang2: the modeled beam D3 drawn on its own line leaves D1's face too, fully drawn; the
+        // secondary beam's edges stop 3 micrometres short of the faces. D3 is along a beam already there and is
+        // dropped; it must not take the secondary beam with it.
+        List<Line> lines =
+        [
+            new(-150, 150, -150, 5850), new(150, 150, 150, 5850),
+            new(2890, 150.003, 2890, 5849.997), new(3110, 150.003, 3110, 5849.997),
+        ];
+
+        var result = BeamRecognizer.Recognize(lines, Bay(), [], new BeamRecognizer.Options { Secondary = true });
+
+        var beam = Assert.Single(result.Beams, b => b.IsSecondary);
+        Assert.Equal(3000, beam.Cross, 3);
+    }
+
+    [Fact]
     public void Main_beams_only_leave_columns()
     {
         var result = BeamRecognizer.Recognize(Across(3000, 220), Bay(), []);
