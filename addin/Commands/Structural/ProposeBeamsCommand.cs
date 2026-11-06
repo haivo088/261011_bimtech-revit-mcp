@@ -155,7 +155,8 @@ public sealed class ProposeBeamsCommand(PlanService plans, ReviewWindowHost revi
         // Each beam on the Evidence scale: a secondary beam from its evidence (SecondaryBeams), a main beam from its mark,
         // grid and edges (ConfidenceRules.MainBeam).
         int PercentOf(Placed beam) => weights.TryGetValue(beam.Beam, out var weight) ? weight.Percent
-            : ConfidenceRules.MainBeam(beam.Name is not null && beam.HMm is not null, beam.Beam.TagInherited, beam.WidthNote is not null,
+            : ConfidenceRules.MainBeam(beam.Name is not null && beam.HMm is not null, beam.Beam.TagInherited || beam.Beam.SizeFromSameName,
+                beam.WidthNote is not null,
                 beam.Beam.Coverage < WellDrawn, beam.OnGrid);
 
         // Group keys like columns: the mark, "D1 220x600" when one mark has several sizes, "220x600", or "b220"; beams below
@@ -215,6 +216,9 @@ public sealed class ProposeBeamsCommand(PlanService plans, ReviewWindowHost revi
             if (first.Name is null) reasons.Add("Không có ký hiệu dầm (Text Note hay chữ trong file DWG) gần các dầm này.");
             var inherited = group.Count(beam => beam.Beam.TagInherited);
             if (inherited > 0) reasons.Add($"{inherited} dầm lấy ký hiệu từ dầm thẳng hàng bên cạnh.");
+            var sameName = group.Count(beam => beam.Beam.SizeFromSameName);
+            if (sameName > 0)
+                reasons.Add($"{sameName} dầm có ký hiệu {first.Name} không ghi kích thước: lấy {Size(first.BMm, first.HMm)} theo ký hiệu cùng tên ở chỗ khác trong bản vẽ.");
             var widthNotes = group.Where(beam => beam.WidthNote is not null).ToList();
             if (widthNotes.Count > 0)
                 reasons.Add($"{widthNotes.Count} dầm có {widthNotes[0].WidthNote}: dùng theo ký hiệu. {List(widthNotes.Select(beam => beam.At))}");

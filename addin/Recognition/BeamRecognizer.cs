@@ -11,8 +11,8 @@ namespace Bimtech.RevitMcp.Recognition;
 //      first column or wall in the beam's band. The beam runs centre to centre of the two supports; it splits only at
 //      supports, not at grid crossings. Edges that stop before any support are reported as dangling (secondary beam
 //      or console, handled later).
-//   4. Marks ("D1 (220x600)") go to the nearest beam parallel to the text within tagDistanceMm, then spread to the
-//      beams continuing it in line (same width, through a shared support) until another mark.
+//   4. Marks ("D1 (220x600)") go to the nearest beam parallel to the text within tagDistanceMm of its face, then
+//      spread to the beams continuing it in line (same width, through a shared support) until another mark.
 // Secondary beams (Options.Secondary) are the next round: the beams already in the model become supports too, and a
 // beam also starts at the side face of a beam (or at a wall), so a pair of edges leaving a main beam and reaching the
 // next beam, column or wall is a secondary beam. Its ends sit on the supports' centre lines, as for main beams.
@@ -50,10 +50,11 @@ public static class BeamRecognizer
 
     // A beam from one support to the next. AlongU: runs along u at v = Cross; else along v at u = Cross.
     // Start/End: the supports' centres along the beam. Coverage: share of the span drawn by the two edges.
-    // Dashed: most of its edge segments are drawn dashed.
+    // Dashed: most of its edge segments are drawn dashed. SizeFromSameName: its mark gives no size, so the size comes
+    // from another mark of the same name in the drawing.
     public sealed record Beam(
         Support From, Support To, bool AlongU, double Cross, double Start, double End, double WidthMm, double Coverage,
-        BeamTag? Tag, bool TagInherited, bool Dashed = false)
+        BeamTag? Tag, bool TagInherited, bool Dashed = false, bool SizeFromSameName = false)
     {
         // Rests on at least one beam: a secondary beam.
         public bool IsSecondary => From.IsBeam || To.IsBeam;
@@ -98,6 +99,7 @@ public static class BeamRecognizer
         var beams = Along(alongU, boxesU, true, options, dangling).Concat(Along(alongV, boxesV, false, options, dangling)).ToList();
 
         var unused = AssignTags(beams, texts, options);
+        SizeFromSameName(beams, texts);
         Spread(beams, options);
         return new Result(beams, dangling, skewed, masked, unused);
     }
@@ -250,6 +252,8 @@ public static class BeamRecognizer
 
     // Each mark goes to the nearest beam parallel to it (any beam when the text direction is unknown) within
     // tagDistanceMm across and beside its span; a beam keeps its nearest mark. Returns the marks no beam took.
+    // Across is measured from the beam's face, not its centre line: a mark sits outside the beam, and a wide beam or
+    // a wall hatch along it pushes the mark further from the centre line.
     private static List<BeamTag> AssignTags(List<Beam> beams, IReadOnlyList<Text> texts, Options o)
     {
         var best = new Dictionary<int, (BeamTag Tag, double Distance)>();
@@ -265,10 +269,11 @@ public static class BeamRecognizer
                 {
                     var (cross, along) = beam.AlongU ? (text.V, text.U) : (text.U, text.V);
                     var (lo, hi) = (Math.Min(beam.Start, beam.End), Math.Max(beam.Start, beam.End));
+                    var distance = Math.Max(0, Math.Abs(cross - beam.Cross) - beam.WidthMm / 2);
                     var ok = (textAlongU is null || textAlongU == beam.AlongU)
                         && along >= lo - o.ProbeMm && along <= hi + o.ProbeMm
-                        && Math.Abs(cross - beam.Cross) <= o.TagDistanceMm;
-                    return (index, ok, distance: Math.Abs(cross - beam.Cross));
+                        && distance <= o.TagDistanceMm;
+                    return (index, ok, distance);
                 })
                 .Where(c => c.ok)
                 .OrderBy(c => c.distance)
@@ -293,6 +298,21 @@ public static class BeamRecognizer
         return unused;
     }
 
+    // A mark that names a beam without its size ("D2-X14") takes the size of the marks with the same name elsewhere in
+    // the drawing ("D2-X14(400x600)"), whether or not a beam took those, when they all give one size.
+    private static void SizeFromSameName(List<Beam> beams, IReadOnlyList<Text> texts)
+    {
+        var sizes = texts.Select(text => BeamTags.Parse(text.Content))
+            .Where(tag => tag is { Name: not null, BMm: not null, HMm: not null })
+            .GroupBy(tag => tag!.Name!)
+            .Select(group => (Name: group.Key, Sizes: group.Select(tag => (B: tag!.BMm!.Value, H: tag.HMm!.Value)).Distinct().ToList()))
+            .Where(entry => entry.Sizes.Count == 1)
+            .ToDictionary(entry => entry.Name, entry => entry.Sizes[0]);
+        for (var i = 0; i < beams.Count; i++)
+            if (beams[i].Tag is { Name: { } name, BMm: null, HMm: null } tag && sizes.TryGetValue(name, out var size))
+                beams[i] = beams[i] with { Tag = tag with { BMm = size.B, HMm = size.H }, SizeFromSameName = true };
+    }
+
     // A mark spreads along the line of beams it labels: to an unmarked beam in line (same direction and cross
     // position, same width within 10 mm) that shares a support, then on from there, nearest mark first.
     private static void Spread(List<Beam> beams, Options o)
@@ -309,7 +329,7 @@ public static class BeamRecognizer
                 if (Math.Abs(to.Cross - from.Cross) > o.EdgeToleranceMm * 2 || Math.Abs(to.WidthMm - from.WidthMm) > 10) continue;
                 var shared = to.From == from.From || to.From == from.To || to.To == from.From || to.To == from.To;
                 if (!shared) continue;
-                beams[j] = to with { Tag = from.Tag, TagInherited = true };
+                beams[j] = to with { Tag = from.Tag, TagInherited = true, SizeFromSameName = from.SizeFromSameName };
                 queue.Enqueue(j);
             }
         }

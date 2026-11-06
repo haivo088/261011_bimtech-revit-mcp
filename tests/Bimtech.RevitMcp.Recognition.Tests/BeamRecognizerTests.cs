@@ -147,6 +147,64 @@ public sealed class BeamRecognizerTests
     }
 
     [Fact]
+    public void A_mark_is_measured_from_the_beam_face_not_its_centre_line()
+    {
+        // As on grid A of MB_KC_Tang2: a 350 beam, its mark below a wall hatch, 1010 mm from the centre line but
+        // 835 mm from the face.
+        List<Text> texts = [new("D2-X18(350x600)", 3000, -1010, 0)];
+
+        var beam = Assert.Single(Recognize([.. BeamU(0, 150, 5850, 350)], Columns((0, 0), (6000, 0)), texts).Beams);
+
+        Assert.Equal("D2-X18", beam.Tag?.Name);
+    }
+
+    [Fact]
+    public void A_mark_further_than_tag_distance_from_the_face_is_unused()
+    {
+        List<Text> texts = [new("D2-X18(350x600)", 3000, -1200, 0)];
+
+        var result = Recognize([.. BeamU(0, 150, 5850, 350)], Columns((0, 0), (6000, 0)), texts);
+
+        Assert.Null(Assert.Single(result.Beams).Tag);
+        Assert.Single(result.UnusedTags);
+    }
+
+    [Fact]
+    public void A_mark_without_size_takes_the_size_of_the_same_name_elsewhere()
+    {
+        // As D2-X14 on MB_KC_Tang2: "D2-X14" alone on one span, "D2-X14(400x600)" on a span further along.
+        List<Text> texts =
+        [
+            new("D2-X14", 3000, 300, 0),
+            new("D2-X14(400x600)", 9000, 6300, 0),
+        ];
+
+        var result = Recognize(Frame(), Columns(Six), texts);
+
+        var a12 = result.Beams.Single(b => b.AlongU && b.Cross == 0 && b.Tag is not null && !b.TagInherited);
+        Assert.Equal(("D2-X14", 400.0, 600.0), Fields(a12.Tag));
+        Assert.True(a12.SizeFromSameName);
+        Assert.Empty(result.UnusedTags);
+    }
+
+    [Fact]
+    public void A_mark_without_size_stays_without_when_the_same_name_has_several_sizes()
+    {
+        List<Text> texts =
+        [
+            new("D2-X14", 3000, 300, 0),
+            new("D2-X14(400x600)", 3000, 6300, 0),
+            new("D2-X14(300x500)", 9000, 6300, 0),
+        ];
+
+        var result = Recognize(Frame(), Columns(Six), texts);
+
+        var a12 = result.Beams.Single(b => b.AlongU && b.Cross == 0 && !b.TagInherited);
+        Assert.Equal(("D2-X14", null, null), Fields(a12.Tag));
+        Assert.False(a12.SizeFromSameName);
+    }
+
+    [Fact]
     public void Beam_marks_are_read_in_their_usual_forms()
     {
         Assert.Equal(new BeamTag("D2-X7(220x600)", "D2-X7", 220, 600), BeamTags.Parse("D2-X7(220x600)"));

@@ -323,8 +323,9 @@ export const proposeBeams = defineTool({
     + " apart, middle within the column) and reaching the next column or wall in line, across gaps where other beams"
     + " cross. Beams run centre to centre of their supports and split only at supports, not at grid crossings. Marks"
     + " like \"D1 (220x600)\" are read from Text Notes in the view, or from the DWG file itself (dwgPath for an import;"
-    + " a link's file is found) when the view has none (the nearest beam parallel to the text, then spread"
-    + " along the beams in line); b comes from the mark, else from the lines; h only from the mark or heightsMm, else"
+    + " a link's file is found) when the view has none (the nearest beam parallel to the text, within tagDistanceMm of"
+    + " its face, then spread along the beams in line); a mark without size (\"D1\") takes the size of the marks of the"
+    + " same name elsewhere when they agree; b comes from the mark, else from the lines; h only from the mark or heightsMm, else"
     + " the group is Blocked: ask the user. The offset from the grid is set like columns (centred or face on the grid"
     + " within gridToleranceMm, else rounded to snapMm). One review item per group (mark and size); beams already in"
     + " the model are skipped. Reports dangling edges (secondary beams or consoles) and unused marks."
@@ -366,7 +367,7 @@ export const proposeBeams = defineTool({
     minCoverage: z.number().min(0.1).max(1).optional()
       .describe("Share of the span the edges must draw (default 0.6)."),
     tagDistanceMm: z.number().min(0).max(10000).optional()
-      .describe("How far from a beam its mark may be (default 1000)."),
+      .describe("How far from a beam's face its mark may be (default 1000)."),
   },
   annotations: propose,
   timeoutMs: 180000,

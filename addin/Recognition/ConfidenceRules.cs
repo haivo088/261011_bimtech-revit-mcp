@@ -15,7 +15,8 @@ public static class ConfidenceRules
     }
 
     // A main beam: both ends on supports (always: only support-to-support spans are found) +20%, its size read from a
-    // mark +10%; a mark borrowed from the beam in line, a mark whose b differs from the drawn width, broken edges and
+    // mark +10%; a mark borrowed from the beam in line (or its size from a mark of the same name elsewhere), a mark
+    // whose b differs from the drawn width, broken edges and
     // an axis on no grid −10% each.
     public static int MainBeam(bool sizeFromMark, bool inheritedMark, bool widthMismatch, bool broken, bool onGrid) =>
         Evidence.BasePercent + 20
