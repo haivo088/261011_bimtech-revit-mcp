@@ -90,11 +90,44 @@ Kết quả này quyết định mốc cao độ cho bản nâng cấp U2 (nhậ
 Thử trên model **chưa có trục và không có CAD**.
 
 - Kế hoạch có 17 mục trục (12 đứng, 5 ngang, gồm `A'`) và `X1`; mọi mục tự duyệt (90%), không mục nào Blocked.
-- **Đầu có bubble (cần xác nhận lần đầu):** trục số có bubble ở **dưới**, trục chữ ở **trái**, đúng như bản vẽ. Nếu bubble hiện ở đầu ngược lại thì đổi `GridDataLayout.RevitHeadAtEnd` thành `false` và báo lại.
+- **Đầu có bubble:** trục số có bubble ở **dưới**, trục chữ (kể cả `A'`) ở **trái**, đúng như bản vẽ. Revit vẽ bubble ở điểm cuối của đường (`GridDataLayout.RevitHeadAtEnd`, đã xác nhận).
 - Sau commit: giao A-1 trùng Project Base Point; nhịp đo bằng Dimension đúng `6700, 6400, … 9500, 5800, 6200 …` và `1800, 6400, 7200, 6400`; trục đã ghim.
-- Comments của trục 1 là `grid/1.0 · MB_KC_Tang2.dxf #b5ead163 · CAD BAB/2A6`; kết quả commit có `commented: true`.
+- Kết quả commit có `commented: false`: Grid không có tham số Comments. Handle CAD (`BAB/2A6` cho trục 1) nằm trong file kế hoạch.
 - Gọi lại → mọi mục Blocked vì trùng tên.
 - File sai (đổi `unit` thành `inch`, hoặc đuôi `.dwg`) → lỗi `dataPath` rõ ràng, không mở cửa sổ.
+
+### 3c. Cột từ dữ liệu: `propose_columns_from_data`
+
+> Dùng propose_columns_from_data với dataPath là `D:\001. BIMTECH PROJECT\261107_InnoCad-mcp\3_output\MB_KC_Tang2_column.json`.
+
+Thử **sau 3b** (đã có 17 trục, A-1 trùng Project Base Point), model chưa có cột.
+
+- Kế hoạch có 4 mục: `K-C1000x1000` (18), `K-C350x1300` (4), `K-C350x1400` (28), `K-C500x1700` (1), từ Level 2 lên Level 3. Không có cảnh báo lưới lệch gốc.
+- Model chưa có Type đúng b×h thì mục ghi "Type … trong BTC-CotCN_BeTong" và còn 45%, phải xem. Chưa nạp family thì mục bị chặn: chạy `load_default_family kind=column` trước.
+- Sau commit, chọn vài cột so với CSV `_column.csv`: cột A-2 tâm (6750, 175) tính từ A-1, cạnh dài 1400 theo X; cột 350×1400 xoay 270° có cạnh dài theo Y. Mép cột trùng trục đúng như ghi chú "mép trùng trục A".
+- Gọi lại thì mọi cột được báo đã có (`skippedExisting = 51`), không tạo kế hoạch.
+- Dời Project Base Point hoặc xoá trục A rồi propose: mọi mục còn 40% với lý do "Lưới trục trong model không khớp gốc dữ liệu".
+
+### 3d. Vách từ dữ liệu: `propose_walls_from_data`
+
+> Dùng propose_walls_from_data với dataPath là `D:\001. BIMTECH PROJECT\261107_InnoCad-mcp\3_output\MB_KC_Tang2_wall.json`.
+
+Thử sau 3b và 3c, khi model đã có trục và cột.
+
+- Kế hoạch có 5 mục: `W-V220` (2), `W-V260` (1), `W-V300` (21), `W-V300-xem` (mảnh 300×300), `W-V331-xem` (hình 331×750). Level 2 → Level 3. Không có cảnh báo lưới lệch gốc.
+- Sau commit: hai lõi quanh trục 6–7 kín đúng hình hatch trên bản vẽ; các góc L và chữ T nối liền, không chồng hay hở. Đo một vách: tim tại x = 35550 (mép trùng trục 6).
+- Gọi lại → phần đã có vách được bỏ qua lúc ghi (`skippedExisting`).
+- **Cửa (wall/1.1)**: xoá vách cũ trước khi thử. Vách x = 38050 là một vách liền −1200 → 8800 với 4 lỗ cửa 1100 × 2400 (4 ô cửa thang máy); tổng 9 cửa (`openings.cut = 9`). Mặt đứng: lỗ từ sàn Level 2 lên 2400, phía trên là vách.
+
+### 3f. Dầm từ dữ liệu: `propose_beams_from_data`
+
+> Dùng propose_beams_from_data với dataPath là `D:\001. BIMTECH PROJECT\261107_InnoCad-mcp\3_output\MB_KC_Tang2_beam.json`.
+
+Thử sau 3b–3e, khi model đã có trục, cột và vách.
+
+- Kế hoạch có 14 mục, 123 dầm, Level 2, mặt dầm bằng level: `B-220x300`, `B-220x300-xem` (D2-DT1 đo 450), `B-220x400` (5 dầm giếng thang D2-X13/X13A), …, `B-350x600` (32), `B-400x600` (50), `B-220x600-xem` (D2-Y4 đo 200). `unsized`: D2-Y8, D2-Y15 ×2.
+- Sau commit: mỗi dầm có Mark = tên trên bản vẽ; đầu dầm tại tâm cột / tim vách / tim dầm đỡ, Revit tự cắt tại cột. Đo D2-X1 dọc trục D: rộng 350, cao 600, mặt trên tại Level 2.
+- Gọi lại → dầm trùng trục được bỏ qua lúc ghi (`skippedExisting`).
 
 ## 4. Cọc và đài: `scan_cad_piles` / `propose_piles`
 
@@ -237,6 +270,11 @@ Lần thử 16–17/10/2026 trên `261016.rvt` (Revit 2025), DWG `MB_KC_*.dwg` c
 | 1. Kết nối | Đạt | Revit 2025, bridge 0.5.0, `devTools: loaded`. Sau khi cài lại, Claude vẫn giữ mô tả tool cũ (thiếu `dwgPath`) nhưng server mới vẫn nhận tham số. |
 | 2. Tầng | Đạt (sau sửa) | 19 tầng (Móng −3600, Tầng 1–18 bước 3600) + CAD từng tầng, ~52 s, không timeout. `Level 1` → `Tầng 1` (đổi tên, không trùng). Lỗi đã sửa: `DaiMong`/`TangKyThuat`/`TangTum` viết liền không nhận; file dải tầng `Tang4-5` chỉ ra 1 tầng; `Level 2` thừa không có mục xoá `D1` (viewport ẩn và work plane grid của view bị coi là đang dùng). Mới: mục `X1` kéo trục theo dải level và level theo trục biên. Chưa thử: Ctrl+Z, ký tự cấm, `viewTemplate`, `cadUnit`, mốc cao độ (C). |
 | 3. Trục | Đạt (sau sửa) | 17 trục, layer `kata_grid` nét `IMPORT-CENTER`, không phải làm tròn nhịp. Lỗi đã sửa: tên trục tự đánh vì chữ đầu trục nằm trong DWG → `propose_grids` đọc file (`dwgPath`); vòng tròn đầu trục là Ellipse (trước bị bỏ); chữ trong block lồng `truc/toado` lấy sai điểm căn; vòng tròn trục ngang cách đầu trục 3,5 m; đường 1800 không tên thành trục A làm lệch tên → giờ là `A'` (đường phụ, Bỏ sẵn), 1-A là trục có tên đầu tiên. File khai Inches nhưng vẽ mm: căn vị trí tự xử lý (tỉ lệ 1/25,4). Mỗi CAD dời theo trục của chính nó, CAD Móng khớp. |
+| 3b. Trục từ dữ liệu | Đạt (2026-11-07) | `TEST.rvt`, model chưa có trục. 17/17 trục khớp dữ liệu đến 0,1 mm, A-1 trùng Project Base Point, nhịp `6700 … 6400` / `1800, 6400, 7200, 6400`, đã ghim. Bubble đúng phía (giả định `RevitHeadAtEnd` đúng). Lỗi đã sửa: `A'` (không bubble trong bản vẽ) hiện bubble bên phải → giờ theo phía của A–D. Grid không có Comments → truy vết nằm trong file kế hoạch. |
+| 3c. Cột từ dữ liệu | Đạt (2026-11-07) | `TEST.rvt`: 51/51 cột khớp dữ liệu, hình chiếu lệch 0 mm, 4 Type đúng b/h (3 tạo mới trong BTC-CotCN_BeTong), hướng cạnh dài đúng (C350x1400 ở A/D theo X, xoay 90° theo Y), Level 2 → Level 3. Kiểm tra gốc đã chặn đúng khi model mất trục (file chưa lưu). Lỗi đã sửa: `blockedGroups` trả lý do đầu tiên (vấn đề chặn). |
+| 3d. Vách từ dữ liệu | Đạt (2026-11-07) | `TEST.rvt` đã có trục và cột: ghi 23 đoạn (21 V300, 2 V220), đúng Type có sẵn, tim vách (location line 0), Structural, Level 2 → Level 3; L/T nối được ở mọi đầu dữ liệu ghi L/T. Người dùng bỏ mảnh 300×300, hình 331×750 và mảnh 260. Lỗi phát hiện ở bộ trích xuất và đã sửa: (1) dải V220 chỉ nối trong cùng đường bao → nay nối cả vách đường bao khác (Revit tự nối đúng như vậy); (2) mảnh 300×260 là phần nối dài vách đứng, không phải V260 (người dùng kéo tay vách xuống 7350 để phủ). Sau sửa, dữ liệu trùng 23/23 vách trong Revit. |
+| 3e. Cửa trong vách (wall/1.1) | Đạt (2026-11-07) | Sau khi xoá vách cũ: 15 vách trùng tim dữ liệu 15/15; 9/9 lỗ cửa khoét đúng vách, đúng vị trí và 0 → 2400 mm từ Level 2 (`openings.cut = 9`). 4 cửa thang máy trên vách x = 38050 nằm trên một vách liền. |
+| 3f. Dầm từ dữ liệu | Chưa thử | |
 | 4. Cọc, đài | Một phần | 128 cọc (D800×54, D1000×74), 57 đài + 57 lót, đỉnh cọc = đáy đài + 100, join đúng. Lỗi: chiều dài cọc không đặt được (`Length` của `BTC-CocTron_BeTong` chỉ đọc, cọc 6,1 m thay vì 30 m); 13 đường bao không cọc trên `DCE_BaoBeTong` thành đài (6 dựng, 7 lồng trong đài khác, có "floors overlap"); chiều dày đài không đọc được (ký hiệu trong DWG). Số hiệu mục `C…` không theo thứ tự quét. Cần: đài = đường bao chứa cọc, không phụ thuộc layer. |
 | 5. Cột | Đạt, cần nâng cấp | 51 cột (350x1300×4, 350x1400×28, 500x1700×1, 1000x1000×18), cách trục bội 5 mm, Column Location Mark khớp, vị trí đúng (người dùng kiểm tra). `taggedColumns: 0` (ký hiệu trong DWG). Vẫn phải chọn layer — trái hướng "nhận như kỹ sư": hatch `01 Hatch colum` SOLID ×51 đúng bằng số cột, nên nhận cột từ hatch là khả thi. |
 | 6. Vách | Một phần | Đọc DWG khớp 95,1%, `regionFrom: grids`, mẫu cột SOLID học từ cột đã dựng, quét lại `cached: true`, propose lại → `alreadyModeledGroups`. Dựng 17 vách (w300×13, w330×4), 6 vách sai đã xoá: chỉ có đài đỡ 0–67% chiều dài (dải mép trục A/D là dầm), 11 vách lõi nằm 100% trên đài. Lỗi: nhóm w350 trùng cột dẹt đã dựng; type khớp theo bề dày (`CW 102-85-100p`, `Exterior - Brick on Mtl. Stud`) — phải tạo `BTC-VachKC_300/330` bằng send_code. Cần luật: vách phải có đỡ liên tục bên dưới; mẫu hatch BETONG/AR-CONC là bằng chứng bê tông. |

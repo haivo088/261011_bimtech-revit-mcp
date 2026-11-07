@@ -39,7 +39,7 @@ public sealed class GridDataTests
     public void Data_this_version_cannot_place_is_refused(string replacement, string field)
     {
         var json = Minimal().Replace(replacement.Split(':')[0] + ":" + Original(replacement), replacement);
-        var error = Assert.Throws<GridDataException>(() => GridDataReader.Parse(json));
+        var error = Assert.Throws<DataFileException>(() => GridDataReader.Parse(json));
         Assert.Contains(field, error.Message);
     }
 
@@ -47,14 +47,14 @@ public sealed class GridDataTests
     public void A_missing_column_is_named_in_the_error()
     {
         var json = Minimal().Replace("\"pos\",", "");
-        var error = Assert.Throws<GridDataException>(() => GridDataReader.Parse(json));
+        var error = Assert.Throws<DataFileException>(() => GridDataReader.Parse(json));
         Assert.Contains("'pos'", error.Message);
     }
 
     [Fact]
     public void Text_that_is_not_json_is_refused()
     {
-        Assert.Throws<GridDataException>(() => GridDataReader.Parse("not json"));
+        Assert.Throws<DataFileException>(() => GridDataReader.Parse("not json"));
     }
 
     // ---- layout ----
@@ -81,13 +81,16 @@ public sealed class GridDataTests
     }
 
     [Fact]
-    public void A_grid_without_bubble_keeps_the_data_direction()
+    public void A_grid_drawn_without_bubble_gets_its_head_on_the_same_side_as_its_neighbours()
     {
+        // A' has no bubble in the drawing; its data start (left, like A..D) is where Revit must put the head.
         var grid = new DataGrid("A'", "Y", "aux", -1800, -1130.9, 79683.9, "fix", "BAB/2A2", null);
+        var neighbour = new DataGrid("A", "Y", "main", 0, -1130.9, 79683.9, "start", "BAB/2A4", null);
 
         var line = GridDataLayout.ToModelLine(grid, 0, 0);
 
-        Assert.Equal(new GridDataLayout.ModelLine(-1130.9, -1800, 79683.9, -1800), line);
+        Assert.Equal(new GridDataLayout.ModelLine(79683.9, -1800, -1130.9, -1800), line);
+        Assert.Equal(GridDataLayout.ToModelLine(neighbour, 0, 0).X1, line.X1);
     }
 
     // ---- review items ----

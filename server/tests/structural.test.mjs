@@ -125,7 +125,18 @@ test("level and grid proposals forward their input unchanged", async (t) => {
   assert.equal((await client.callTool({ name: "propose_grids", arguments: gridArgs })).isError, false);
   const dataArgs = { dataPath: "D:/DuAn/3_output/MB_KC_Tang2_grid.json", pin: false, gridMarginMm: 500 };
   assert.equal((await client.callTool({ name: "propose_grids_from_data", arguments: dataArgs })).isError, false);
-  assert.deepEqual(requests.map((request) => request.method), ["propose_levels", "propose_grids", "propose_grids_from_data"]);
+  const columnArgs = { dataPath: "D:/DuAn/3_output/MB_KC_Tang2_column.json", baseLevelId: "694", types: { C350x1400: "new" } };
+  assert.equal((await client.callTool({ name: "propose_columns_from_data", arguments: columnArgs })).isError, false);
+  const wallArgs = { dataPath: "D:/DuAn/3_output/MB_KC_Tang2_wall.json", topLevelId: "354083", types: { V300: "new" } };
+  assert.equal((await client.callTool({ name: "propose_walls_from_data", arguments: wallArgs })).isError, false);
+  const beamArgs = { dataPath: "D:/DuAn/3_output/MB_KC_Tang2_beam.json", levelId: "694", types: { "350x600": "12345" } };
+  assert.equal((await client.callTool({ name: "propose_beams_from_data", arguments: beamArgs })).isError, false);
+  assert.deepEqual(requests.map((request) => request.method),
+    ["propose_levels", "propose_grids", "propose_grids_from_data", "propose_columns_from_data", "propose_walls_from_data",
+      "propose_beams_from_data"]);
+  assert.deepEqual(requests[5].params, beamArgs);
+  assert.deepEqual(requests[3].params, columnArgs);
+  assert.deepEqual(requests[4].params, wallArgs);
   assert.deepEqual(requests[0].params, levelArgs);
   assert.deepEqual(requests[1].params, gridArgs);
   assert.deepEqual(requests[2].params, dataArgs);
@@ -153,6 +164,15 @@ test("level and grid proposals reject malformed input before contacting Revit", 
     { name: "propose_grids_from_data", arguments: { dataPath: "" } },
     { name: "propose_grids_from_data", arguments: { dataPath: "D:/DuAn/S-201.dwg" } },
     { name: "propose_grids_from_data", arguments: { dataPath: "D:/DuAn/grid.json", gridMarginMm: -1 } },
+    { name: "propose_columns_from_data", arguments: {} },
+    { name: "propose_columns_from_data", arguments: { dataPath: "D:/DuAn/column.dwg" } },
+    { name: "propose_columns_from_data", arguments: { dataPath: "D:/DuAn/column.json", baseLevelId: "L2" } },
+    { name: "propose_walls_from_data", arguments: {} },
+    { name: "propose_walls_from_data", arguments: { dataPath: "D:/DuAn/wall.csv" } },
+    { name: "propose_walls_from_data", arguments: { dataPath: "D:/DuAn/wall.json", types: { V300: "abc" } } },
+    { name: "propose_beams_from_data", arguments: {} },
+    { name: "propose_beams_from_data", arguments: { dataPath: "D:/DuAn/beam.csv" } },
+    { name: "propose_beams_from_data", arguments: { dataPath: "D:/DuAn/beam.json", types: { "350x600": "new" } } },
   ];
   for (const call of invalidCalls) {
     const result = await client.callTool(call);

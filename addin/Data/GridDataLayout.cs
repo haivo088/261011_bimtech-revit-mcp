@@ -5,15 +5,15 @@ public static class GridDataLayout
 {
     public sealed record ModelLine(double X0, double Y0, double X1, double Y1);
 
-    // Revit draws a new grid's head (bubble) at the END point of its line. Lines are therefore sent from the plain
-    // end to the bubble end. To be confirmed in Revit (docs/08-revit-test-plan.md); flip this if the head shows at
-    // the start point.
+    // Revit draws a new grid's head (bubble) at the END point of its line (confirmed in Revit 2025 on MB_KC_Tang2,
+    // 2026-11-07). Lines are therefore sent from the plain end to the bubble end.
     public const bool RevitHeadAtEnd = true;
 
     public static ModelLine ToModelLine(DataGrid grid, double baseXmm, double baseYmm)
     {
-        // Data convention: StartMm is the bubble end when Bubble == "start"; otherwise keep the data's direction.
-        var (from, to) = grid.Bubble == "start" && RevitHeadAtEnd
+        // Data convention: StartMm is ALWAYS the bubble side. A grid drawn without a bubble (e.g. A') has its start on
+        // the same side as the other grids of its axis, so Revit's head lands on that side too, not on the far end.
+        var (from, to) = RevitHeadAtEnd
             ? (grid.EndMm, grid.StartMm)
             : (grid.StartMm, grid.EndMm);
         return grid.IsVertical

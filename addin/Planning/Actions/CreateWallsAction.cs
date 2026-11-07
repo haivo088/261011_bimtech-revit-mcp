@@ -8,7 +8,8 @@ namespace Bimtech.RevitMcp.Planning.Actions;
 // Writes the items of propose_walls: one wall group per item, placed between two levels.
 //   { "thicknessMm": 200, "tagName": "V1", "typeId": "123" | null, "templateTypeId": "456" | null,
 //     "companyTypeOnly": false, "baseLevelId": "..", "topLevelId": "..", "baseOffsetMm": 0, "topOffsetMm": 0,
-//     "tagParameterName": null, "lines": [[x0, y0, x1, y1], ...] }   (mm, model coordinates)
+//     "tagParameterName": null, "lines": [[x0, y0, x1, y1], ...],
+//     "openings": [[x0, y0, x1, y1, sillMm, headMm], ...] }   (mm, model coordinates; openings optional, see WallOpenings)
 // Without typeId, a type matching by Recognition.WallTypes is reused (also one an earlier item just created; with
 // companyTypeOnly only a BTC-VachKC_ type), else "BTC-VachKC_<b>" is duplicated from templateTypeId. Parts of a centerline already covered by a wall are skipped (WallPlacer).
 public sealed class CreateWallsAction : IPlanAction
@@ -41,6 +42,9 @@ public sealed class CreateWallsAction : IPlanAction
             ActionParams.OptionalText(parameters, "tagParameterName"));
         if (summary.Created == 0 && summary.Failed > 0)
             throw new PlanActionException("No wall could be created: " + string.Join(" | ", summary.Errors));
+        var openings = WallOpenings.Read(parameters);
+        var (cut, openingErrors) = WallOpenings.Cut(document, summary.CreatedIds, openings,
+            baseLevel.Elevation + ActionParams.Feet(ActionParams.Number(parameters, "baseOffsetMm")));
 
         return new
         {
@@ -48,6 +52,7 @@ public sealed class CreateWallsAction : IPlanAction
             skippedExisting = summary.Skipped,
             failed = summary.Failed,
             errors = summary.Errors,
+            openings = new { asked = openings.Count, cut, errors = openingErrors },
             type = new { id = RevitJson.Id(type.Id), name = type.Name, created = typeCreated },
             wallIds = summary.CreatedIds.Take(MaxIdsReturned).Select(RevitJson.Id).ToList(),
         };

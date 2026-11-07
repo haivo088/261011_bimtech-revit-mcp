@@ -18,15 +18,13 @@ public sealed class ProposeGridsFromDataCommand(PlanService plans, ReviewWindowH
     public string Method => "propose_grids_from_data";
     public CommandAccess Access => CommandAccess.Read;
 
-    private const long MaxFileBytes = 5_000_000;
-
     public object? Execute(CommandContext context)
     {
         var p = context.Params;
         var document = context.RequireDocument();
         var path = p.RequireString("dataPath", 1024);
         var pin = p.GetBool("pin", true);
-        var data = Read(path);
+        var data = DataFileInput.Read(path, GridDataReader.Parse);
 
         var basePoint = BasePoint.GetProjectBasePoint(document).Position;
         var (baseX, baseY) = (UnitConvert.Length(basePoint.X), UnitConvert.Length(basePoint.Y));
@@ -74,23 +72,5 @@ public sealed class ProposeGridsFromDataCommand(PlanService plans, ReviewWindowH
                 + ") sits on the Project Base Point; no CAD is needed. Tell the user about dataIssues, ask them to review "
                 + "in Revit, then call wait_for_plan or get_plan_status and commit_plan.",
         };
-    }
-
-    private static GridDataSet Read(string path)
-    {
-        if (!path.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
-            throw RpcException.InvalidParams("dataPath", "expected a .json file (grid/1.0).");
-        if (!File.Exists(path))
-            throw RpcException.InvalidParams("dataPath", $"file not found: {path}");
-        if (new FileInfo(path).Length > MaxFileBytes)
-            throw RpcException.InvalidParams("dataPath", $"file is larger than {MaxFileBytes} bytes.");
-        try
-        {
-            return GridDataReader.Parse(File.ReadAllText(path));
-        }
-        catch (GridDataException exception)
-        {
-            throw RpcException.InvalidParams("dataPath", exception.Message);
-        }
     }
 }

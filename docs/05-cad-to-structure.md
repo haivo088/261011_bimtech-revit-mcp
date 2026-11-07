@@ -67,12 +67,52 @@ Hướng thay thế cho việc import CAD vào Revit: CAD được đọc **bên
 1. Đọc và kiểm tra file (`addin/Data/GridDataReader`): sai `schema` (khác `grid/1.x`), đơn vị khác mm, hệ trục xoay → từ chối, không đoán.
 2. Mỗi trục một mục `create_grid` (`addin/Data/GridDataPlanner`) — **cùng params với `propose_grids`**, nên cửa sổ duyệt, nét cam xem trước và `commit_plan` dùng chung. Gốc dữ liệu (`meta.origin`, vd A-1) trùng Project Base Point.
 3. Trục chưa có tên, trùng tên trong dữ liệu, hoặc tên đã có trong model → **Blocked**. Dữ liệu qua tự kiểm tra (`stats.self_check`) → độ tin cậy 90% (tự duyệt); không qua/không có → 40% (phải xem).
-4. Commit ghi vào **Comments** của trục: `grid/1.0 · <file> #<hash> · CAD <handle>` để tra ngược về bản vẽ và biết dữ liệu đã cũ.
+4. Truy vết: file kế hoạch giữ handle CAD, file nguồn và hash của từng trục cùng `gridId` đã tạo. Grid của Revit **không có** Comments/Mark (đã kiểm chứng), nên `CreateGridAction` trả `commented: false`; muốn lưu trên chính phần tử thì cần Extensible Storage (chưa làm).
 5. Mục cuối `X1` căn phạm vi trục/level như `propose_grids`.
 
 Không có CAD trong model nên không có mục dời CAD. Muốn có nền để nhìn, link DWG rồi dời theo `meta.origin_cad` (dời chính xác, không cần khớp nét) — chưa tự động.
 
 Phần đọc và lập mục không dùng Revit API, có kiểm thử trong `tests/Bimtech.RevitMcp.Planning.Tests/GridDataTests.cs` với file thật `Data/MB_KC_Tang2_grid.json` (17 trục).
+
+## Cột từ dữ liệu sạch (không cần CAD import)
+
+`propose_columns_from_data(dataPath)` đọc `<tên>_column.json` (chuẩn `column/1.0`) do bộ trích xuất bên ngoài sinh ra. Toạ độ cột tính **từ gốc lưới** của `grid/1.0`, nên phải dựng trục bằng `propose_grids_from_data` trước.
+
+1. Đọc và kiểm tra (`addin/Data/ColumnDataReader`): sai `schema`, đơn vị khác mm, góc khác 0/90, kích thước ≤ 0 thì từ chối.
+2. **Kiểm tra gốc:** hai trục của `meta.origin` (vd `A` và `1`) phải đi qua Project Base Point (sai số 1 mm). Nếu lệch hoặc thiếu trục, mọi mục còn 40% (phải xem) kèm lý do. Nếu không kiểm tra, cột sẽ lệch cả loạt.
+3. **Level:** `baseLevelId` / `topLevelId`, hoặc theo tên `meta.level.base`; đỉnh `next` = level kế trên theo cao độ.
+4. **Mỗi loại một mục** `create_columns` (`addin/Data/ColumnDataPlanner`), **cùng params với `propose_columns`**: `angleDeg = 0`, `lengthMm` theo X, `widthMm` theo Y; `ColumnPlacer` tự xoay Type b×h cho khớp.
+5. **Loại cột:** `visible` dựng; `planted` (cột cấy) là mục riêng `K-<type>-cay`, luôn phải xem; `hidden` không dựng, chỉ liệt kê; không rõ loại thì phải xem.
+6. **Type:** `types` (ID hoặc `"new"`) → Type có sẵn đúng b/h → Type b×h mới trong `templateFamilyId` hoặc `BTC-CotCN_BeTong` → Blocked. Mục sắp tạo Type mới có độ tin cậy 45% (phải xem); dùng Type có sẵn và dữ liệu đã kiểm tra thì 90% (tự duyệt).
+7. Cột đã có trong model tại đó (mọi family, cùng khoảng cao độ) bỏ qua lúc propose và lúc commit.
+
+Kết quả trả về kèm `dataIssues`, `emptyCrossings`, `hidden`, `wallLikeLeftForWalls` (đường bao giống vách để bước vách). Phần đọc và lập mục không dùng Revit API, có kiểm thử trong `tests/Bimtech.RevitMcp.Planning.Tests/ColumnDataTests.cs` với file thật `Data/MB_KC_Tang2_column.json` (51 cột).
+
+## Vách từ dữ liệu sạch (không cần CAD import)
+
+`propose_walls_from_data(dataPath)` đọc `<tên>_wall.json` (chuẩn `wall/1.0`). Bộ trích xuất đọc bản vẽ **trực tiếp qua InnoCAD**, tách đường bao bê tông thành các đoạn vách thẳng (đường tim + bề dày) và kéo đầu vách tới tim vách giao.
+
+1. Đọc và kiểm tra (`addin/Data/WallDataReader`): sai `schema`, đơn vị khác mm, bề dày ≤ 0, đoạn dài 0 thì từ chối. Đọc thêm bảng `outlines` để biết **đường bao nào tách chưa khớp diện tích**; chỉ đoạn thuộc đường bao đó phải xem, không hạ cả file.
+2. **Kiểm tra gốc** và **level**: dùng chung `Commands/Structural/DataPlacement` với cột.
+3. **Mỗi loại bề dày một mục** `create_walls` (`addin/Data/WallDataPlanner`), **cùng params với `propose_walls`**: `lines [[x0, y0, x1, y1]]` theo toạ độ model, `thicknessMm`, level. Đoạn có cờ (`sliver`, `odd_thickness`, `overlaps_column`) hoặc thuộc đường bao chưa khớp vào mục `W-<type>-xem` (40%).
+4. **Type:** `types` (ID hoặc `"new"`) → Basic Wall đúng bề dày (`Recognition.WallTypes`) → `BTC-VachKC_<b>` tạo mới lúc ghi từ `templateTypeId` hoặc Type bê tông gần nhất → Blocked. Mục sẽ tạo Type mới có độ tin cậy 45%, Type có sẵn 90%.
+5. Lúc ghi, `WallPlacer` bỏ phần tim vách đã có vách.
+6. **Cửa (wall/1.1):** khe trên bản vẽ là cửa thang máy/thang bộ (vách bị cắt tại cao độ cửa nên không hatch) đã được bộ trích xuất lấp thành **vách liền** và ghi vào bảng `openings`. Mục duyệt mang `openings [[x0, y0, x1, y1, sill, head]]`; sau khi dựng vách, `WallOpenings` khoét **lỗ chữ nhật** (`NewOpening`) trên vách chứa nó, từ chân vách + sill tới head. Phần vách trên cửa (lanh tô) có sẵn. Cửa chưa có chiều cao thì vách vẫn liền nhưng không khoét, mục ghi lý do.
+
+Kiểm thử: `tests/Bimtech.RevitMcp.Planning.Tests/WallDataTests.cs` với file thật `Data/MB_KC_Tang2_wall.json` (26 đoạn).
+
+## Dầm từ dữ liệu sạch (không cần CAD import)
+
+`propose_beams_from_data(dataPath)` đọc `<tên>_beam.json` (chuẩn `beam/1.0`). Bộ trích xuất đọc mặt bằng dầm **trực tiếp qua InnoCAD**: ghép cặp cạnh dầm (nét khuất, mép sàn liền nét, hai nét liền qua giếng thang), nối qua chỗ giao, cắt tại tâm cột, gắn tên dầm, kéo đầu dầm tới tâm cột / tim vách / tim dầm đỡ (gối lấy từ `_column.json`, `_wall.json`).
+
+1. Đọc và kiểm tra (`addin/Data/BeamDataReader`): sai `schema`, đơn vị khác mm, b/h ≤ 0, dầm dài 0 thì từ chối. `b`/`h` được phép null (bản vẽ không ghi kích thước).
+2. **Kiểm tra gốc** như cột; **level** = `levelId` hoặc `meta.level.base` theo tên (`DataPlacement.ResolveBaseLevel`); mặt dầm = level + `meta.top_offset_mm`.
+3. **Mỗi loại b×h một mục** `create_beams` (`addin/Data/BeamDataPlanner`), **cùng params với `propose_beams`**; mỗi dầm mang `mark` riêng = tên dầm trên bản vẽ (`CreateBeamsAction` ghi vào Mark, ưu tiên mark của từng dầm). Dầm có cờ (`width_mismatch`, `multi_label`, `inner_edge`) vào mục `B-<type>-xem` (40%).
+4. **Không dựng:** dầm không có kích thước (`unsized`, trả về để hỏi người dùng) và dải không phải dầm (`small` = lỗ sàn, `beside_beam` = bậc sàn).
+5. **Type:** `types` → Type dầm đúng b/h → Type b×h tạo trong `templateFamilyId` hoặc `BTC-DamCN_BeTong` → Blocked. Type có sẵn 90%, tạo mới 45%.
+6. Lúc ghi, dầm trùng trục với dầm đã có bị bỏ qua.
+
+Kiểm thử: `tests/Bimtech.RevitMcp.Planning.Tests/BeamDataTests.cs` với file thật `Data/MB_KC_Tang2_beam.json` (141 nhịp, 123 dựng được).
 
 ## Vách và sàn (đi qua cửa sổ duyệt)
 

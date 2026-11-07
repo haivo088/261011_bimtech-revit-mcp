@@ -140,7 +140,7 @@ export const proposeGridsFromData = defineTool({
     + " without changing the model and without any CAD import: names, positions, bubble ends and CAD handles come from"
     + " the file, which was already checked (dimensions, name sequence, unit). The data's origin (e.g. A-1) sits on the"
     + " Project Base Point. One review item per grid, same as propose_grids; names already in the model, duplicate or"
-    + " missing names are Blocked. Each grid's Comments get the source file, its hash and the CAD handle. Files with"
+    + " missing names are Blocked. The plan file keeps each grid's CAD handle and source hash (Revit grids have no Comments). Files with"
     + " another schema version, a unit other than mm or a rotated grid system are refused. The last item X1 fits"
     + " datums like propose_grids. Tell the user the file's dataIssues. Opens the review window in Revit and returns a"
     + " planId at once; then wait_for_plan or get_plan_status and commit_plan.",
@@ -155,6 +155,96 @@ export const proposeGridsFromData = defineTool({
   },
   annotations: propose,
   timeoutMs: 60000,
+});
+
+export const proposeColumnsFromData = defineTool({
+  name: "propose_columns_from_data",
+  method: "propose_columns_from_data",
+  title: "Propose columns from clean data",
+  description:
+    "Plan structural columns from a clean column data file (schema column/1.0, <name>_column.json made by the CAD"
+    + " extraction pipeline), without changing the model and without any CAD import or scan. Positions are from the"
+    + " data's grid origin (e.g. A-1), which must sit on the Project Base Point as propose_grids_from_data built it: the"
+    + " command checks that the model's origin grids are there and flags every group if not. One review item per column"
+    + " type (b x h, e.g. C350x1400); planted columns get their own item, hidden columns are not built, columns already in"
+    + " the model are skipped. Levels: baseLevelId / topLevelId, else the file's meta.level (top \"next\" = next level up)."
+    + " Type per type name: 'types' entry, else an existing type with matching b/h, else a b x h type in templateFamilyId or"
+    + " the company family BTC-CotCN_BeTong (load_default_family kind=column), else Blocked. Tell the user the file's"
+    + " dataIssues and empty grid crossings. Opens the review window in Revit and returns a planId at once; then"
+    + " wait_for_plan or get_plan_status and commit_plan.",
+  inputSchema: {
+    dataPath: z.string().min(1).max(1024).regex(/\.json$/i)
+      .describe("Full path of the column/1.0 file, e.g. D:\\Project\\3_output\\MB_KC_Tang2_column.json."),
+    baseLevelId: elementId.optional().describe("Bottom level of the columns; default: the file's meta.level.base by name."),
+    topLevelId: elementId.optional().describe("Top level; default: the file's meta.level.top (\"next\" = next level up)."),
+    types: typeMapOrNew("C350x1400", "a b×h type in templateFamilyId"),
+    templateFamilyId: elementId.optional()
+      .describe("Column family in which to create b×h types for type names with no matching type or \"new\"."),
+  },
+  annotations: propose,
+  timeoutMs: 120000,
+});
+
+export const proposeWallsFromData = defineTool({
+  name: "propose_walls_from_data",
+  method: "propose_walls_from_data",
+  title: "Propose walls from clean data",
+  description:
+    "Plan structural walls from a clean wall data file (schema wall/1.0, <name>_wall.json made by the extraction"
+    + " pipeline from the drawing read through InnoCAD), without changing the model and without any CAD import or scan."
+    + " Each wall is a centreline (ends already moved to the centrelines of the walls it joins, so Revit joins L and T"
+    + " corners) with a thickness. Positions are from the data's grid origin (e.g. A-1), which must sit on the Project"
+    + " Base Point as propose_grids_from_data built it: the command checks the model's origin grids and flags every group"
+    + " if not. One review item per wall type (V300, V220...); walls flagged by the extraction (slivers, odd thickness,"
+    + " overlap with a column, outline not split exactly) go to their own item (-xem) for the reviewer. Door gaps the"
+    + " extraction bridged (wall/1.1 openings: lift and stair doors, not hatched in the drawing) are one wall here and the"
+    + " door opening is cut at commit, from the wall base up to its head height. Levels: baseLevelId"
+    + " / topLevelId, else the file's meta.level (top \"next\" = next level up). Type per type name: 'types' entry (ID or"
+    + " \"new\" for BTC-VachKC_<b>), else a Basic Wall type of exactly that thickness, else BTC-VachKC_<b> duplicated from"
+    + " templateTypeId or the nearest concrete type, else Blocked. Parts of a centreline already covered by a wall are"
+    + " skipped at commit. Tell the user the file's dataIssues. Opens the review window in Revit and returns a planId at"
+    + " once; then wait_for_plan or get_plan_status and commit_plan.",
+  inputSchema: {
+    dataPath: z.string().min(1).max(1024).regex(/\.json$/i)
+      .describe("Full path of the wall/1.0 file, e.g. D:\\Project\\3_output\\MB_KC_Tang2_wall.json."),
+    baseLevelId: elementId.optional().describe("Bottom level of the walls; default: the file's meta.level.base by name."),
+    topLevelId: elementId.optional().describe("Top level; default: the file's meta.level.top (\"next\" = next level up)."),
+    types: typeMapOrNew("V300", "the company type BTC-VachKC_<b>"),
+    templateTypeId: elementId.optional()
+      .describe("Basic Wall type to duplicate for thicknesses with no matching type; default: the nearest concrete type."),
+  },
+  annotations: propose,
+  timeoutMs: 120000,
+});
+
+export const proposeBeamsFromData = defineTool({
+  name: "propose_beams_from_data",
+  method: "propose_beams_from_data",
+  title: "Propose beams from clean data",
+  description:
+    "Plan structural beams from a clean beam data file (schema beam/1.0, <name>_beam.json made by the extraction"
+    + " pipeline from the drawing read through InnoCAD), without changing the model and without any CAD import or scan."
+    + " Each beam is one span: a centreline whose ends are already at the centre of the column, wall or beam it sits"
+    + " on, with b x h and its name from the drawing (written to Mark). Positions are from the data's grid origin (e.g."
+    + " A-1), which must sit on the Project Base Point as propose_grids_from_data built it: the command checks the"
+    + " model's origin grids and flags every group if not. One review item per b x h type (B-350x600...); beams flagged"
+    + " by the extraction (drawn width differs from the name, several names near) go to their own item (-xem) for the"
+    + " reviewer. Not built: beams the drawing gives no size for (returned in unsized: ask the user) and strips that are"
+    + " not beams (openings, slab steps). Level: levelId, else the file's meta.level.base by name; beam top at the level"
+    + " plus meta.top_offset_mm. Type per type name: 'types' entry, else a framing type with exactly that b/h, else a"
+    + " b x h type created in templateFamilyId or the company beam family BTC-DamCN_BeTong, else Blocked. Beams on the"
+    + " axis of a beam already modeled are skipped at commit. Tell the user unsized and the file's dataIssues. Opens the"
+    + " review window in Revit and returns a planId at once; then wait_for_plan or get_plan_status and commit_plan.",
+  inputSchema: {
+    dataPath: z.string().min(1).max(1024).regex(/\.json$/i)
+      .describe("Full path of the beam/1.0 file, e.g. D:/Project/3_output/MB_KC_Tang2_beam.json."),
+    levelId: elementId.optional().describe("Level of the beams (beam top); default: the file's meta.level.base by name."),
+    types: typeMap("350x600"),
+    templateFamilyId: elementId.optional()
+      .describe("Structural Framing family for b x h types not in the model; default: BTC-DamCN_BeTong if loaded."),
+  },
+  annotations: propose,
+  timeoutMs: 120000,
 });
 
 export const scanCadWalls = defineTool({

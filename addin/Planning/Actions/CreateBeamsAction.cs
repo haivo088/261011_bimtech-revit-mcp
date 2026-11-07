@@ -8,9 +8,9 @@ namespace Bimtech.RevitMcp.Planning.Actions;
 // Writes the items of propose_beams: one beam group on a level.
 //   { "levelId": "..", "offsetMm": 0, "typeId": "..." | null, "templateFamilyId": "..." | null,
 //     "sizeBMm": 220, "sizeHMm": 600, "mark": "D1" | null,
-//     "beams": [{ "x0": .., "y0": .., "x1": .., "y1": .. }] }   (mm, model coordinates)
+//     "beams": [{ "x0": .., "y0": .., "x1": .., "y1": .., "mark": "D2-X1" | null }] }   (mm, model coordinates)
 // Without typeId the b×h type is reused or created in templateFamilyId. Beams already in the model on the same axis
-// are skipped. The mark goes to the Mark parameter.
+// are skipped. The mark goes to the Mark parameter; a beam's own mark (propose_beams_from_data) wins over the item's.
 public sealed class CreateBeamsAction : IPlanAction
 {
     public string Action => "create_beams";
@@ -42,7 +42,7 @@ public sealed class CreateBeamsAction : IPlanAction
                     skipped++;
                     continue;
                 }
-                ids.Add(BeamPlacer.PlaceBeamInTransaction(document, start, end, symbol, level, mark));
+                ids.Add(BeamPlacer.PlaceBeamInTransaction(document, start, end, symbol, level, ActionParams.OptionalText(beam, "mark") ?? mark));
                 existing.Add(line);
             }
 

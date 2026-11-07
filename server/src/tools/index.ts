@@ -9,7 +9,7 @@ import { getElementParameters, getElements, getSelectedElements, proposeChangeTy
 import { proposeSetParameters } from "./parameters.js";
 import { cancelPlan, commitPlan, getPlan, getPlanStatus, openPlanReview } from "./plans.js";
 import {
-  listCadSources, loadDefaultFamily, proposeBeams, proposeColumns, proposeFloors, proposeGrids, proposeGridsFromData, proposeLevels,
+  listCadSources, loadDefaultFamily, proposeBeams, proposeColumns, proposeFloors, proposeGrids, proposeGridsFromData, proposeColumnsFromData, proposeWallsFromData, proposeBeamsFromData, proposeLevels,
   proposePiles, proposeWalls, suggestLevelsFromFolder,
   scanCadColumns, scanCadPiles, scanCadWalls, undoBatch,
 } from "./structural.js";
@@ -37,6 +37,9 @@ export const allTools: readonly RevitTool[] = [
   proposeLevels,
   proposeGrids,
   proposeGridsFromData,
+  proposeColumnsFromData,
+  proposeWallsFromData,
+  proposeBeamsFromData,
   scanCadWalls,
   proposeWalls,
   proposeFloors,

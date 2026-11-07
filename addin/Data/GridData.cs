@@ -42,5 +42,5 @@ public sealed record GridDataSet(
     IReadOnlyList<string> Decisions,
     bool? SelfCheck);
 
-// A file that does not follow grid/1.0; the message says which field.
-public sealed class GridDataException(string message) : Exception(message);
+// A data file that does not follow its schema (grid/1.0, column/1.0, ...); the message says which field.
+public sealed class DataFileException(string message) : Exception(message);
