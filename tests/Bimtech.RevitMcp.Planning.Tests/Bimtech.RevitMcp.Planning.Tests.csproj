@@ -20,6 +20,13 @@
     <Compile Include="..\..\addin\Ui\ReviewViewModel.cs" Link="Linked\ReviewViewModel.cs" />
     <Compile Include="..\..\addin\Ui\PlanItemRow.cs" Link="Linked\PlanItemRow.cs" />
     <Compile Include="..\..\addin\Ui\PreviewShapes.cs" Link="Linked\PreviewShapes.cs" />
+    <!-- Clean data from outside Revit (grid/1.0): reader, layout and review items use no Revit types. -->
+    <Compile Include="..\..\addin\Data\*.cs" Link="Linked\Data\%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <!-- A real grid/1.0 file produced by the extraction pipeline (MB_KC_Tang2, 17 grids). -->
+  <ItemGroup>
+    <None Include="Data\*.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

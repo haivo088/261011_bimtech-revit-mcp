@@ -52,6 +52,7 @@ Mỗi công cụ có một file định nghĩa ở `server/src/tools/` và một
 | `Commands/RevitJson.cs` | Chuyển đối tượng Revit sang giá trị JSON | Khi cần chuyển đổi dùng chung |
 | `Commands/Common/` | Phân trang, bộ lọc phần tử, đơn vị, parameter, category dùng chung | Khi nhiều command cần cùng một tiện ích |
 | `Commands/Diagnostics/`, `Documents/`, `Elements/`, `Parameters/`, `Plans/`, `Structural/` | Mỗi command một file, nhóm theo chủ đề | Khi thêm hoặc sửa command |
+| `Data/` | Đọc dữ liệu sạch từ bên ngoài Revit (chuẩn `grid/1.0`…) và lập mục duyệt; không dùng Revit API, có kiểm thử. Chữ tiếng Việt chỉ trong `*Text.cs` | Khi thêm loại dữ liệu (cột, dầm) |
 | `Planning/` | Kế hoạch đề xuất: dữ liệu, trạng thái, lưu JSON, chọn thư mục lưu (xem [04](04-architecture.md)) | Khi đổi cách quản lý kế hoạch |
 | `Ui/` | Cửa sổ duyệt kế hoạch: `ReviewWindow.xaml` (giao diện), `ReviewViewModel` (trạng thái và nút, không dùng Revit), `ReviewWindowHost` (mở cửa sổ, nghe `PlanService.Changed`), `FocusHandler` (ExternalEvent chọn và zoom phần tử) | Khi đổi giao diện duyệt |
 

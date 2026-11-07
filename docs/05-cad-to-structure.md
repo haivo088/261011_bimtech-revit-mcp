@@ -58,6 +58,22 @@ Sau khi nhập CAD (`propose_levels`), kết quả commit có `cadWarning` khi C
 
 `GridBuilder` (lõi cũ, chỉ theo tên layer) vẫn dùng cho tool WPF qua `LevelSetup.ApplyRow`, không còn dùng trong MCP.
 
+## Trục từ dữ liệu sạch (không cần CAD import)
+
+Hướng thay thế cho việc import CAD vào Revit: CAD được đọc **bên ngoài Revit** bởi bộ trích xuất (hiện là dự án Python `261107_InnoCad-mcp`, sau này chuyển vào add-in). Kết quả là file `<tên>_grid.json` theo chuẩn `grid/1.0`, đã kiểm tra dim, dãy tên, đơn vị, kèm handle CAD và quyết định của người dùng (`_fix.json`). Revit chỉ còn **dựng**.
+
+`propose_grids_from_data(dataPath)`:
+
+1. Đọc và kiểm tra file (`addin/Data/GridDataReader`): sai `schema` (khác `grid/1.x`), đơn vị khác mm, hệ trục xoay → từ chối, không đoán.
+2. Mỗi trục một mục `create_grid` (`addin/Data/GridDataPlanner`) — **cùng params với `propose_grids`**, nên cửa sổ duyệt, nét cam xem trước và `commit_plan` dùng chung. Gốc dữ liệu (`meta.origin`, vd A-1) trùng Project Base Point.
+3. Trục chưa có tên, trùng tên trong dữ liệu, hoặc tên đã có trong model → **Blocked**. Dữ liệu qua tự kiểm tra (`stats.self_check`) → độ tin cậy 90% (tự duyệt); không qua/không có → 40% (phải xem).
+4. Commit ghi vào **Comments** của trục: `grid/1.0 · <file> #<hash> · CAD <handle>` để tra ngược về bản vẽ và biết dữ liệu đã cũ.
+5. Mục cuối `X1` căn phạm vi trục/level như `propose_grids`.
+
+Không có CAD trong model nên không có mục dời CAD. Muốn có nền để nhìn, link DWG rồi dời theo `meta.origin_cad` (dời chính xác, không cần khớp nét) — chưa tự động.
+
+Phần đọc và lập mục không dùng Revit API, có kiểm thử trong `tests/Bimtech.RevitMcp.Planning.Tests/GridDataTests.cs` với file thật `Data/MB_KC_Tang2_grid.json` (17 trục).
+
 ## Vách và sàn (đi qua cửa sổ duyệt)
 
 **Vách:** `scan_cad_walls` → `propose_walls` → duyệt → `commit_plan`.

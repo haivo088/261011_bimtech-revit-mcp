@@ -123,9 +123,12 @@ test("level and grid proposals forward their input unchanged", async (t) => {
     cadId: "501", alignCadIds: ["502", "503"], gridLayer: "KC-TRUC", snapModuleMm: 100, snapToleranceMm: 5, pin: false,
   };
   assert.equal((await client.callTool({ name: "propose_grids", arguments: gridArgs })).isError, false);
-  assert.deepEqual(requests.map((request) => request.method), ["propose_levels", "propose_grids"]);
+  const dataArgs = { dataPath: "D:/DuAn/3_output/MB_KC_Tang2_grid.json", pin: false, gridMarginMm: 500 };
+  assert.equal((await client.callTool({ name: "propose_grids_from_data", arguments: dataArgs })).isError, false);
+  assert.deepEqual(requests.map((request) => request.method), ["propose_levels", "propose_grids", "propose_grids_from_data"]);
   assert.deepEqual(requests[0].params, levelArgs);
   assert.deepEqual(requests[1].params, gridArgs);
+  assert.deepEqual(requests[2].params, dataArgs);
 });
 
 test("level and grid proposals reject malformed input before contacting Revit", async (t) => {
@@ -146,6 +149,10 @@ test("level and grid proposals reject malformed input before contacting Revit", 
     { name: "propose_grids", arguments: { cadId: "501", alignCadIds: ["CAD-2"] } },
     { name: "propose_grids", arguments: { cadId: "501", snapToleranceMm: 500 } },
     { name: "propose_grids", arguments: { cadId: "501", gridLayer: "" } },
+    { name: "propose_grids_from_data", arguments: {} },
+    { name: "propose_grids_from_data", arguments: { dataPath: "" } },
+    { name: "propose_grids_from_data", arguments: { dataPath: "D:/DuAn/S-201.dwg" } },
+    { name: "propose_grids_from_data", arguments: { dataPath: "D:/DuAn/grid.json", gridMarginMm: -1 } },
   ];
   for (const call of invalidCalls) {
     const result = await client.callTool(call);

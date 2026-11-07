@@ -83,6 +83,19 @@ Kết quả này quyết định mốc cao độ cho bản nâng cấp U2 (nhậ
 - Bản vẽ có layer trục tên lạ: nếu tự nhận sai thì gọi lại với `gridLayer`. Ghi lại style được chọn và điểm (`styleScores`) để bổ sung quy tắc.
 - Bản vẽ có trục xiên: kết quả có cảnh báo "đường dài xiên".
 
+### 3b. Trục từ dữ liệu: `propose_grids_from_data`
+
+> Dùng propose_grids_from_data với dataPath là `D:\001. BIMTECH PROJECT\261107_InnoCad-mcp\3_output\MB_KC_Tang2_grid.json`.
+
+Thử trên model **chưa có trục và không có CAD**.
+
+- Kế hoạch có 17 mục trục (12 đứng, 5 ngang, gồm `A'`) và `X1`; mọi mục tự duyệt (90%), không mục nào Blocked.
+- **Đầu có bubble (cần xác nhận lần đầu):** trục số có bubble ở **dưới**, trục chữ ở **trái**, đúng như bản vẽ. Nếu bubble hiện ở đầu ngược lại thì đổi `GridDataLayout.RevitHeadAtEnd` thành `false` và báo lại.
+- Sau commit: giao A-1 trùng Project Base Point; nhịp đo bằng Dimension đúng `6700, 6400, … 9500, 5800, 6200 …` và `1800, 6400, 7200, 6400`; trục đã ghim.
+- Comments của trục 1 là `grid/1.0 · MB_KC_Tang2.dxf #b5ead163 · CAD BAB/2A6`; kết quả commit có `commented: true`.
+- Gọi lại → mọi mục Blocked vì trùng tên.
+- File sai (đổi `unit` thành `inch`, hoặc đuôi `.dwg`) → lỗi `dataPath` rõ ràng, không mở cửa sổ.
+
 ## 4. Cọc và đài: `scan_cad_piles` / `propose_piles`
 
 Cọc và đài giờ **không cần chọn layer**: đọc mọi layer và cân bằng chứng (xem [05](05-cad-to-structure.md)). Dựng trục trước.

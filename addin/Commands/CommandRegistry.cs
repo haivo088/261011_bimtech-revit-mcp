@@ -56,6 +56,7 @@ public sealed class CommandRegistry
         new SuggestLevelsFromFolderCommand(),
         new ProposeLevelsCommand(plans, review, changes),
         new ProposeGridsCommand(plans, review, changes),
+        new ProposeGridsFromDataCommand(plans, review, changes),
         new ScanCadWallsCommand(),
         new ProposeWallsCommand(plans, review, changes),
         new ProposeFloorsCommand(plans, review, changes),
