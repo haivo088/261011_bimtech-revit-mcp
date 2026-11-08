@@ -28,12 +28,13 @@ public sealed class WallDataTests
         Assert.Equal(("innocad-live", "MB_KC_Tang2.dwg", "Level 2", "next"),
             (data.Source.Source, data.Source.Drawing, data.Source.LevelBase, data.Source.LevelTop));
         Assert.Equal(15, data.Walls.Count);
-        Assert.Equal(["O13"], data.BadOutlines);
+        // The 331 x 750 piece was drawn 1 mm off; snapped to the 5 mm module (cadlib.snap) it is V330 and adds up.
+        Assert.Empty(data.BadOutlines);
         Assert.Equal(0, data.Slivers);
         var first = data.Walls[0];
         Assert.Equal(("V300", 300.0, 35550.0, -1200.0, 35550.0, 8800.0), (first.Type, first.Thickness, first.X1, first.Y1, first.X2, first.Y2));
         Assert.True(data.IsChecked(first));
-        Assert.False(data.IsChecked(Assert.Single(data.Walls, w => w.Outline == "O13")));
+        Assert.Equal("V330", Assert.Single(data.Walls, w => w.Outline == "O13").Type);
     }
 
     [Theory]
@@ -54,7 +55,7 @@ public sealed class WallDataTests
     {
         var items = Plan(Fixture());
 
-        Assert.Equal(["W-V220", "W-V300", "W-V331-xem"], items.Select(i => i.ItemId));
+        Assert.Equal(["W-V220", "W-V300", "W-V330"], items.Select(i => i.ItemId));
         Assert.Equal(15, items.Sum(i => i.Params.GetProperty("lines").GetArrayLength()));
         Assert.Equal(12, Lines(items, "W-V300").Count);
         Assert.All(items, item =>
@@ -64,7 +65,7 @@ public sealed class WallDataTests
             Assert.Equal(item.ItemId.EndsWith("-xem") ? WallDataPlanner.UncheckedConfidence : WallDataPlanner.CheckedConfidence, item.Confidence);
             Assert.Equal(("694", "354083"), (item.Params.GetProperty("baseLevelId").GetString(), item.Params.GetProperty("topLevelId").GetString()));
         });
-        Assert.Contains(items.Single(i => i.ItemId == "W-V331-xem").Reasons, r => r.Contains("chưa khớp diện tích"));
+        Assert.Contains(items.Single(i => i.ItemId == "W-V330").Reasons, r => r.Contains("Đã kiểm tra"));
     }
 
     [Fact]

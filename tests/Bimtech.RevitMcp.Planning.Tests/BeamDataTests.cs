@@ -37,7 +37,7 @@ public sealed class BeamDataTests
         // The drawing names these without a size anywhere: not built, nothing guessed.
         Assert.Equal(["D2-Y8", "D2-Y15", "D2-Y15"], data.Unsized.Select(b => b.Name));
         var first = data.Beams[0];
-        Assert.Equal(("D2-X21", "220x600", 220.0, 600.0, 44150.0, -1240.0, 47364.5, -1240.0),
+        Assert.Equal(("D2-X21", "220x600", 220.0, 600.0, 44150.0, -1240.0, 47365.0, -1240.0),
             (first.Name, first.Type, first.B, first.H, first.X1, first.Y1, first.X2, first.Y2));
         Assert.Equal(("wall", "wall"), (first.SupportStart, first.SupportEnd));
     }
