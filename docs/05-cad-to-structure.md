@@ -114,6 +114,19 @@ Kiểm thử: `tests/Bimtech.RevitMcp.Planning.Tests/WallDataTests.cs` với fil
 
 Kiểm thử: `tests/Bimtech.RevitMcp.Planning.Tests/BeamDataTests.cs` với file thật `Data/MB_KC_Tang2_beam.json` (141 nhịp, 123 dựng được).
 
+## Sàn từ dữ liệu sạch (không cần CAD import)
+
+`propose_floors_from_data(dataPath)` đọc `<tên>_slab.json` (chuẩn `slab/1.x`; `1.1`: sàn chính + mỗi vùng hatch một sàn). Bộ trích xuất lấy **đường bao sàn** là mọi thứ mép sàn bao lấy (loang từ ngoài vào, nét liền, vách và cột chặn; nét khuất không chặn vì sàn chạy qua dầm) và **lỗ sàn** là các ô có dấu X (giếng thang máy, thang bộ, hộp kỹ thuật). Bề dày, cao độ lấy từ `_fix.json` vì bản vẽ không ghi.
+
+1. Đọc và kiểm tra (`addin/Data/SlabDataReader`): sai `schema`, đơn vị khác mm, bề dày ≤ 0, đường bao dưới 3 điểm thì từ chối.
+2. **Kiểm tra gốc** như cột; **level** = `levelId` hoặc `meta.level.base` theo tên; mặt sàn = level + `top_offset`.
+3. **Mỗi sàn một mục** `create_floor` (`addin/Data/SlabDataPlanner`): `points` (vòng ngoài), `holes` (các vòng trong của file `1.1`: lỗ mở và sàn vùng nằm trong; file `1.0`: các lỗ) theo toạ độ model, `thicknessMm`, `comment` = "Vùng <mẫu hatch>" cho sàn vùng (ghi vào Comments, bản vẽ không ghi công năng: đổi Type sau). `CreateFloorAction` nhận `holes`, `thicknessMm`, `comment` (vẫn tương thích `propose_floors`).
+4. Lỗ chạm mép sàn không khoét được (là phần khuyết của mép) → không đưa vào `holes`, trả `notCut`, mục còn 40%.
+5. **Type:** `floorTypeId` → `BTC_SanKC_<bề dày>` có sẵn → tạo `BTC_SanKC_<bề dày>` lúc ghi từ Floor Type có cấu tạo lớp (`FloorDefaults.CreateCompanyTypeInTransaction`) → Blocked. Có sẵn 90%, tạo mới 45%.
+6. Lúc ghi, `FloorPlacer` xoá lại sàn vừa tạo nếu chồng sàn đã có (báo `skipped`).
+
+Kiểm thử: `tests/Bimtech.RevitMcp.Planning.Tests/SlabDataTests.cs` với file thật `Data/MB_KC_Tang2_slab.json` (1 sàn, 32 lỗ).
+
 ## Vách và sàn (đi qua cửa sổ duyệt)
 
 **Vách:** `scan_cad_walls` → `propose_walls` → duyệt → `commit_plan`.

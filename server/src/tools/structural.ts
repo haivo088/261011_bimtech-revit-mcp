@@ -247,6 +247,32 @@ export const proposeBeamsFromData = defineTool({
   timeoutMs: 120000,
 });
 
+export const proposeFloorsFromData = defineTool({
+  name: "propose_floors_from_data",
+  method: "propose_floors_from_data",
+  title: "Propose floors from clean data",
+  description:
+    "Plan structural floors from a clean slab data file (schema slab/1.0, <name>_slab.json made by the extraction"
+    + " pipeline from the drawing read through InnoCAD), without changing the model and without tracing beams or any"
+    + " CAD import. Each slab is an outline (everything the slab edge encloses, walls and columns included) with a"
+    + " thickness and a top offset from the level, and its openings (lift shafts, stairs, ducts: regions marked with an"
+    + " X in the drawing) are cut as holes. Positions are from the data's grid origin (e.g. A-1), which must sit on the"
+    + " Project Base Point as propose_grids_from_data built it: the command checks the model's origin grids and lowers"
+    + " the item if not. One review item per slab (F-S1...). Openings touching the slab edge cannot be cut as holes"
+    + " and are returned in notCut. Level: levelId, else the file's meta.level.base by name. Floor type: floorTypeId,"
+    + " else the company type BTC_SanKC_<thickness> (created at commit from a floor type with layers), else Blocked. A"
+    + " floor overlapping an existing floor is skipped at commit. Tell the user the file's dataIssues and notCut. Opens"
+    + " the review window in Revit and returns a planId at once; then wait_for_plan or get_plan_status and commit_plan.",
+  inputSchema: {
+    dataPath: z.string().min(1).max(1024).regex(/\.json$/i)
+      .describe("Full path of the slab/1.0 file, e.g. D:/Project/3_output/MB_KC_Tang2_slab.json."),
+    levelId: elementId.optional().describe("Level of the slab top; default: the file's meta.level.base by name."),
+    floorTypeId: elementId.optional().describe("Floor type for every slab; default: BTC_SanKC_<thickness>."),
+  },
+  annotations: propose,
+  timeoutMs: 120000,
+});
+
 export const scanCadWalls = defineTool({
   name: "scan_cad_walls",
   method: "scan_cad_walls",

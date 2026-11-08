@@ -60,6 +60,7 @@ public sealed class CommandRegistry
         new ProposeColumnsFromDataCommand(plans, review, changes),
         new ProposeWallsFromDataCommand(plans, review, changes),
         new ProposeBeamsFromDataCommand(plans, review, changes),
+        new ProposeFloorsFromDataCommand(plans, review, changes),
         new ScanCadWallsCommand(),
         new ProposeWallsCommand(plans, review, changes),
         new ProposeFloorsCommand(plans, review, changes),

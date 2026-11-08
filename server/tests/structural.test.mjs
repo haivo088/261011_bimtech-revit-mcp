@@ -131,10 +131,13 @@ test("level and grid proposals forward their input unchanged", async (t) => {
   assert.equal((await client.callTool({ name: "propose_walls_from_data", arguments: wallArgs })).isError, false);
   const beamArgs = { dataPath: "D:/DuAn/3_output/MB_KC_Tang2_beam.json", levelId: "694", types: { "350x600": "12345" } };
   assert.equal((await client.callTool({ name: "propose_beams_from_data", arguments: beamArgs })).isError, false);
+  const slabArgs = { dataPath: "D:/DuAn/3_output/MB_KC_Tang2_slab.json", floorTypeId: "777" };
+  assert.equal((await client.callTool({ name: "propose_floors_from_data", arguments: slabArgs })).isError, false);
   assert.deepEqual(requests.map((request) => request.method),
     ["propose_levels", "propose_grids", "propose_grids_from_data", "propose_columns_from_data", "propose_walls_from_data",
-      "propose_beams_from_data"]);
+      "propose_beams_from_data", "propose_floors_from_data"]);
   assert.deepEqual(requests[5].params, beamArgs);
+  assert.deepEqual(requests[6].params, slabArgs);
   assert.deepEqual(requests[3].params, columnArgs);
   assert.deepEqual(requests[4].params, wallArgs);
   assert.deepEqual(requests[0].params, levelArgs);
@@ -171,6 +174,9 @@ test("level and grid proposals reject malformed input before contacting Revit", 
     { name: "propose_walls_from_data", arguments: { dataPath: "D:/DuAn/wall.csv" } },
     { name: "propose_walls_from_data", arguments: { dataPath: "D:/DuAn/wall.json", types: { V300: "abc" } } },
     { name: "propose_beams_from_data", arguments: {} },
+    { name: "propose_floors_from_data", arguments: {} },
+    { name: "propose_floors_from_data", arguments: { dataPath: "D:/DuAn/slab.dxf" } },
+    { name: "propose_floors_from_data", arguments: { dataPath: "D:/DuAn/slab.json", floorTypeId: "abc" } },
     { name: "propose_beams_from_data", arguments: { dataPath: "D:/DuAn/beam.csv" } },
     { name: "propose_beams_from_data", arguments: { dataPath: "D:/DuAn/beam.json", types: { "350x600": "new" } } },
   ];

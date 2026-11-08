@@ -129,6 +129,16 @@ Thử sau 3b–3e, khi model đã có trục, cột và vách.
 - Sau commit: mỗi dầm có Mark = tên trên bản vẽ; đầu dầm tại tâm cột / tim vách / tim dầm đỡ, Revit tự cắt tại cột. Đo D2-X1 dọc trục D: rộng 350, cao 600, mặt trên tại Level 2.
 - Gọi lại → dầm trùng trục được bỏ qua lúc ghi (`skippedExisting`).
 
+### 3g. Sàn từ dữ liệu: `propose_floors_from_data`
+
+> Dùng propose_floors_from_data với dataPath là `D:\001. BIMTECH PROJECT\261107_InnoCad-mcp\3_output\MB_KC_Tang2_slab.json`.
+
+Thử sau 3b–3f, khi model đã có trục, cột, vách, dầm.
+
+- Kế hoạch có 10 mục `F-S1`…`F-S10`: sàn chính (20 vòng trong) + 9 sàn vùng (DOLMIT ×2, ANSI37 ×3, BETONG ×2, ANGLE, ANSI31), cùng dày 120, mặt sàn bằng Level 2, Type `BTC_SanKC_120`; sàn vùng có Comments "Vùng <mẫu>". Xoá sàn cũ trước (sàn chồng sàn đã có bị bỏ qua).
+- Sau commit: sàn bao cả dải bê tông mép trên/trái/phải và phần thò xuống trục A' ở trục 6–12; mọi giếng thang máy, thang bộ, hộp kỹ thuật thủng; dầm, vách, cột không đổi. Diện tích sàn ≈ 1568 m².
+- Gọi lại → sàn chồng sàn đã có nên bỏ qua lúc ghi (`skipped`).
+
 ## 4. Cọc và đài: `scan_cad_piles` / `propose_piles`
 
 Cọc và đài giờ **không cần chọn layer**: đọc mọi layer và cân bằng chứng (xem [05](05-cad-to-structure.md)). Dựng trục trước.
@@ -274,7 +284,8 @@ Lần thử 16–17/10/2026 trên `261016.rvt` (Revit 2025), DWG `MB_KC_*.dwg` c
 | 3c. Cột từ dữ liệu | Đạt (2026-11-07) | `TEST.rvt`: 51/51 cột khớp dữ liệu, hình chiếu lệch 0 mm, 4 Type đúng b/h (3 tạo mới trong BTC-CotCN_BeTong), hướng cạnh dài đúng (C350x1400 ở A/D theo X, xoay 90° theo Y), Level 2 → Level 3. Kiểm tra gốc đã chặn đúng khi model mất trục (file chưa lưu). Lỗi đã sửa: `blockedGroups` trả lý do đầu tiên (vấn đề chặn). |
 | 3d. Vách từ dữ liệu | Đạt (2026-11-07) | `TEST.rvt` đã có trục và cột: ghi 23 đoạn (21 V300, 2 V220), đúng Type có sẵn, tim vách (location line 0), Structural, Level 2 → Level 3; L/T nối được ở mọi đầu dữ liệu ghi L/T. Người dùng bỏ mảnh 300×300, hình 331×750 và mảnh 260. Lỗi phát hiện ở bộ trích xuất và đã sửa: (1) dải V220 chỉ nối trong cùng đường bao → nay nối cả vách đường bao khác (Revit tự nối đúng như vậy); (2) mảnh 300×260 là phần nối dài vách đứng, không phải V260 (người dùng kéo tay vách xuống 7350 để phủ). Sau sửa, dữ liệu trùng 23/23 vách trong Revit. |
 | 3e. Cửa trong vách (wall/1.1) | Đạt (2026-11-07) | Sau khi xoá vách cũ: 15 vách trùng tim dữ liệu 15/15; 9/9 lỗ cửa khoét đúng vách, đúng vị trí và 0 → 2400 mm từ Level 2 (`openings.cut = 9`). 4 cửa thang máy trên vách x = 38050 nằm trên một vách liền. |
-| 3f. Dầm từ dữ liệu | Chưa thử | |
+| 3f. Dầm từ dữ liệu | Đạt (2026-11-07) | 123/123 dầm khớp trục, b×h, Mark, mặt dầm tại Level 2 (Top); 11 Type tạo trong `BTC-DamCN_BeTong`. Revit tự nối đầu dầm vào đầu dầm giao (71 đầu dời 0–200 mm, vẫn trong cột). 3 dầm không kích thước không dựng. |
+| 3g. Sàn từ dữ liệu | Đạt (2026-11-08) | `slab/1.1`: 10 sàn (chính + 9 vùng hatch) `BTC_SanKC_120`, mặt sàn tại Level 2; mọi vòng ngoài/trong khớp dữ liệu đến 1 mm, diện tích từng sàn khớp, tổng 1567,952 m² (bằng một sàn trước đó); sàn vùng có Comments "Vùng <mẫu>". Sàn vùng chạm cạnh sàn chính không bị coi là chồng. Lần đầu bị bỏ qua cả 10 vì sàn cũ chưa xoá. |
 | 4. Cọc, đài | Một phần | 128 cọc (D800×54, D1000×74), 57 đài + 57 lót, đỉnh cọc = đáy đài + 100, join đúng. Lỗi: chiều dài cọc không đặt được (`Length` của `BTC-CocTron_BeTong` chỉ đọc, cọc 6,1 m thay vì 30 m); 13 đường bao không cọc trên `DCE_BaoBeTong` thành đài (6 dựng, 7 lồng trong đài khác, có "floors overlap"); chiều dày đài không đọc được (ký hiệu trong DWG). Số hiệu mục `C…` không theo thứ tự quét. Cần: đài = đường bao chứa cọc, không phụ thuộc layer. |
 | 5. Cột | Đạt, cần nâng cấp | 51 cột (350x1300×4, 350x1400×28, 500x1700×1, 1000x1000×18), cách trục bội 5 mm, Column Location Mark khớp, vị trí đúng (người dùng kiểm tra). `taggedColumns: 0` (ký hiệu trong DWG). Vẫn phải chọn layer — trái hướng "nhận như kỹ sư": hatch `01 Hatch colum` SOLID ×51 đúng bằng số cột, nên nhận cột từ hatch là khả thi. |
 | 6. Vách | Một phần | Đọc DWG khớp 95,1%, `regionFrom: grids`, mẫu cột SOLID học từ cột đã dựng, quét lại `cached: true`, propose lại → `alreadyModeledGroups`. Dựng 17 vách (w300×13, w330×4), 6 vách sai đã xoá: chỉ có đài đỡ 0–67% chiều dài (dải mép trục A/D là dầm), 11 vách lõi nằm 100% trên đài. Lỗi: nhóm w350 trùng cột dẹt đã dựng; type khớp theo bề dày (`CW 102-85-100p`, `Exterior - Brick on Mtl. Stud`) — phải tạo `BTC-VachKC_300/330` bằng send_code. Cần luật: vách phải có đỡ liên tục bên dưới; mẫu hatch BETONG/AR-CONC là bằng chứng bê tông. |

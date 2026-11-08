@@ -74,8 +74,13 @@ internal static class FloorDefaults
         }
     }
 
-    public static FloorType? FindDefaultFloorType(Document doc) =>
-        CollectFloorTypes(doc).FirstOrDefault(t => string.Equals(t.Name, DefaultFloorTypeName, StringComparison.OrdinalIgnoreCase));
+    public static FloorType? FindDefaultFloorType(Document doc) => FindCompanyType(doc, DefaultFloorThicknessMm);
+
+    /// <summary>Tên Type công ty theo bề dày: BTC_SanKC_120, BTC_SanKC_150...</summary>
+    public static string CompanyTypeName(double thicknessMm) => $"BTC_SanKC_{Math.Round(thicknessMm):0}";
+
+    public static FloorType? FindCompanyType(Document doc, double thicknessMm) =>
+        CollectFloorTypes(doc).FirstOrDefault(t => string.Equals(t.Name, CompanyTypeName(thicknessMm), StringComparison.OrdinalIgnoreCase));
 
     /// <summary>Type có cấu tạo lớp để nhân bản thành BTC_SanKC_150; null nghĩa là không tạo được Type mặc định.</summary>
     public static FloorType? FindSeedType(Document doc) =>
@@ -83,14 +88,19 @@ internal static class FloorDefaults
 
     /// <summary>Trả BTC_SanKC_150, tạo nếu chưa có, trong Transaction do caller mở sẵn. Ném InvalidOperationException khi
     /// không tạo được.</summary>
-    public static FloorType CreateDefaultFloorTypeInTransaction(Document doc)
+    public static FloorType CreateDefaultFloorTypeInTransaction(Document doc) =>
+        CreateCompanyTypeInTransaction(doc, DefaultFloorThicknessMm);
+
+    /// <summary>Trả BTC_SanKC_&lt;bề dày&gt;, tạo nếu chưa có (nhân bản Type có cấu tạo lớp, chỉnh lớp Structure cho đủ bề
+    /// dày), trong Transaction do caller mở sẵn. Ném InvalidOperationException khi không tạo được.</summary>
+    public static FloorType CreateCompanyTypeInTransaction(Document doc, double thicknessMm)
     {
-        if (FindDefaultFloorType(doc) is { } existing)
+        if (FindCompanyType(doc, thicknessMm) is { } existing)
             return existing;
         var seed = FindSeedType(doc)
             ?? throw new InvalidOperationException("Project không có Floor Type có cấu tạo lớp để làm mẫu.");
 
-        var newType = (FloorType)seed.Duplicate(DefaultFloorTypeName);
+        var newType = (FloorType)seed.Duplicate(CompanyTypeName(thicknessMm));
         var structure = newType.GetCompoundStructure();
         if (structure is null)
             throw new InvalidOperationException("Floor Type gốc không có cấu tạo lớp.");
@@ -111,9 +121,9 @@ internal static class FloorDefaults
             throw new InvalidOperationException("Floor Type gốc không có lớp Structure.");
 
         var otherWidth = layers.Where((_, index) => index != structuralIndex).Sum(layer => layer.Width);
-        var targetWidth = UnitUtils.ConvertToInternalUnits(DefaultFloorThicknessMm, UnitTypeId.Millimeters);
+        var targetWidth = UnitUtils.ConvertToInternalUnits(thicknessMm, UnitTypeId.Millimeters);
         if (targetWidth <= otherWidth)
-            throw new InvalidOperationException("Các lớp khác của Floor Type gốc đã dày quá 150mm.");
+            throw new InvalidOperationException($"Các lớp khác của Floor Type gốc đã dày quá {thicknessMm:0}mm.");
 
         structure.SetLayerWidth(structuralIndex, targetWidth - otherWidth);
         newType.SetCompoundStructure(structure);
